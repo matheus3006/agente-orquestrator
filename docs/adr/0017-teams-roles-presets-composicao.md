@@ -1,0 +1,88 @@
+# ADR-0017: Teams — roles, presets e composição
+
+**Status:** Aceito (2026-07-04)
+
+> Registro de decisão da frente **Teams** (Camadas A+B). O detalhe do grilling e o "porquê" longo vivem em
+> `docs/handoff-grilling-teams-fechado.md` (seções A.2–A.5) — este ADR é o **endereço citável** da decisão.
+> Camada C (CEO/orquestração) = ADR-0018; memória = ADR-0019/0020.
+
+## Contexto
+O pedido do dono: (1) `role` deve virar **enum** + uma **tela pra adicionar roles** + **pre-settings por role**;
+(2) todo time tem **≥1 executor e SEMPRE um arquiteto** com skills de arquitetura **do domínio** (Dev→código,
+Marketing→planejamento, …). Hoje `Agent.role` é `String` livre; `reports_to_id` (uuid→agent) existe **sem uso**;
+o produto já tem o padrão "catálogo curado versionado" (`engine_catalog` V13, skills-in-DB 2-camadas,
+`agent_skill_selection`). A tensão do #1 — *enum* (fixo) × *tela pra adicionar* (extensível) — precisa ser
+resolvida sem quebrar os invariantes (company-scoping, deny-by-default, single-assignee).
+
+## Decisão
+
+### Tipo de função (enum FIXO) × role específica (catálogo ABERTO)
+Dois eixos, não um. O **tipo de função** é um enum fixo de 6 valores (o esqueleto que segura os invariantes);
+a **role específica** é catálogo aberto (a "carne" com skills). Enum pro esqueleto, catálogo pra especialização.
+- **Os 6 tipos** (decisão de design do grilling A.3 — sem base empírica citável; as 2 pesquisas em
+  `docs/research/` são sobre MEMÓRIA, não org-design): **Liderança · Gestão/PO · Planejamento/Arquiteto ·
+  Execução · Revisão/QA · Suporte.**
+- **Reservados no v1:** **Revisão/QA** (o revisor é o board/humano — ADR-0012) e **Suporte** (é o KnowAll).
+  Agentes próprios desses dois tipos = fatia futura.
+- `reports_to` **NÃO** é fixo por cargo (decisão de design do grilling A.3 — não citar como achado de
+  pesquisa). A *regra* de cadeia de comando é fixa; as *posições* na árvore são livres.
+
+### Moldes (role-templates): globais, versionados, pin-por-agente
+- **Molde = preset reutilizável**, **GLOBAL** entre as empresas do dono, **VERSIONADO** (savelog imutável,
+  espelha `company_skill_version`). Preset carrega: **motor = TRIO desacoplado** (`adapter_type`+`model`+
+  `effort` por VALOR — não ref ao `engine_catalog`, que só sugere; coerente com ADR-0014) + **SkillSet**
+  (refs de skill do catálogo global) + **`reports_to` default**.
+- Editar molde = **nova versão**; cada agente **pina** uma versão (`pinned_template_version_id`) — editar não
+  mexe em quem já roda. **Contratar copia o preset (snapshot)**; ajuste avulso = "override do operador" (não
+  propaga). Atualizar um agente pra vN = **re-pin explícito**, reversível.
+- **O CEO pode CRIAR molde — a pedido do dono, com aprovação** (fluxo em A.5/ADR-0018): dono pede → CEO roda
+  `/deep-research` (cargos + conhecimentos) → **KnowAll casa conhecimento→skill** do catálogo global → CEO
+  propõe justificado → dono aprova → persiste. **Princípio do gate: o ALCANCE da ação decide** — ação local
+  (uma empresa, pós-roadmap) = autônoma; ação que mexe no **catálogo global** (molde pra todas) = gate.
+- **Skill que falta:** KnowAll não acha skill pro conhecimento → avisa o dono → mão soberana de importar a skill
+  (invariante de skills-in-DB) fecha o loop.
+
+### Time = entidade + arquiteto obrigatório
+- **Time é entidade real** (não só `reports_to`): **domínio** (macro: Dev/Marketing) + **foco** (livre:
+  frontend/backend/SEO). **Vários times por domínio**; o **líder de área é dono do domínio** (o CTO lidera os
+  times de Dev).
+- **Arquiteto OBRIGATÓRIO**, imposto em dois pontos, **validado no backend** (o canvas só espelha):
+  1. **Composição — trava dura no DISPATCH** (um time não dispara trabalho sem 1 arquiteto). Trava no dispatch,
+     **não na criação** (pra montar aos poucos).
+  2. **Autoria — por construção** (o arquiteto é a FONTE das tasks: planeja→decompõe; o executor só pega tasks
+     que já existem). Sem trava explícita plano→impl no v1 — a autoria já garante a ordem.
+
+### Cadeia de comando + montagem
+- **Cadeia estrita:** cada agente conversa só com **líder direto (acima) + subordinados diretos (abaixo)**; o
+  board fala **só com o CEO**. **Hierarquia recursiva** (Board→CEO→líderes→times; cada líder é "o CEO do seu
+  pedaço"). **Cross-team pelo ancestral comum** (sem comunicação lateral no v1).
+- **Montagem incremental** (time-por-time, com aprovação de cada time) + **dimensionamento enxuto** ("mínimo
+  necessário"; 1 agente de IA vale por N humanos). A **aprovação incremental é o freio primário de quantidade**.
+
+### Decisão-produto (UI): canvas + biblioteca de moldes
+A tela de roles é um **canvas de org-chart React Flow** (T.1-FE read-only; arrastável/editável quando o
+`reports_to` ligar, T.2) + **biblioteca de moldes master-detail** (diferencial #6, "time pronto de
+prateleira"). O canvas **ESPELHA** — os invariantes de composição continuam no backend (drop-zone tipada
+nasce válida, não lint depois). Spec de entrada: `docs/handoff-t1-fe-canvas.md`.
+
+## Consequências / Limites v1
+- Revisão/QA e Suporte são tipos "reservados" (sem agente próprio). Comunicação lateral entre times = futura.
+  Sequência plano→impl = manual (dependência automática entre Issues = futura, ADR-0012).
+- Invariantes de composição vivem no **backend** (canvas espelha; drop-zone tipada nasce válida, não lint depois).
+- A governança de molde (propose-then-commit, diff, drift-badge) **reusa a fila de Review**.
+
+## Schema (fatia T.1 / seção C do fechado)
+- `role_template` (id, tipo_funcao enum, role_especifica, company_id NULL=global, current_version_id).
+- `role_template_version` (append-only: version, **adapter_type, model, effort** (o trio do motor),
+  skillset jsonb de refs, reports_to_default, change_type, change_description, proposed_by, approved_by,
+  status, created_at).
+- **Seed (V14):** 4 **moldes de sistema** globais (`architect`/`executor`/`product-owner`/`leader`, v1
+  APPROVED) — a base do diferencial #6 ("time pronto de prateleira"); skill-refs ausentes do catálogo são
+  puladas no hire.
+- `agent.pinned_template_version_id`; (T.2) `team` (id, company_id, dominio, foco, arquiteto_agent_id) +
+  `agent.team_id`; ligar o `reports_to` existente à cadeia de comando.
+
+## Relaciona
+`docs/handoff-grilling-teams-fechado.md` (A.2–A.5, B, C-T.1/T.2); ADR-0018 (CEO cria molde, gate por alcance);
+ADR-0007 (skills 2-camadas — o SkillSet do preset); ADR-0014 (motor = trio `adapter_type+model+effort`; o `engine_catalog` só sugere);
+ADR-0012 (governança de molde reusa a Review; QA reservado); ADR-0010 (nomes + módulos profundos).

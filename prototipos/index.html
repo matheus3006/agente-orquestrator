@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>agente-orquestrator — protótipo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101613'/%3E%3Ccircle cx='16' cy='16' r='6' fill='none' stroke='%234ef58e' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='1.8' fill='%234ef58e'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div class="app">
+    <nav class="sidebar" aria-label="Navegação principal">
+      <div class="wordmark">
+        <span class="wordmark-glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
+        </span>
+        <span class="wordmark-name">ORQUESTRA<em>DOR</em></span>
+      </div>
+
+      <button class="company-switcher" id="companySwitcher" aria-label="Trocar company">
+        <span class="company-avatar" id="companyAvatar">DF</span>
+        <span class="company-name" id="companyName">Demo Fixtures</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
+      </button>
+
+      <div class="nav-label">Operação</div>
+      <a class="nav-item" data-nav="mission-control" href="#/mission-control">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 0 1 8-8"/><path d="M12 4a8 8 0 0 1 8 8"/><circle cx="12" cy="12" r="2.2"/><path d="M12 14.2 8 20"/><path d="M2 12h2.5M19.5 12H22M12 2v2.5"/></svg>
+        Mission Control
+      </a>
+      <a class="nav-item" data-nav="issues" href="#/issues">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/></svg>
+        Issues
+        <span class="nav-count" id="issuesCount"></span>
+      </a>
+      <a class="nav-item" data-nav="reviews" href="#/reviews">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-3.2 8-9V5.4L12 2 4 5.4V13c0 5.8 8 9 8 9Z"/><path d="m9 12 2 2 4-4.5"/></svg>
+        Review
+        <span class="nav-count" id="reviewsCount"></span>
+      </a>
+      <a class="nav-item" data-nav="agents" href="#/agents">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 7V4M8 4h8"/><circle cx="9.2" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="14.8" cy="12" r="1" fill="currentColor" stroke="none"/><path d="M9.5 15.2h5"/></svg>
+        Agents
+        <span class="nav-count" id="agentsCount"></span>
+      </a>
+
+      <div class="sidebar-foot">
+        <div class="sys-line"><span class="led running"></span> poll <strong>2.0s</strong> · <strong id="fakeLatency">38ms</strong></div>
+        <div class="sys-line" style="opacity:.7">pg16 · v11 · board <strong>matheus</strong></div>
+      </div>
+    </nav>
+
+    <main id="main" tabindex="-1"></main>
+  </div>
+
+  <div class="drawer-scrim" id="drawerScrim"></div>
+  <aside class="drawer" id="drawer" aria-label="Transcript do run"></aside>
+
+  <dialog id="dialog"></dialog>
+  <div class="toast-zone" id="toastZone"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

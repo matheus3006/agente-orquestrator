@@ -1,0 +1,48 @@
+"use client";
+
+import { AgentDot } from "@/components/agent-dot";
+import { isTerminalIssueStatus } from "@/lib/issues";
+import { cn } from "@/lib/utils";
+
+// Peças pequenas e compartilhadas da superfície Issues (lista, detail e a
+// fila de review da F.5): risk badge e assignee chip — spec do protótipo.
+
+// #14: `status` é opcional — informado, o badge muta a cor de risco quando a issue
+// é terminal (DONE/CANCELLED): risco fala de trabalho PENDENTE. Sem `status` (ex.:
+// fila de review, sempre PENDING_REVIEW) o risco segue vivo, exatamente como antes.
+export function RiskBadge({
+  riskLevel,
+  status,
+  className,
+}: {
+  riskLevel: number;
+  status?: string;
+  className?: string;
+}) {
+  const muted = status !== undefined && isTerminalIssueStatus(status);
+  return (
+    <span className={cn("risk-badge", `risk-${riskLevel}`, muted && "risk-muted", className)}>
+      R{riskLevel}
+    </span>
+  );
+}
+
+/**
+ * `null` = SEM assignee (afirma "— livre"); `undefined` = nome ainda não
+ * resolvível (agents carregando/falhou) — mostra só "—", nunca afirma
+ * "livre" para issue designada (achado da revisão).
+ */
+export function AssigneeChip({ name }: { name: string | null | undefined }) {
+  if (name === undefined) {
+    return <span className="assignee-chip text-faint">—</span>;
+  }
+  if (name === null) {
+    return <span className="assignee-chip text-faint">— livre</span>;
+  }
+  return (
+    <span className="assignee-chip">
+      <AgentDot name={name} />
+      {name}
+    </span>
+  );
+}

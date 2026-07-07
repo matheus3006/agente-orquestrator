@@ -1,0 +1,67 @@
+{
+  "runId": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+  "runStatus": "SUCCEEDED",
+  "steps": [
+    {
+      "type": "RUN_QUEUED",
+      "detail": "fixture",
+      "createdAt": "2026-07-02T17:44:22.614412Z"
+    },
+    {
+      "type": "RUN_STARTED",
+      "detail": null,
+      "createdAt": "2026-07-02T17:44:23.109403Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[plan] lendo issue e montando plano de execucao",
+      "createdAt": "2026-07-02T17:44:23.156258Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[skill] materializando skillset: analise-de-codigo v3",
+      "createdAt": "2026-07-02T17:44:24.168308Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[step 1/5] clonando workspace da company",
+      "createdAt": "2026-07-02T17:44:25.175346Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[step 2/5] rodando analise estatica nos 42 arquivos",
+      "createdAt": "2026-07-02T17:44:27.187118Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[step 3/5] refatorando modulo de pagamentos",
+      "createdAt": "2026-07-02T17:44:29.195834Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[warn] teste flaky detectado em PaymentServiceTest, re-rodando",
+      "createdAt": "2026-07-02T17:44:31.203676Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[step 4/5] suite verde: 87/87",
+      "createdAt": "2026-07-02T17:44:33.212503Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[step 5/5] gerando resumo do diff para review",
+      "createdAt": "2026-07-02T17:44:35.224552Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[done] issue concluida com sucesso",
+      "createdAt": "2026-07-02T17:44:36.235793Z"
+    },
+    {
+      "type": "RUN_SUCCEEDED",
+      "detail": null,
+      "createdAt": "2026-07-02T17:44:36.253257Z"
+    }
+  ],
+  "nextOffset": 12
+}

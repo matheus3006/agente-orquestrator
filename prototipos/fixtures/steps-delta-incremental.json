@@ -1,0 +1,17 @@
+{
+  "runId": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+  "runStatus": "RUNNING",
+  "steps": [
+    {
+      "type": "STDOUT",
+      "detail": "[step 3/5] refatorando modulo de pagamentos",
+      "createdAt": "2026-07-02T17:44:29.195834Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[warn] teste flaky detectado em PaymentServiceTest, re-rodando",
+      "createdAt": "2026-07-02T17:44:31.203676Z"
+    }
+  ],
+  "nextOffset": 8
+}

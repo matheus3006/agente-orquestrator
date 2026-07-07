@@ -1,0 +1,71 @@
+{
+  "agents": [
+    {
+      "agent": {
+        "id": "87dc5918-a9fb-4150-aa32-255c8aa6009d",
+        "name": "Atlas",
+        "role": "builder"
+      },
+      "status": "RUNNING",
+      "activeRun": {
+        "id": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+        "issueId": "0a9724a5-2499-4f87-a917-adfe4c80937a",
+        "issueTitle": "Refatorar modulo de pagamentos",
+        "startedAt": "2026-07-02T17:44:23.096342Z",
+        "attempt": 1
+      },
+      "lastSteps": [
+        {
+          "runId": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+          "type": "RUN_STARTED",
+          "detail": null,
+          "createdAt": "2026-07-02T17:44:23.109403Z"
+        },
+        {
+          "runId": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+          "type": "STDOUT",
+          "detail": "[plan] lendo issue e montando plano de execucao",
+          "createdAt": "2026-07-02T17:44:23.156258Z"
+        },
+        {
+          "runId": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+          "type": "STDOUT",
+          "detail": "[skill] materializando skillset: analise-de-codigo v3",
+          "createdAt": "2026-07-02T17:44:24.168308Z"
+        },
+        {
+          "runId": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+          "type": "STDOUT",
+          "detail": "[step 1/5] clonando workspace da company",
+          "createdAt": "2026-07-02T17:44:25.175346Z"
+        },
+        {
+          "runId": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+          "type": "STDOUT",
+          "detail": "[step 2/5] rodando analise estatica nos 42 arquivos",
+          "createdAt": "2026-07-02T17:44:27.187118Z"
+        }
+      ]
+    },
+    {
+      "agent": {
+        "id": "19f8600c-221a-41b9-8d76-c5b0c5f90b6f",
+        "name": "Nix",
+        "role": "deployer"
+      },
+      "status": "IDLE",
+      "activeRun": null,
+      "lastSteps": []
+    },
+    {
+      "agent": {
+        "id": "26268a10-b749-4294-9a75-8535ca4e1de9",
+        "name": "Echo",
+        "role": "analyst"
+      },
+      "status": "IDLE",
+      "activeRun": null,
+      "lastSteps": []
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "runId": "72d0cd8a-de8d-43ac-8981-8c622e8b7072",
+  "runStatus": "RUNNING",
+  "steps": [
+    {
+      "type": "RUN_QUEUED",
+      "detail": "fixture",
+      "createdAt": "2026-07-02T17:44:22.614412Z"
+    },
+    {
+      "type": "RUN_STARTED",
+      "detail": null,
+      "createdAt": "2026-07-02T17:44:23.109403Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[plan] lendo issue e montando plano de execucao",
+      "createdAt": "2026-07-02T17:44:23.156258Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[skill] materializando skillset: analise-de-codigo v3",
+      "createdAt": "2026-07-02T17:44:24.168308Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[step 1/5] clonando workspace da company",
+      "createdAt": "2026-07-02T17:44:25.175346Z"
+    },
+    {
+      "type": "STDOUT",
+      "detail": "[step 2/5] rodando analise estatica nos 42 arquivos",
+      "createdAt": "2026-07-02T17:44:27.187118Z"
+    }
+  ],
+  "nextOffset": 6
+}

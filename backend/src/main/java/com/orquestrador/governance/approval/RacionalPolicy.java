@@ -1,0 +1,82 @@
+package com.orquestrador.governance.approval;
+
+import com.orquestrador.memory.RacionalTipo;
+import org.springframework.stereotype.Component;
+
+import java.text.Normalizer;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+
+/**
+ * O regime do racional (ADR-0020, D6–D11) como MECANISMO, não flags soltas (ADR-0010):
+ * <ul>
+ *   <li><b>D9</b> — a classificação lógico|intuição é DERIVADA da ÁREA do artefato (área criativa
+ *       → intuição), nunca de julgamento subjetivo;</li>
+ *   <li><b>D6/D7</b> — presença obrigatória: vazio e "porque quis" (confabulação-nula) são
+ *       grelhados nos DOIS tipos;</li>
+ *   <li><b>D8</b> — LOGICO bloqueia até razão substantiva; INTUICAO commita com preferência
+ *       legítima ("me agrada o tom" passa; "porque quis" não);</li>
+ *   <li><b>D10</b> — o probe roda em ambos: no lógico é o bloqueio; na intuição é MAIÊUTICO e
+ *       não-bloqueante (vira evidência da Decisão).</li>
+ * </ul>
+ * O CEO é escriba-que-insiste, nunca juiz de QUALIDADE: nada além de presença/anti-confabulação
+ * é validado (regime de presença — buracos ficam auditáveis, não impedidos).
+ */
+@Component
+public class RacionalPolicy {
+
+    /** Marcadores de área criativa (D9): a comparação é sobre o texto normalizado sem acento. */
+    private static final List<String> CREATIVE_AREA_MARKS = List.of(
+            "visual", "criativo", "criativa", "design", "video", "imagem", "marca", "estetica", "copy");
+
+    /** As formas de não-razão (D7): recusa de dizer, não razão nem preferência. */
+    private static final List<String> CONFAB_FORMS = List.of(
+            "porque quis", "porque sim", "porque eu quis", "sem razao", "sem motivo", "so porque sim");
+
+    public String areaFor(ApprovalActionType actionType, String declaredArea) {
+        if (declaredArea != null && !declaredArea.isBlank()) {
+            return declaredArea.strip();
+        }
+        return switch (actionType) {
+            case HIRE_AGENT -> "estrutura-org";
+            case CREATE_ISSUE -> "backlog";
+            case WAKEUP_AGENT -> "operacao";
+        };
+    }
+
+    public RacionalTipo deriveTipo(String area) {
+        String normalized = normalize(area);
+        return CREATIVE_AREA_MARKS.stream().anyMatch(normalized::contains)
+                ? RacionalTipo.INTUICAO
+                : RacionalTipo.LOGICO;
+    }
+
+    /** Presente = o commit está BLOQUEADO e este é o probe do grill; empty = commita. */
+    public Optional<String> grillProbe(RacionalTipo tipo, String racional) {
+        if (racional == null || racional.isBlank()) {
+            return Optional.of(tipo == RacionalTipo.INTUICAO
+                    ? "Registro obrigatorio (ADR-0020): o que te agradou (ou incomodou) aqui?"
+                    : "Registro obrigatorio (ADR-0020): qual e a razao desta decisao?");
+        }
+        String normalized = normalize(racional);
+        if (CONFAB_FORMS.stream().anyMatch(normalized::contains)) {
+            return Optional.of("\"Porque quis\" nao e razao nem intuicao (ADR-0020/D7). "
+                    + (tipo == RacionalTipo.INTUICAO
+                    ? "Diga a preferencia real: o que te agradou?"
+                    : "Diga a razao substantiva: que premissa sustenta isso?"));
+        }
+        return Optional.empty(); // presença satisfeita — qualidade NUNCA é julgada (D6)
+    }
+
+    /** O probe maiêutico da intuição (D10) — registrado como evidência, nunca bloqueia. */
+    public String maieuticProbe() {
+        return "Probe maieutico (ADR-0020/D10): o que exatamente te agrada aqui? "
+                + "O que voce notou que o agente nao viu?";
+    }
+
+    private static String normalize(String text) {
+        String lower = (text == null ? "" : text).toLowerCase(Locale.ROOT);
+        return Normalizer.normalize(lower, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
+    }
+}

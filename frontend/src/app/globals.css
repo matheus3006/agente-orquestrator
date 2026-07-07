@@ -1,0 +1,3263 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Theme OKLCH do agente-orquestrator — portado do protótipo
+   aprovado (prototipos/, P.1). Dark-first: v1 é dark-only.
+   "Sala de máquinas": carvão azul profundo + verde-fósforo
+   (= trabalho acontecendo). Zero cor fora destes tokens.
+   ============================================================ */
+:root {
+  color-scheme: dark;
+
+  /* superfícies */
+  --bg: oklch(0.145 0.012 245);
+  --bg-deep: oklch(0.115 0.012 245);
+  /* superfícies com passos de L mais largos (P1 #8): raised .175→.195 e
+     overlay .21→.22 dão elevação por LIGHTNESS — o card sobe do fundo sem
+     depender só da borda de 1px ("sopa de bordas"). O teto do overlay respeita
+     o a11y do P0: --text-faint (.61) segue ≥4.5:1 sobre bg/raised/overlay
+     (Y≈L³ p/ estas superfícies quase-neutras; conferido VENDO por canvas). */
+  --raised: oklch(0.195 0.014 245);
+  --overlay: oklch(0.22 0.016 245);
+  --terminal: oklch(0.115 0.018 165);
+  --border: oklch(0.3 0.018 245 / 0.55);
+  --border-soft: oklch(0.26 0.016 245 / 0.4);
+  --border-hot: oklch(0.42 0.02 245);
+
+  /* texto */
+  --text: oklch(0.93 0.008 230);
+  --text-dim: oklch(0.7 0.014 235);
+  /* faint sobe de L .5 → .61 (P0 #3): antes 3.32:1 sobre --bg reprovava WCAG AA
+     no texto mono minúsculo; a .61 dá ≥4.5:1 sobre bg/raised/overlay e ainda fica
+     um degrau abaixo de --text-dim (7.4:1) — a hierarquia dos três tons segue. */
+  --text-faint: oklch(0.61 0.015 240);
+
+  /* a marca: verde-fósforo = trabalho acontecendo */
+  --phosphor: oklch(0.86 0.215 152);
+  --phosphor-soft: oklch(0.74 0.16 152);
+  --phosphor-dim: oklch(0.62 0.11 155);
+  --phosphor-bg: oklch(0.86 0.215 152 / 0.09);
+  --phosphor-glow: oklch(0.86 0.215 152 / 0.35);
+
+  /* status */
+  --amber: oklch(0.83 0.15 80);
+  --amber-bg: oklch(0.83 0.15 80 / 0.1);
+  --coral: oklch(0.71 0.185 28);
+  --coral-bg: oklch(0.71 0.185 28 / 0.11);
+  --ice: oklch(0.79 0.075 235);
+  --ice-bg: oklch(0.79 0.075 235 / 0.1);
+  --idle: oklch(0.55 0.02 240);
+
+  /* movimento (emil: curvas fortes; nunca ease-in em UI) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* P2 #17 — escala de raio por TAMANHO (mata a monocultura do 10):
+     sm = chips/badges/selos/tags pequenos; md = botões/inputs/rows/chips
+     médios; lg = painéis/cards/dialogs/frames. Pills (20/999) e círculos
+     (50%) são formas deliberadas, fora da escala. */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  /* ============================================================
+     P2 #10 — tokens dos OKLCH que estavam CRUS fora do :root. A regra
+     da casa é "zero cor fora destes tokens"; globals-tokens.test.ts faz
+     o grep e falha se um oklch cru (que não seja o scrim preto
+     oklch(0 0 0 / a)) reaparecer fora daqui. 1:1 com o valor antigo —
+     tokenização NÃO muda pixel. ============================================================ */
+
+  /* alfas fósforo (bordas/glows de estado live e seleção) */
+  --phosphor-a07: oklch(0.86 0.215 152 / 0.07);
+  --phosphor-a08: oklch(0.86 0.215 152 / 0.08);
+  --phosphor-a12: oklch(0.86 0.215 152 / 0.12);
+  --phosphor-a20: oklch(0.86 0.215 152 / 0.2);
+  --phosphor-a30: oklch(0.86 0.215 152 / 0.3);
+  --phosphor-a40: oklch(0.86 0.215 152 / 0.4);
+  /* (0.35 = --phosphor-glow, 0.09 = --phosphor-bg — já existiam) */
+  --phosphor-bright: oklch(0.9 0.21 152);
+  --phosphor-soft-a45: oklch(0.74 0.16 152 / 0.45);
+  --phosphor-dim-a35: oklch(0.62 0.11 155 / 0.35);
+  --phosphor-dim-a40: oklch(0.62 0.11 155 / 0.4);
+  --textarea-focus: oklch(0.5 0.12 152 / 0.6);
+
+  /* alfas amber (fila/pendências) + amber escuro das bordas de aprovação/grill */
+  --amber-a30: oklch(0.83 0.15 80 / 0.3);
+  --amber-a35: oklch(0.83 0.15 80 / 0.35);
+  --amber-a40: oklch(0.83 0.15 80 / 0.4);
+  --amber-a45: oklch(0.83 0.15 80 / 0.45);
+  --approval-line: oklch(0.5 0.12 80 / 0.5);
+  --grill-line: oklch(0.5 0.12 80 / 0.55);
+
+  /* alfas coral (bloqueio/perigo/falha) */
+  --coral-a40: oklch(0.71 0.185 28 / 0.4);
+  --coral-a45: oklch(0.71 0.185 28 / 0.45);
+  --coral-a50: oklch(0.71 0.185 28 / 0.5);
+
+  /* alfas ice (open/available) */
+  --ice-a30: oklch(0.79 0.075 235 / 0.3);
+  --ice-a40: oklch(0.79 0.075 235 / 0.4);
+
+  /* "tinta" sobre superfícies coloridas (texto/ícone legível no chip) */
+  --on-phosphor: oklch(0.13 0.02 152);
+  --on-amber: oklch(0.16 0.03 80);
+  --on-avatar: oklch(0.98 0 0);
+  --agent-dot-ink: oklch(0.13 0.01 245);
+
+  /* gradiente da company-avatar (marca) */
+  --avatar-from: oklch(0.55 0.16 152);
+  --avatar-to: oklch(0.35 0.1 200);
+
+  /* o "azul do balão" — única cor fora da paleta fósforo/amber/coral/ice;
+     tokenizada preservando o look (msg do usuário na thread do CEO) */
+  --msg-mine: oklch(0.2 0.03 200 / 0.5);
+  --msg-mine-line: oklch(0.4 0.05 210 / 0.4);
+
+  /* neutros de chrome (scrollbar, hover do btn, superfícies afundadas, texturas) */
+  --scrollbar: oklch(0.32 0.02 245);
+  --scrollbar-hover: oklch(0.42 0.02 245);
+  --btn-hover-line: oklch(0.5 0.02 245);
+  --btn-hover-bg: oklch(0.24 0.018 245);
+  --blueprint-line: oklch(0.5 0.02 245 / 0.045);
+  --canvas-sunken: oklch(0.125 0.012 245 / 0.55);
+  --stage-glow: oklch(0.19 0.016 245 / 0.9);
+  --notch: oklch(0.16 0.012 245);
+  --term-scanline: oklch(1 0 0 / 0.022);
+  --transcript-scanline: oklch(1 0 0 / 0.012);
+}
+
+@theme inline {
+  /* cores utilizáveis: bg-background, text-phosphor, border-line, … */
+  --color-background: var(--bg);
+  --color-background-deep: var(--bg-deep);
+  --color-raised: var(--raised);
+  --color-overlay: var(--overlay);
+  --color-terminal: var(--terminal);
+  --color-line: var(--border);
+  --color-line-soft: var(--border-soft);
+  --color-line-hot: var(--border-hot);
+  --color-foreground: var(--text);
+  --color-dim: var(--text-dim);
+  --color-faint: var(--text-faint);
+  --color-phosphor: var(--phosphor);
+  --color-phosphor-soft: var(--phosphor-soft);
+  --color-phosphor-dim: var(--phosphor-dim);
+  --color-phosphor-bg: var(--phosphor-bg);
+  --color-amber: var(--amber);
+  --color-amber-bg: var(--amber-bg);
+  --color-coral: var(--coral);
+  --color-coral-bg: var(--coral-bg);
+  --color-ice: var(--ice);
+  --color-ice-bg: var(--ice-bg);
+  --color-idle: var(--idle);
+
+  /* tipografia (variáveis vêm do next/font no root layout) */
+  --font-display: var(--font-chakra);
+  --font-sans: var(--font-plex);
+  --font-mono: var(--font-plex-mono);
+
+  /* movimento como utilities: ease-out-strong / ease-in-out-strong */
+  --ease-out-strong: var(--ease-out);
+  --ease-in-out-strong: var(--ease-in-out);
+
+  /* P2 #17 — escala de raio como utilities: rounded-sm/md/lg = 4/8/12
+     (sobrepõe o default do Tailwind: md 6→8, lg 8→12 — a escala da casa). */
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-plex), sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   Piso tipográfico do mono (P1 #4): texto mono de CONTEÚDO tem chão
+   de 11px — labels, ids, horas, metas, badges, hints, roles. Abaixo de
+   10px sobra só cromo VERDADEIRAMENTE secundário e reservado: selos de
+   proveniência (.selo-sistema), gate inline (.team-chip-gate), contador
+   em bolha (.ceo-aba-badge) e a atribuição do react-flow (3rd-party).
+   Blocos mono densos ganham +0.05 de line-height (respiro na leitura).
+   ============================================================ */
+
+/* Atmosfera do console (aprovada no protótipo): blueprint grid + grain,
+   quase subliminares. Globais — todo o board é a sala de máquinas. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--blueprint-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--blueprint-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: 0.035;
+  pointer-events: none;
+  z-index: 100;
+}
+
+::selection {
+  background: var(--phosphor-glow);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-md);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-hover);
+}
+
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--phosphor);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* ============================================================
+   Vocabulário compartilhado portado do protótipo (F.2) — em
+   @layer components para utilities Tailwind poderem sobrescrever
+   (ex.: LED de 6px na sys-line via h-1.5 w-1.5).
+   ============================================================ */
+@layer components {
+  /* LEDs de status: sidebar, cards (F.3), pills (F.4) */
+  .led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--idle);
+  }
+  .led.running {
+    background: var(--phosphor);
+    box-shadow: 0 0 10px var(--phosphor-glow), 0 0 3px var(--phosphor);
+    animation: led-breathe 2.4s var(--ease-in-out) infinite;
+  }
+  .led.queued {
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber-a30);
+    /* #9: um movimento perpétuo por tela — o loop fica reservado ao LED .running
+       (trabalho vivo) e ao cursor do mini-terminal. Queued é ESPERA: como
+       .led.queued só é aplicado na transição pra fila, a animação nasce nesse
+       evento e pisca UMA vez, depois repousa em amber estático (sem `infinite`).
+       reduced-motion zera este flash (bloco no fim do arquivo). */
+    animation: led-blink 1.4s var(--ease-in-out);
+  }
+  .led.blocked {
+    background: var(--coral);
+    box-shadow: 0 0 10px var(--coral-a45);
+  }
+
+  /* Glifo da marca (wordmark): borda + glow fósforo */
+  .wordmark-glyph {
+    width: 26px;
+    height: 26px;
+    border: 1.5px solid var(--phosphor);
+    border-radius: var(--r-md);
+    display: grid;
+    place-items: center;
+    color: var(--phosphor);
+    box-shadow: 0 0 14px var(--phosphor-glow), inset 0 0 8px var(--phosphor-a12);
+  }
+  .wordmark-glyph svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  /* Avatar de company (switcher, dropdown, picker) — gradiente aprovado */
+  .company-avatar {
+    background: linear-gradient(135deg, var(--avatar-from), var(--avatar-to));
+    color: var(--on-avatar);
+  }
+}
+
+/* ============================================================
+   O SHELL responsivo do board (P0 #1) — um SEAM só: a MESMA
+   <nav> assume três presenças decididas por breakpoint, nunca
+   por `if` espalhado. ≥1200px sidebar cheia (232px) · 768–1199
+   trilho só-ícone (64px) · <768 drawer off-canvas + topbar.
+   Alturas em dvh (não vh): corrige o corte pelo chrome no mobile.
+
+   FORA de @layer de propósito — precisa vencer as utilities do
+   Tailwind que estilizam a própria <nav> (px-3, flex, gap-*…);
+   utilities ganham de @layer components por ordem de camada, e
+   estas regras respondem por largura, então têm de estar acima.
+   ============================================================ */
+.board-shell {
+  --board-nav-w: 232px;
+  --board-topbar-h: 52px;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--board-nav-w) 1fr;
+  grid-template-areas: "sidebar main";
+  min-height: 100dvh;
+}
+
+/* App-shell de desktop preservado 1:1: sidebar ancorada, main rola por dentro
+   (era h-screen + overflow-y-auto). Só troca 100vh fixo por 100dvh correto. */
+.board-sidebar {
+  grid-area: sidebar;
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+}
+.board-main {
+  grid-area: main;
+  position: relative;
+  height: 100dvh;
+  overflow-y: auto;
+  /* item de grid `1fr` precisa de min-width:0 pra encolher abaixo do min-content
+     do conteúdo — sem isto a coluna estoura na largura do card mais largo (ex.:
+     mini-terminais) e vaza horizontalmente no mobile em vez de caber. */
+  min-width: 0;
+}
+
+/* topbar e scrim só materializam no modo drawer */
+.board-topbar {
+  display: none;
+}
+.board-scrim {
+  display: none;
+}
+
+/* ---------- TRILHO (rail): 768–1199px, sidebar só-ícone ----------
+   Range fechado no piso (min-width:768) para NÃO colidir com o drawer:
+   assim o que o rail esconde reaparece sozinho abaixo de 768. */
+@media (min-width: 768px) and (max-width: 1199px) {
+  .board-shell {
+    --board-nav-w: 64px;
+  }
+  .board-sidebar .board-brand-text,
+  .board-sidebar .board-switcher-meta,
+  .board-sidebar .board-section-label,
+  .board-sidebar .board-nav-label,
+  .board-sidebar .board-moldes-tag,
+  .board-sidebar .board-sysfoot,
+  .board-sidebar .board-active-bar {
+    display: none;
+  }
+  .board-sidebar .board-brand,
+  .board-sidebar .board-switcher,
+  .board-sidebar .board-nav-item {
+    justify-content: center;
+  }
+}
+
+/* ---------- DRAWER: <768px, sidebar off-canvas + topbar ---------- */
+@media (max-width: 767px) {
+  .board-shell {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "topbar"
+      "main";
+  }
+  /* no mobile o documento rola (topbar cola no topo); nada de scroll aninhado */
+  .board-main {
+    height: auto;
+    overflow: visible;
+  }
+
+  .board-topbar {
+    grid-area: topbar;
+    position: sticky;
+    top: 0;
+    z-index: 48;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: var(--board-topbar-h);
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-deep);
+  }
+
+  /* a sidebar vira o painel do drawer — cheia, deslizando da esquerda */
+  .board-sidebar {
+    position: fixed;
+    top: var(--board-topbar-h);
+    left: 0;
+    bottom: 0;
+    height: auto;
+    width: min(84vw, 288px);
+    z-index: 45;
+    transform: translateX(-100%);
+    transition: transform 240ms var(--ease-out);
+    box-shadow: 8px 0 32px oklch(0 0 0 / 0.4);
+  }
+  .board-shell[data-nav-open] .board-sidebar {
+    transform: translateX(0);
+  }
+  /* a marca já mora na topbar — não repetir no painel */
+  .board-sidebar .board-brand {
+    display: none;
+  }
+
+  .board-scrim {
+    display: block;
+    position: fixed;
+    top: var(--board-topbar-h);
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    border: 0;
+    padding: 0;
+    background: oklch(0 0 0 / 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 240ms var(--ease-out);
+  }
+  .board-shell[data-nav-open] .board-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-sidebar,
+  .board-scrim {
+    transition: none;
+  }
+}
+
+/* ============================================================
+   Vocabulário da F.3 (Mission Control) — portado 1:1 do
+   protótipo: tallies, cards, mini-terminal, feed, drawer.
+   ============================================================ */
+@layer components {
+  /* --- tallies do cabeçalho --- */
+  .tally-row {
+    display: flex;
+    gap: 10px;
+  }
+  .tally {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 14px;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    min-width: 96px;
+  }
+  .tally-num {
+    font-family: var(--font-chakra);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    transition: color 200ms;
+  }
+  .tally-label {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .tally.running .tally-num { color: var(--phosphor); text-shadow: 0 0 16px var(--phosphor-glow); }
+  .tally.queued .tally-num { color: var(--amber); }
+  .tally.blocked .tally-num { color: var(--coral); }
+  .tally.idle .tally-num { color: var(--idle); }
+
+  /* --- grid de cards --- */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 14px;
+    margin-bottom: 34px;
+  }
+  .agent-card {
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    transition: transform 160ms var(--ease-out), border-color 160ms var(--ease-out),
+      box-shadow 160ms var(--ease-out);
+  }
+  /* #5: entrada por item + stagger nth-child(1..6) REMOVIDOS (o tell nº1 de IA:
+     cascata que só cobria 1–6 e podia re-disparar no poll de 2s). A montagem
+     anima UMA vez pelo container — .central-docada (Mission Control) e o
+     view-enter das demais superfícies. Cards agora só transicionam no hover. */
+  .agent-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-hot);
+    box-shadow: 0 12px 32px oklch(0 0 0 / 0.35);
+  }
+  .agent-card:active { transform: translateY(-2px) scale(0.99); }
+  .agent-card.running { border-color: var(--phosphor-glow); }
+  .agent-card.running:hover {
+    box-shadow: 0 12px 32px oklch(0 0 0 / 0.35), 0 0 24px var(--phosphor-a07);
+  }
+  .agent-card.blocked { border-color: var(--coral-a40); }
+
+  .agent-card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px 10px;
+  }
+  .agent-name {
+    font-family: var(--font-chakra);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.04em;
+  }
+  .agent-role {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .agent-status-word {
+    margin-left: auto;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    padding: 3px 8px;
+    border-radius: var(--r-sm);
+  }
+  .agent-status-word.running { color: var(--phosphor); background: var(--phosphor-bg); }
+  .agent-status-word.queued { color: var(--amber); background: var(--amber-bg); }
+  .agent-status-word.blocked { color: var(--coral); background: var(--coral-bg); }
+  .agent-status-word.idle { color: var(--text-faint); background: var(--overlay); }
+
+  .agent-issue-line {
+    padding: 0 14px 10px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 20px;
+  }
+  .agent-issue-line svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    color: var(--text-faint);
+  }
+  .agent-issue-line .issue-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .agent-issue-line.idle-note {
+    color: var(--text-faint);
+    font-style: italic;
+  }
+
+  /* --- o mini-terminal --- */
+  /* #2: o mini-terminal NASCE COLAPSADO (só a última linha + cursor = indicador
+     de atividade) pra o board respirar — nada de parede de texto se atualizando
+     a cada 2s. O card em hover/foco expande a cauda recente (peek); o terminal
+     CHEIO vive no drawer (clique no card). Altura por transition → o
+     prefers-reduced-motion já zera a transition-duration junto. */
+  .mini-term {
+    background: var(--terminal);
+    border-top: 1px solid var(--border-soft);
+    padding: 10px 14px 12px;
+    font-family: var(--font-plex-mono);
+    font-size: 11.5px;
+    line-height: 1.75;
+    height: 44px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transition: height 220ms var(--ease-out);
+  }
+  .agent-card:hover .mini-term,
+  .agent-card:focus-visible .mini-term {
+    height: 116px;
+  }
+  .mini-term::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, var(--term-scanline) 0 1px, transparent 1px 3px);
+    pointer-events: none;
+  }
+  .mini-term::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 34px;
+    background: linear-gradient(var(--terminal), transparent);
+    z-index: 1;
+    pointer-events: none;
+    /* #2: o fade do topo só faz sentido expandido (a cauda passando sob a borda);
+       colapsado em 1 linha, some. */
+    opacity: 0;
+    transition: opacity 180ms var(--ease-out);
+  }
+  .agent-card:hover .mini-term::before,
+  .agent-card:focus-visible .mini-term::before {
+    opacity: 1;
+  }
+  .term-line {
+    color: var(--phosphor-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    animation: line-in 200ms var(--ease-out);
+  }
+  .term-line .t {
+    color: var(--text-faint);
+    margin-right: 9px;
+    font-size: 11px;
+  }
+  .term-line.warn { color: var(--amber); }
+  .term-line.error { color: var(--coral); }
+  .term-line.meta { color: var(--ice); }
+  .term-line.ok { color: var(--phosphor); }
+  .term-empty {
+    color: var(--text-faint);
+    font-size: 11px;
+    font-style: italic;
+    /* #2: colapsado, a dica cabe em 1 linha (elipse); o hover deixa quebrar. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .agent-card:hover .term-empty,
+  .agent-card:focus-visible .term-empty {
+    white-space: normal;
+  }
+  .term-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 12px;
+    background: var(--phosphor);
+    vertical-align: -2px;
+    margin-left: 2px;
+    animation: cursor-blink 1.1s steps(2) infinite;
+  }
+  /* #2: como indicador de atividade do mini-terminal colapsado, o cursor ancora
+     no canto inferior-direito (fora do fluxo) — aparece mesmo com a última linha
+     longa sofrendo elipse, e não empurra o texto. */
+  .mini-term > .term-cursor {
+    position: absolute;
+    bottom: 12px;
+    right: 14px;
+    margin-left: 0;
+    z-index: 2;
+  }
+
+  .agent-card-foot {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--border-soft);
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .agent-card-foot .elapsed {
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-card-foot .spacer { flex: 1; }
+  .agent-card-foot .peek {
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 140ms;
+  }
+  .agent-card-foot .peek svg {
+    width: 11px;
+    height: 11px;
+  }
+  .agent-card:hover .peek { color: var(--phosphor); }
+
+  /* --- rótulo de seção + feed --- */
+  .section-label {
+    font-family: var(--font-chakra);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px;
+  }
+  .section-label::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border-soft);
+  }
+
+  .feed {
+    display: flex;
+    flex-direction: column;
+  }
+  .feed-row {
+    display: grid;
+    grid-template-columns: 74px 20px 1fr;
+    gap: 12px;
+    padding: 7px 10px;
+    border-radius: var(--r-md);
+    align-items: start;
+    position: relative;
+  }
+  .feed-row.fresh { animation: feed-flash 1.4s var(--ease-out); }
+  .feed-time {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    padding-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .feed-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--r-sm);
+    display: grid;
+    place-items: center;
+    margin-top: 1px;
+  }
+  .feed-dot svg {
+    width: 11px;
+    height: 11px;
+  }
+  .feed-dot.good { background: var(--phosphor-bg); color: var(--phosphor); }
+  .feed-dot.bad { background: var(--coral-bg); color: var(--coral); }
+  .feed-dot.warn { background: var(--amber-bg); color: var(--amber); }
+  .feed-dot.info { background: var(--ice-bg); color: var(--ice); }
+  .feed-body {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.45;
+    padding-top: 1px;
+  }
+  .feed-body b {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .feed-body .mono {
+    font-family: var(--font-plex-mono);
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+
+  /* #15: as colunas fixas somam pouco (~94px), então o feed não estoura — mas
+     em tela bem estreita o time encolhe e o gap aperta pro corpo respirar. */
+  @media (max-width: 480px) {
+    .feed-row {
+      grid-template-columns: 58px 18px 1fr;
+      gap: 9px;
+    }
+  }
+
+  /* P2 #18 — o estado vazio ÚNICO do board (ui/empty-state.tsx): cheio para
+     superfície vazia; .compact para vazio dentro de zona/grupo/seção (herda o
+     papel do antigo .grupo-vazio e do .servers-empty); .erro para os "não deu
+     para carregar". Raio na escala do P2 #17: painel cheio lg, caixa de seção md. */
+  .empty-state {
+    border: 1px dashed var(--border-hot);
+    border-radius: var(--r-lg);
+    padding: 40px;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+  .empty-state > svg {
+    display: block;
+    width: 22px;
+    height: 22px;
+    margin-inline: auto;
+    margin-bottom: 8px;
+    color: var(--phosphor-dim);
+  }
+  .empty-state b {
+    color: var(--phosphor-soft);
+    font-weight: 600;
+  }
+  .empty-state.erro {
+    color: var(--coral);
+  }
+  .empty-state.compact {
+    border-color: var(--border);
+    border-radius: var(--r-md);
+    padding: 14px 16px;
+    font-size: 12.5px;
+  }
+  .empty-state.compact > svg {
+    width: 16px;
+    height: 16px;
+    margin-bottom: 5px;
+  }
+  .empty-state-action {
+    margin-top: 12px;
+  }
+  /* #12 (P2-C) — a afordância do board parado REUSA o EmptyState compact, mas
+     troca o tracejado por um painel sólido discreto: não empilha 2 tracejados
+     com o "Time sem agentes" logo abaixo, e a ação fósforo-dim guia o próximo
+     passo sem competir com os cards vivos (C1). Entra com UM fade (evento, nunca
+     loop — C6); o bloco universal de prefers-reduced-motion zera a duração. */
+  .aviso-ocioso {
+    border-style: solid;
+    border-color: var(--border);
+    background: var(--raised);
+    margin-bottom: 12px;
+    animation: view-enter 260ms var(--ease-out);
+  }
+
+  .agent-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: var(--r-sm);
+    font-family: var(--font-chakra);
+    font-size: 9px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+    color: var(--agent-dot-ink);
+    flex-shrink: 0;
+  }
+
+  /* --- botões (drawer usa ghost; F.4/F.5 usam primary/danger) --- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-plex);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--border-hot);
+    background: var(--overlay);
+    color: var(--text);
+    cursor: pointer;
+    transition: transform 140ms var(--ease-out), border-color 140ms, background 140ms;
+  }
+  .btn svg {
+    width: 13px;
+    height: 13px;
+  }
+  .btn:hover {
+    border-color: var(--btn-hover-line);
+    background: var(--btn-hover-bg);
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary {
+    background: var(--phosphor);
+    border-color: var(--phosphor);
+    color: var(--on-phosphor);
+    font-weight: 600;
+    /* #7: sem glow em repouso — o brilho fósforo fica reservado ao estado "live". */
+  }
+  .btn.primary:hover { background: var(--phosphor-bright); }
+  .btn.danger {
+    color: var(--coral);
+    border-color: var(--coral-a45);
+    background: var(--coral-bg);
+  }
+  .btn.danger:hover { border-color: var(--coral); }
+  .btn.ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-dim);
+  }
+  .btn.ghost:hover {
+    color: var(--text);
+    background: var(--raised);
+  }
+
+  /* --- drawer do transcript (compartilhado F.3/F.4) --- */
+  .drawer-scrim {
+    position: fixed;
+    inset: 0;
+    background: oklch(0 0 0 / 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms var(--ease-out);
+    z-index: 40;
+  }
+  .drawer-scrim.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(620px, 92vw);
+    background: var(--bg-deep);
+    border-left: 1px solid var(--border-hot);
+    transform: translateX(102%);
+    transition: transform 260ms var(--ease-out);
+    z-index: 41;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -24px 0 60px oklch(0 0 0 / 0.5);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .drawer-title {
+    font-family: var(--font-chakra);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+  .drawer-sub {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+  .drawer-close { margin-left: auto; }
+
+  .transcript {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 20px 26px;
+    font-family: var(--font-plex-mono);
+    font-size: 12px;
+    line-height: 1.85;
+    background: repeating-linear-gradient(0deg, var(--transcript-scanline) 0 1px, transparent 1px 3px),
+      var(--terminal);
+  }
+  .transcript .term-line {
+    display: flex;
+    gap: 12px;
+    white-space: normal;
+  }
+  .transcript .term-line .t {
+    flex-shrink: 0;
+    padding-top: 1px;
+  }
+  .transcript .term-line .type-tag {
+    flex-shrink: 0;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 2px 6px;
+    border-radius: var(--r-sm);
+    background: var(--overlay);
+    color: var(--text-faint);
+    align-self: flex-start;
+    margin-top: 3px;
+    min-width: 74px;
+    text-align: center;
+  }
+  .transcript .term-line.meta .type-tag { background: var(--ice-bg); color: var(--ice); }
+  .transcript .term-line.ok .type-tag { background: var(--phosphor-bg); color: var(--phosphor); }
+  .transcript .term-line.error .type-tag { background: var(--coral-bg); color: var(--coral); }
+
+  .drawer-foot {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  /* --- badge de status de run (drawer, ledger F.4, review F.5) --- */
+  .run-status {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    border-radius: var(--r-sm);
+    flex-shrink: 0;
+    min-width: 86px;
+    text-align: center;
+  }
+  .run-status.SUCCEEDED { color: var(--phosphor); background: var(--phosphor-bg); }
+  .run-status.FAILED { color: var(--coral); background: var(--coral-bg); }
+  .run-status.RUNNING {
+    color: var(--phosphor);
+    background: var(--phosphor-bg);
+    /* #9: o badge não pulsa perpetuamente — a cor fósforo já diz "rodando". O
+       .RUNNING é aplicado na virada QUEUED→RUNNING, então dá um flash único nesse
+       evento e para. O "vivo" perpétuo da tela é o LED .running (breathe). */
+    animation: led-blink 1.4s var(--ease-out);
+  }
+  .run-status.QUEUED,
+  .run-status.RECOVERING { color: var(--amber); background: var(--amber-bg); }
+  .run-status.CANCELLED { color: var(--text-faint); background: var(--overlay); }
+}
+
+/* ============================================================
+   Vocabulário da F.4 (Issues) — portado 1:1 do protótipo:
+   grupos por status, rows, risk badges, detail, ledger, dialogs
+   e toasts (dialog/toast também servem F.5/F.6).
+   ============================================================ */
+@layer components {
+  .status-group {
+    margin-bottom: 26px;
+  }
+  .status-group-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 10px;
+    margin-bottom: 4px;
+  }
+  .status-group-head .name {
+    font-family: var(--font-chakra);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+  .status-group-head .count {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .row-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 130ms var(--ease-out), border-color 130ms var(--ease-out);
+    text-decoration: none;
+    color: inherit;
+  }
+  .row:hover {
+    background: var(--raised);
+    border-color: var(--border-soft);
+  }
+  .row:active {
+    background: var(--overlay);
+  }
+  .row-title {
+    flex: 1;
+    font-size: 13.5px;
+    font-weight: 450;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row-meta {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  .risk-badge {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: var(--r-sm);
+    flex-shrink: 0;
+    border: 1px solid transparent;
+  }
+  .risk-1,
+  .risk-2 {
+    color: var(--text-faint);
+    border-color: var(--border);
+  }
+  .risk-3 {
+    color: var(--amber);
+    border-color: var(--amber-a35);
+  }
+  .risk-4 {
+    color: var(--amber);
+    background: var(--amber-bg);
+    border-color: var(--amber-a40);
+  }
+  .risk-5 {
+    color: var(--coral);
+    background: var(--coral-bg);
+    border-color: var(--coral-a45);
+  }
+  /* #14: issue terminal (DONE/CANCELLED) muta o risco pro tom neutro dos níveis
+     baixos — o número R{n} continua legível, mas a cor de perigo (coral/amber)
+     some (risco fala de trabalho pendente). Dois seletores (0,2,0) vencem
+     .risk-3/4/5 (0,1,0) na mesma @layer, sem !important. */
+  .risk-badge.risk-muted {
+    color: var(--text-faint);
+    background: transparent;
+    border-color: var(--border);
+  }
+
+  .assignee-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    min-width: 74px;
+  }
+
+  /* --- detail --- */
+  .crumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-plex-mono);
+    font-size: 11.5px;
+    color: var(--text-faint);
+    margin-bottom: 14px;
+  }
+  .crumb a {
+    color: var(--text-faint);
+    text-decoration: none;
+    transition: color 120ms;
+  }
+  .crumb a:hover {
+    color: var(--phosphor);
+  }
+  .crumb svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 26px;
+    align-items: start;
+  }
+  .detail-title {
+    font-family: var(--font-chakra);
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    line-height: 1.3;
+  }
+  .detail-desc {
+    color: var(--text-dim);
+    font-size: 13.5px;
+    margin: 0 0 26px;
+    max-width: 62ch;
+  }
+
+  .props-panel {
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: sticky;
+    top: 28px;
+  }
+  .prop {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .prop-key {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .prop-val {
+    font-size: 12.5px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .prop-val.mono {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* #15: abaixo da largura de projeto o painel de props (280px) desce pra baixo
+     do conteúdo (uma coluna) e larga o sticky — nada de coluna espremida. */
+  @media (max-width: 820px) {
+    .detail-grid {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    .props-panel {
+      position: static;
+      top: auto;
+    }
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .status-pill .led {
+    width: 6px;
+    height: 6px;
+  }
+  .status-pill.OPEN {
+    color: var(--ice);
+    border-color: var(--ice-a40);
+  }
+  .status-pill.IN_PROGRESS {
+    color: var(--phosphor);
+    border-color: var(--phosphor-a40);
+    background: var(--phosphor-bg);
+  }
+  .status-pill.PENDING_REVIEW {
+    color: var(--amber);
+    border-color: var(--amber-a40);
+    background: var(--amber-bg);
+  }
+  .status-pill.BLOCKED {
+    color: var(--coral);
+    border-color: var(--coral-a45);
+    background: var(--coral-bg);
+  }
+  .status-pill.DONE {
+    color: var(--phosphor-dim);
+    border-color: var(--phosphor-dim-a40);
+  }
+  .status-pill.CANCELLED {
+    color: var(--text-faint);
+  }
+
+  /* --- ledger de runs --- */
+  .ledger {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 30px;
+  }
+  /* #6: o ledger é lista de LEITURA (histórico de runs) → row plano; o card
+     elevado fica reservado ao objeto primário. Mesma gramática do .row: fundo
+     transparente em repouso, superfície e borda-macia só no hover. */
+  .ledger-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 130ms var(--ease-out), border-color 130ms var(--ease-out);
+  }
+  .ledger-row:hover {
+    background: var(--raised);
+    border-color: var(--border-soft);
+  }
+  .ledger-err {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--coral);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+  }
+  .ledger-when {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .ledger-id {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  .action-bar {
+    display: flex;
+    gap: 9px;
+    margin-bottom: 26px;
+  }
+
+  /* ============ fila de review (F.5) ============ */
+  .filter-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 18px;
+  }
+  .filter-tab {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
+    transition: all 140ms var(--ease-out);
+  }
+  .filter-tab:hover {
+    color: var(--text);
+    border-color: var(--border-hot);
+  }
+  .filter-tab.on {
+    color: var(--phosphor);
+    border-color: var(--phosphor-a40);
+    background: var(--phosphor-bg);
+  }
+
+  .review-card {
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: center;
+    transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out);
+  }
+  /* #5: entrada por item + stagger removidos; o <View> anima a fila uma vez.
+     A saída (.leaving, aprovar/rejeitar) segue no transition acima — é EVENTO. */
+  .review-card.leaving {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  .review-title {
+    font-size: 14.5px;
+    font-weight: 500;
+    margin: 0 0 5px;
+  }
+  .review-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .review-title a:hover {
+    color: var(--phosphor);
+  }
+  .review-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .review-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .waiting-clock {
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ============ agents roster + detail (F.6) ============ */
+  .roster {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .roster-row {
+    display: grid;
+    grid-template-columns: 220px 1fr 130px 150px 90px;
+    gap: 14px;
+    align-items: center;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 12px 16px;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 140ms var(--ease-out), transform 140ms var(--ease-out);
+  }
+  /* #5: stagger nth-child removido — o roster de 14 tinha o 7º+ entrando com
+     delay 0 (cascata quebrada). O <View> (view-enter) já anima a lista uma vez. */
+  .roster-row:hover {
+    border-color: var(--border-hot);
+    transform: translateY(-1px);
+  }
+  .roster-id {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+  .roster-id .agent-dot {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--r-md);
+    font-size: 11px;
+  }
+  .roster-name {
+    font-family: var(--font-chakra);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.03em;
+  }
+  .roster-role {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .roster-doing {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .roster-cell {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  /* #15: a linha de 5 colunas fixas (soma ~646px) empilha em tela estreita —
+     id + status no topo, "fazendo" e cada métrica em faixa própria. Sem isto
+     estoura na horizontal já no rail. Áreas mapeadas pela ordem dos 5 filhos. */
+  @media (max-width: 820px) {
+    .roster-row {
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        "id     status"
+        "doing  doing"
+        "meta1  meta1"
+        "meta2  meta2";
+      gap: 8px 12px;
+    }
+    .roster-id {
+      grid-area: id;
+    }
+    .roster-doing {
+      grid-area: doing;
+      white-space: normal;
+    }
+    .roster-row > *:nth-child(3) {
+      grid-area: meta1;
+    }
+    .roster-row > *:nth-child(4) {
+      grid-area: meta2;
+    }
+    .roster-row > *:nth-child(5) {
+      grid-area: status;
+    }
+  }
+
+  .kv-panel {
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    margin-bottom: 24px;
+  }
+  .skill-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--phosphor-dim);
+    background: var(--phosphor-bg);
+    border: 1px solid var(--phosphor-a20);
+    padding: 4px 10px;
+    border-radius: 20px;
+  }
+  .skill-chip .v {
+    color: var(--text-faint);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .key-reveal {
+    font-family: var(--font-plex-mono);
+    font-size: 12px;
+    background: var(--terminal);
+    border: 1px solid var(--phosphor-a30);
+    color: var(--phosphor);
+    border-radius: var(--r-md);
+    padding: 10px 13px;
+    margin-top: 10px;
+    user-select: all;
+    animation: line-in 240ms var(--ease-out);
+    word-break: break-all;
+  }
+  .key-reveal small {
+    display: block;
+    color: var(--amber);
+    font-family: var(--font-plex);
+    font-size: 11px;
+    margin-top: 6px;
+    user-select: none;
+  }
+
+  /* --- dialogs (radix retematizado com o vocabulário do protótipo) --- */
+  .dialog-scrim {
+    position: fixed;
+    inset: 0;
+    background: oklch(0 0 0 / 0.55);
+    z-index: 50;
+    animation: dialog-scrim-in 200ms var(--ease-out);
+  }
+  .dialog-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--raised);
+    border: 1px solid var(--border-hot);
+    border-radius: var(--r-lg);
+    color: var(--text);
+    width: min(460px, 92vw);
+    box-shadow: 0 32px 80px oklch(0 0 0 / 0.55);
+    z-index: 51;
+    animation: dialog-in 200ms var(--ease-out);
+  }
+  .dialog-body {
+    padding: 20px 22px;
+  }
+  .dialog-title {
+    font-family: var(--font-chakra);
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    letter-spacing: 0.04em;
+  }
+  .dialog-text {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 0 0 16px;
+  }
+  .dialog-text .mono {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+  }
+  .dialog-panel textarea,
+  .dialog-panel input[type="text"] {
+    width: 100%;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text);
+    font-family: var(--font-plex);
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 140ms;
+  }
+  .dialog-panel textarea {
+    min-height: 84px;
+    resize: vertical;
+  }
+  .dialog-panel textarea:focus,
+  .dialog-panel input[type="text"]:focus {
+    border-color: var(--phosphor-dim);
+  }
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+    padding: 14px 22px 18px;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  /* --- seletor de MOTOR (F.7, ADR-0014): escolher o "cérebro" do agente. O trigger
+     casa com os campos do dialog; o item ativo acende o LED fósforo (verde = o motor
+     em uso), a janela de contexto é um readout em mono (a "spec" do motor). --- */
+  .motor-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text);
+    font-family: var(--font-plex);
+    font-size: 13px;
+    padding: 10px 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 140ms var(--ease-out), background 140ms var(--ease-out);
+  }
+  .motor-trigger:hover:not(:disabled) { border-color: var(--border-hot); }
+  .motor-trigger:disabled { opacity: 0.5; cursor: default; }
+  .motor-trigger[data-state="open"] { border-color: var(--phosphor-dim); }
+  .motor-trigger-label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .motor-trigger.is-placeholder .motor-trigger-label { color: var(--text-faint); }
+  .motor-trigger-chevron {
+    color: var(--text-faint);
+    flex-shrink: 0;
+    transition: transform 180ms var(--ease-out);
+  }
+  .motor-trigger[data-state="open"] .motor-trigger-chevron { transform: rotate(180deg); }
+
+  .motor-menu { min-width: 268px; max-width: 340px; }
+  .motor-item { justify-content: flex-start; }
+  .motor-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1.5px solid var(--border-hot);
+    background: transparent;
+    transition: background 160ms var(--ease-out), border-color 160ms var(--ease-out),
+      box-shadow 160ms var(--ease-out);
+  }
+  .motor-item.on .motor-dot {
+    background: var(--phosphor);
+    border-color: var(--phosphor);
+    box-shadow: 0 0 8px var(--phosphor-glow);
+  }
+  .motor-item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .motor-item.on .motor-item-label { color: var(--phosphor); }
+  .motor-item-ctx {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+
+  /* --- toasts --- */
+  .toast-zone {
+    position: fixed;
+    bottom: 22px;
+    right: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    z-index: 60;
+  }
+  .toast {
+    background: var(--raised);
+    border: 1px solid var(--border-hot);
+    border-left: 3px solid var(--phosphor);
+    border-radius: var(--r-md);
+    padding: 11px 16px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 16px 44px oklch(0 0 0 / 0.45);
+    animation: toast-in 240ms var(--ease-out);
+    transition: opacity 260ms var(--ease-out), transform 260ms var(--ease-out);
+  }
+  .toast.bad {
+    border-left-color: var(--coral);
+  }
+  .toast.leaving {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  .toast svg {
+    width: 14px;
+    height: 14px;
+    color: var(--phosphor);
+    flex-shrink: 0;
+  }
+  .toast.bad svg {
+    color: var(--coral);
+  }
+}
+
+/* ============================================================
+   Vocabulário da T.1-FE (Teams): biblioteca de moldes
+   (master-detail global) + org-chart React Flow. O canvas herda
+   a paleta do board — o CSS base do reactflow é reconciliado
+   aqui (zero tema default vazando).
+   ============================================================ */
+@layer components {
+  /* --- biblioteca de moldes: master-detail --- */
+  .moldes-grid {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+
+  /* #15: master-detail vira pilha (lista em cima, detalhe embaixo) quando não
+     cabem 300px + conteúdo. Rota global sem sidebar → media-query por viewport.
+     minmax(0,1fr) (não 1fr) pra a trilha encolher abaixo do min-content — senão
+     a lista de moldes estica a coluna e vaza (aqui não há board-main:min-width:0). */
+  @media (max-width: 720px) {
+    .moldes-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+  }
+
+  .molde-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 8px 11px;
+    border-radius: var(--r-md);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--font-plex-mono);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 130ms var(--ease-out), border-color 130ms var(--ease-out),
+      color 130ms var(--ease-out);
+  }
+  .molde-item:hover {
+    background: var(--raised);
+    color: var(--text);
+  }
+  .molde-item:active { transform: scale(0.99); }
+  .molde-item.on {
+    border-color: var(--phosphor-a20);
+    background: var(--phosphor-bg);
+    color: var(--phosphor);
+  }
+  .molde-item .selo-sistema { margin-left: auto; }
+
+  /* O selo dos 4 moldes semeados (diferencial #6 — "time pronto de prateleira"). */
+  .selo-sistema {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    font-family: var(--font-plex-mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--phosphor-dim);
+    border: 1px solid var(--phosphor-dim-a40);
+    border-radius: var(--r-sm);
+    padding: 2px 6px;
+  }
+  .selo-sistema.grande {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  /* Dialog mais largo (o compositor de skillset precisa respirar). */
+  .molde-dialog { width: min(560px, 94vw); }
+
+  /* install-state dos chips: INSTALLED = phosphor (o .skill-chip base); AVAILABLE = ice. */
+  .skill-chip.available {
+    color: var(--ice);
+    background: var(--ice-bg);
+    border-color: var(--ice-a30);
+  }
+  .skill-chip .chip-x {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    margin-left: 1px;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    opacity: 0.55;
+    cursor: pointer;
+    transition: opacity 120ms;
+  }
+  .skill-chip .chip-x:hover { opacity: 1; }
+
+  /* Gap do KnowAll: conhecimento SEM skill no catálogo — pendência de importação visível. */
+  .gap-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--amber);
+    background: var(--amber-bg);
+    border: 1px dashed var(--amber-a45);
+    padding: 4px 10px;
+    border-radius: 20px;
+  }
+  .gap-chip .v { color: var(--text-faint); }
+
+  /* --- savelog do molde (histórico de versões) --- */
+  /* #6: savelog é histórico de versões (leitura) → row plano. A versão CORRENTE
+     é o objeto primário da lista: mantém o card (raised + traço fósforo). As
+     históricas ficam planas; a opaca só esmaece mais. Hierarquia por elevação. */
+  .savelog-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    padding: 9px 14px;
+    margin-bottom: 8px;
+  }
+  .savelog-row.corrente {
+    background: var(--raised);
+    border-color: var(--phosphor-a30);
+  }
+  .savelog-row.opaca { opacity: 0.72; }
+  .savelog-when {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .version-badge {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--phosphor-dim);
+    border: 1px solid var(--phosphor-dim-a35);
+    border-radius: var(--r-sm);
+    padding: 2px 7px;
+    flex-shrink: 0;
+    min-width: 34px;
+    text-align: center;
+  }
+
+  /* filter-tab com ícone (toggle roster/organograma) — aditivo, texto-só continua igual. */
+  .filter-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .filter-tab svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  /* --- org-chart (team-canvas): React Flow com a paleta do board --- */
+  .team-canvas {
+    height: calc(100dvh - 250px);
+    min-height: 440px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    position: relative;
+    /* fundo levemente afundado — o blueprint grid do body continua visível por trás */
+    background: var(--canvas-sunken);
+  }
+
+  .org-node {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 10px 12px 8px;
+    transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+  }
+  .org-node.running {
+    border-color: var(--phosphor-a40);
+    box-shadow: 0 0 18px var(--phosphor-a08);
+  }
+  .org-node.blocked { border-color: var(--coral-a45); }
+  .org-node.queued { border-color: var(--amber-a35); }
+  .org-node-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .org-node-name {
+    font-family: var(--font-chakra);
+    font-weight: 600;
+    font-size: 13.5px;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .org-node-role {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .org-node-foot {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .org-node-foot .motor {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .org-node-foot .pin {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--phosphor-dim);
+    flex-shrink: 0;
+  }
+
+  /* --- T.2: canvas editável — listra do time, menu de composição (⋮) e régua de times --- */
+  .org-node { position: relative; }
+  .org-node-time {
+    position: absolute;
+    top: 0;
+    left: 10px;
+    right: 10px;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    opacity: 0.85;
+  }
+  .org-node-menu {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 130ms var(--ease-out), color 130ms var(--ease-out);
+  }
+  .org-node-menu:hover,
+  .org-node-menu[data-state="open"] {
+    background: var(--overlay);
+    color: var(--text);
+  }
+  .org-node-arquiteto { color: var(--phosphor-dim); }
+  .org-node.dragging,
+  .react-flow__node.dragging .org-node {
+    border-color: var(--phosphor-dim);
+    box-shadow: 0 16px 40px oklch(0 0 0 / 0.5);
+  }
+
+  .team-rail {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .team-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: var(--r-md);
+    padding: 5px 11px;
+  }
+  .team-chip .led {
+    width: 6px;
+    height: 6px;
+  }
+  .team-chip.travado { color: var(--amber); }
+  .team-chip-gate {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--amber);
+    background: var(--amber-bg);
+    border-radius: var(--r-sm);
+    padding: 1px 5px;
+  }
+  .team-rail .btn { margin-left: auto; }
+
+}
+
+/* reactflow reconciliado: aresta = linha de comando; controles/attribution no vocabulário do
+   board. FORA de @layer de propósito — o style.css do reactflow entra sem layer, e CSS sem layer
+   vence qualquer layer; aqui empatamos a camada e vencemos pela ordem/especificidade. */
+.team-canvas .react-flow__edge-path {
+  stroke: var(--border-hot);
+  stroke-width: 1.5;
+}
+.team-canvas .react-flow__handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.team-canvas .react-flow__controls {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.35);
+}
+.team-canvas .react-flow__controls-button {
+  background: var(--raised);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  fill: currentColor;
+}
+.team-canvas .react-flow__controls-button:hover {
+  background: var(--overlay);
+  color: var(--text);
+}
+.team-canvas .react-flow__attribution {
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes line-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes feed-flash {
+  0% {
+    background: var(--phosphor-bg);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes led-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 10px var(--phosphor-glow), 0 0 3px var(--phosphor);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 4px var(--phosphor-glow);
+  }
+}
+@keyframes led-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* entrada de view (toda superfície) e de dialog/dropdown */
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* backdrop do dialog entra junto com o painel (paridade com o .drawer-scrim,
+   que já faz fade via transition); reduced-motion zera pelo seletor * abaixo */
+@keyframes dialog-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ============================================================
+   Vocabulário da T.3-FE: a Central de Missão DOCADA — zona de
+   times (grupos colapsáveis + chips-filtro) à esquerda e a
+   coluna do CEO (abas por assunto, thread com approval ancorada,
+   composer) à direita. Espelha o mockup aprovado
+   prototipos/ceo-conversa-mockup.html sobre os tokens do board.
+   ============================================================ */
+@layer components {
+  /* --- as duas zonas (mockup §1: observar e dirigir sem trocar de tela) --- */
+  .central-docada {
+    display: grid;
+    grid-template-columns: minmax(360px, 5fr) minmax(430px, 7fr);
+    height: 100%;
+    min-height: 0;
+    /* #5: a Central anima UMA vez na montagem (paridade com o view-enter das
+       demais superfícies) — substitui a entrada por card que fazia cascata. */
+    animation: view-enter 240ms var(--ease-out);
+  }
+  @media (max-width: 1099px) {
+    .central-docada {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+    .zona-ceo {
+      min-height: 78vh;
+    }
+  }
+  .zona {
+    min-height: 0;
+    /* min-width:0 completa o empilhamento <1099 (P0 #1/#15): sem ele os itens
+       do grid 1fr não encolhem abaixo do min-content e a zona (com o feed
+       dentro) vaza horizontal no mobile. Inerte no desktop — lá as trilhas são
+       minmax(360px…)/(430px…). NÃO é o colapso do mini-terminal (isso é P1/#2). */
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .zona-times {
+    border-right: 1px solid var(--border-soft);
+  }
+  .zona-ceo {
+    background: var(--bg-deep);
+  }
+  .zona-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 18px 20px 10px;
+  }
+  .zona-head h1 {
+    font-family: var(--font-plex-mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin: 0;
+  }
+  .zona-contador {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .zona-times-scroll {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    padding: 2px 16px 24px;
+  }
+
+  /* --- chips-filtro de time (mockup §6): ligam/desligam grupos --- */
+  .filtro-times {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding: 0 20px 12px;
+  }
+  .filtro-times .filter-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .filtro-times .filter-tab .led {
+    width: 6px;
+    height: 6px;
+  }
+  .filtro-times .filter-tab.on .led {
+    background: var(--phosphor);
+    box-shadow: 0 0 6px var(--phosphor-glow);
+  }
+  .filtro-times .filter-tab.vazio {
+    opacity: 0.65;
+    font-style: italic;
+  }
+
+  /* --- grupos por time (mockup §6): cabeçalho recolhe, tally reage --- */
+  .grupo-time {
+    margin-bottom: 6px;
+  }
+  .grupo-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 6px;
+    cursor: pointer;
+    user-select: none;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    color: inherit;
+  }
+  .grupo-caret {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    width: 10px;
+    flex-shrink: 0;
+    transition: transform 180ms var(--ease-out);
+  }
+  .grupo-time[data-aberto="false"] .grupo-caret {
+    transform: rotate(-90deg);
+  }
+  .grupo-time[data-aberto="false"] .grupo-corpo {
+    display: none;
+  }
+  .grupo-hue {
+    width: 3px;
+    height: 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    background: var(--border-hot);
+  }
+  .grupo-nome {
+    font-family: var(--font-plex-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .grupo-lead {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .grupo-lead b {
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  .grupo-tally {
+    margin-left: auto;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .grupo-corpo {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 2px 0 8px 19px;
+  }
+  /* (P2 #18: o antigo .grupo-vazio virou .empty-state.compact — ui/empty-state.tsx) */
+
+  /* --- abas de chat por assunto (mockup §3): mesmo CEO, muda o assunto --- */
+  .ceo-abas {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 12px 16px 0;
+    border-bottom: 1px solid var(--border-soft);
+    flex-shrink: 0;
+  }
+  .ceo-aba {
+    position: relative;
+    font-family: var(--font-plex-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    padding: 8px 13px;
+    color: var(--text-faint);
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 130ms var(--ease-out);
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ceo-aba:hover {
+    color: var(--text-dim);
+  }
+  .ceo-aba[data-active="true"] {
+    color: var(--phosphor);
+    border-bottom-color: var(--phosphor);
+  }
+  .ceo-aba-badge {
+    position: absolute;
+    top: 1px;
+    right: 2px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--amber);
+    color: var(--on-amber);
+    font-size: 9px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+    animation: badge-in 240ms var(--ease-out) backwards;
+  }
+  .ceo-carta {
+    margin-left: auto;
+    margin-bottom: 2px;
+  }
+
+  /* --- a thread (mockup §5: só o que o CEO decide contar) --- */
+  .ceo-thread {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 20px 18px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .sys-linha {
+    text-align: center;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .msg {
+    display: flex;
+    gap: 11px;
+    max-width: 92%;
+  }
+  .msg.entrando {
+    animation: msg-in 240ms var(--ease-out) backwards;
+  }
+  .msg-quem {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--r-md);
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--phosphor);
+    color: var(--on-phosphor);
+    /* #7: avatar do CEO não brilha estático — glow só quando há trabalho vivo. */
+  }
+  .msg.minha {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+  .msg.minha .msg-quem {
+    background: var(--overlay);
+    color: var(--text-dim);
+    box-shadow: none;
+  }
+  .balao {
+    background: var(--raised);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm) var(--r-lg) var(--r-lg) var(--r-lg);
+    padding: 11px 14px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .msg.minha .balao {
+    background: var(--msg-mine);
+    border-color: var(--msg-mine-line);
+    border-radius: var(--r-lg) var(--r-sm) var(--r-lg) var(--r-lg);
+  }
+  .msg.falhou .balao {
+    border-color: var(--coral-a50);
+    background: linear-gradient(180deg, var(--coral-bg), transparent 70%), var(--raised);
+  }
+  .balao-pe {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 7px;
+    white-space: normal;
+  }
+  .balao-hora {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.05em;
+  }
+  .balao-proposta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--phosphor-soft);
+    border: 1px dashed var(--phosphor-soft-a45);
+    border-radius: var(--r-md);
+    padding: 2px 8px;
+    white-space: normal;
+  }
+  .link-trace {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0;
+    transition: color 130ms var(--ease-out);
+  }
+  .link-trace:hover {
+    color: var(--phosphor-soft);
+  }
+
+  /* CEO pensando (turno PENDING): a resposta chega pelo polling */
+  .pensando {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    padding: 4px 0;
+  }
+  .pensando i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--phosphor-soft);
+    animation: pensando-pulse 1.2s var(--ease-in-out) infinite;
+  }
+  .pensando i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .pensando i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  /* --- approval ANCORADA na thread (mockup §4): o marco no ponto do tempo --- */
+  .aprovacao {
+    border: 1px solid var(--approval-line);
+    border-radius: var(--r-lg);
+    background: linear-gradient(180deg, var(--amber-bg), transparent 60%), var(--raised);
+    overflow: hidden;
+    max-width: 96%;
+    animation: msg-in 240ms var(--ease-out) backwards;
+  }
+  .aprovacao[data-status="APPROVED"],
+  .aprovacao[data-status="REJECTED"] {
+    border-color: var(--border);
+    background: var(--raised);
+  }
+  .aprovacao-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .aprovacao-k {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber);
+    white-space: nowrap;
+  }
+  .aprovacao[data-status="APPROVED"] .aprovacao-k {
+    color: var(--phosphor-soft);
+  }
+  .aprovacao[data-status="REJECTED"] .aprovacao-k {
+    color: var(--coral);
+  }
+  .aprovacao-titulo {
+    font-size: 12.5px;
+    color: var(--text);
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .aprovacao-area {
+    margin-left: auto;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .aprovacao-corpo {
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .aprovacao-acao {
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .aprovacao-acao b {
+    color: var(--phosphor-soft);
+    font-weight: 600;
+  }
+  .aprovacao-resumo {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+  .aprovacao-meta {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .aprovacao-async {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 15px;
+    background: var(--phosphor-bg);
+    border-top: 1px solid var(--border-soft);
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--phosphor-soft);
+  }
+  .aprovacao-acoes {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 12px 15px;
+    border-top: 1px solid var(--border-soft);
+  }
+  .aprovacao-acoes .link-trace {
+    margin-left: auto;
+  }
+
+  /* o GRILL (ADR-0020): 422 não é erro — é o escriba-que-insiste */
+  .grill {
+    border-top: 1px dashed var(--grill-line);
+    background: linear-gradient(180deg, var(--amber-bg), transparent 85%);
+    padding: 12px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    animation: msg-in 240ms var(--ease-out) backwards;
+  }
+  .grill-rodada {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+  .grill-probe {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+    border-left: 2px solid var(--amber);
+    padding-left: 10px;
+  }
+  .grill textarea,
+  .composer textarea {
+    resize: none;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text);
+    font-family: var(--font-plex), sans-serif;
+    font-size: 13px;
+    padding: 10px 12px;
+    line-height: 1.5;
+    width: 100%;
+  }
+  .grill textarea:focus,
+  .composer textarea:focus {
+    outline: none;
+    border-color: var(--textarea-focus);
+  }
+  .grill-acoes {
+    display: flex;
+    gap: 8px;
+  }
+
+  .aprovacao-decidida {
+    padding: 11px 15px;
+    border-top: 1px solid var(--border-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .aprovacao-veredito {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--phosphor-soft);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .aprovacao[data-status="REJECTED"] .aprovacao-veredito {
+    color: var(--coral);
+  }
+  .aprovacao-racional {
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-dim);
+  }
+  .aprovacao-racional b {
+    color: var(--text-faint);
+    font-weight: 500;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* --- composer (mockup §2: a caixa existe SÓ aqui) --- */
+  .composer {
+    border-top: 1px solid var(--border-soft);
+    padding: 12px 16px 14px;
+    background: var(--bg);
+    flex-shrink: 0;
+  }
+  .composer-linha {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .composer textarea {
+    flex: 1;
+    height: 44px;
+    max-height: 120px;
+    font-size: 13.5px;
+    padding: 11px 13px;
+  }
+  .composer-enviar {
+    background: var(--phosphor);
+    color: var(--on-phosphor);
+    border: none;
+    border-radius: var(--r-md);
+    width: 44px;
+    height: 44px;
+    font-size: 17px;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    transition: transform 140ms var(--ease-out), filter 140ms var(--ease-out);
+    /* #7: botão de envio sem glow em repouso (o :disabled já zerava a sombra). */
+  }
+  .composer-enviar:hover {
+    filter: brightness(1.08);
+  }
+  .composer-enviar:active {
+    transform: scale(0.95);
+  }
+  .composer-enviar:disabled {
+    background: var(--overlay);
+    color: var(--text-faint);
+    cursor: default;
+    box-shadow: none;
+  }
+  .composer-hint {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 7px;
+    letter-spacing: 0.04em;
+  }
+
+  /* corpo de memória (carta / report do Ledger) nos dialogs */
+  .memoria-corpo {
+    font-family: var(--font-plex-mono);
+    font-size: 11.5px;
+    line-height: 1.75;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--terminal);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg);
+    padding: 14px 16px;
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+}
+
+/* mensagens/cards APPENDADOS entram deslizando (o snapshot inicial não anima
+   — espelho do line-in do MiniTerm); badge nasce com presença física */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes pensando-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* ============ Preview real (F.9, ADR-0021) ============
+   O palco onde o protótipo do agente RODA (o browser do board executa). A
+   moldura é chrome de browser fake (dots + label) — material honesto: isto
+   É uma janela executando código de agente, dentro de um sandbox opaco. */
+@layer components {
+  .preview-frame {
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    margin-bottom: 18px;
+    animation: card-enter 280ms var(--ease-out) backwards;
+  }
+  .preview-frame-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--overlay);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .preview-frame-bar .spacer {
+    flex: 1;
+  }
+  .preview-frame-dots {
+    display: inline-flex;
+    gap: 5px;
+  }
+  .preview-frame-dots i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border-hot);
+    opacity: 0.7;
+  }
+  .preview-frame-label {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+  }
+  .preview-device-toggle {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+  }
+  .device-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: var(--r-sm);
+    color: var(--text-faint);
+    cursor: pointer;
+    transition: color 160ms var(--ease-out), background 160ms var(--ease-out),
+      transform 160ms var(--ease-out);
+  }
+  .device-btn:active {
+    transform: scale(0.96);
+  }
+  .device-btn.on {
+    color: var(--ice);
+    background: var(--raised);
+  }
+  .preview-stage {
+    display: flex;
+    justify-content: center;
+    padding: 14px;
+    background: radial-gradient(ellipse 70% 90% at 50% 0%, var(--stage-glow), transparent),
+      var(--bg-deep);
+  }
+  .preview-wait {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 180px;
+    font-family: var(--font-plex-mono);
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  .preview-canvas {
+    /* o canvas emula o default de um .html aberto no browser: fundo branco;
+       protótipo dark pinta o próprio fundo por cima */
+    background: #fff;
+    border: 1px solid var(--border-hot);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    width: 100%;
+  }
+  .preview-canvas iframe {
+    display: block;
+    width: 100%;
+    height: 520px;
+    border: 0;
+  }
+  .preview-canvas.mobile {
+    width: min(390px, 100%);
+    border-radius: 26px;
+    border-width: 2px;
+    position: relative;
+  }
+  .preview-canvas.mobile::before {
+    /* o notch da moldura mobile — device de verdade, não desktop espremido */
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 84px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--notch);
+    z-index: 1;
+    pointer-events: none;
+  }
+  .preview-canvas.mobile iframe {
+    height: 660px;
+  }
+
+  .preview-versions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .version-pill {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    padding: 3px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: color 160ms var(--ease-out), border-color 160ms var(--ease-out),
+      background 160ms var(--ease-out), transform 160ms var(--ease-out);
+  }
+  .version-pill:hover {
+    border-color: var(--border-hot);
+  }
+  .version-pill:active {
+    transform: scale(0.95);
+  }
+  .version-pill.on {
+    color: var(--phosphor);
+    background: var(--phosphor-bg);
+    border-color: var(--phosphor-glow);
+  }
+  .preview-meta {
+    margin-left: auto;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  /* O embed no card da Review ocupa a linha inteira do grid do card. */
+  .review-preview {
+    grid-column: 1 / -1;
+  }
+  .review-preview .preview-frame {
+    margin-bottom: 0;
+  }
+  .review-no-preview {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    color: var(--text-faint);
+    border: 1px dashed var(--border-soft);
+    border-radius: var(--r-md);
+    padding: 8px 12px;
+  }
+
+  /* Badge "preview" do card do Mission Control — só ícone/texto, zero iframe
+     no grid (cards leves, ADR-0013). "novo" = capturado na última hora. */
+  .preview-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border-soft);
+    color: var(--ice);
+    transition: border-color 160ms var(--ease-out), color 160ms var(--ease-out),
+      box-shadow 160ms var(--ease-out);
+  }
+  .preview-badge:hover {
+    border-color: var(--border-hot);
+  }
+  .preview-badge.novo {
+    color: var(--phosphor);
+    background: var(--phosphor-bg);
+    border-color: var(--phosphor-glow);
+    /* #7: "novo" sinaliza por cor/borda fósforo, sem glow decorativo. */
+  }
+}
+
+/* ============ Servidor de preview (F.10, ADR-0023) ============
+   O app VIVO rodando na porta do loopback (origin próprio). Dots verdes na
+   moldura = processo de verdade do outro lado; TTL sempre visível (o
+   servidor é efêmero por design); falha de subida é LEGÍVEL: motivo + tail. */
+@layer components {
+  .preview-frame-dots.live i {
+    background: var(--phosphor);
+    opacity: 0.9;
+    box-shadow: 0 0 6px var(--phosphor-bg);
+  }
+  .server-open-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 160ms var(--ease-out);
+  }
+  .server-open-link:hover {
+    color: var(--text);
+  }
+  .preview-canvas.server-live iframe {
+    background: #fff;
+  }
+
+  .server-declared {
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--bg-deep);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .server-declared .server-port {
+    color: var(--text-faint);
+  }
+
+  .server-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .server-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .server-ttl {
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+  }
+  .btn.server-stop:hover {
+    border-color: var(--coral);
+    color: var(--coral);
+  }
+
+  .server-failure {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    border: 1px solid var(--coral-bg);
+    border-left: 2px solid var(--coral);
+    border-radius: var(--r-md);
+    padding: 10px 12px;
+    background: var(--coral-bg);
+  }
+  .server-tail {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--text-dim);
+    background: var(--bg-deep);
+    border-radius: var(--r-md);
+    padding: 8px 10px;
+    overflow-x: auto;
+    max-height: 160px;
+  }
+  .server-warning {
+    font-size: 11px;
+    color: var(--amber);
+    border: 1px dashed var(--border-soft);
+    border-radius: var(--r-md);
+    padding: 6px 10px;
+    margin-bottom: 8px;
+  }
+
+  /* O embed no card da Review ocupa a linha inteira, como o irmão v1. */
+  .review-server {
+    grid-column: 1 / -1;
+  }
+  .review-server .server-controls {
+    margin-bottom: 0;
+  }
+
+  /* Tela Servidores: linhas de supervisão, mesma gramática das listas do board. */
+  .servers-list {
+    list-style: none;
+    margin: 0 0 22px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .server-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 10px 14px;
+    animation: card-enter 280ms var(--ease-out) backwards;
+  }
+  .server-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border-hot);
+    flex-shrink: 0;
+  }
+  .server-led.live {
+    background: var(--phosphor);
+    box-shadow: 0 0 8px var(--phosphor-bg);
+  }
+  .server-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+  .server-issue {
+    font-size: 13px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .server-issue:hover {
+    text-decoration: underline;
+  }
+  .server-row-meta {
+    font-size: 11px;
+    color: var(--text-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* (P2 #18: o antigo .servers-empty virou .empty-state.compact — ui/empty-state.tsx) */
+
+  /* F.13 (ADR-0027): o thumbnail DURÁVEL do app v2 — um PNG inerte, servido direto
+     num <img> (sem sandbox/iframe). "full" na seção Servidor da Issue; "compact"
+     como avatar nas linhas da tela Servidores. */
+  .preview-thumb {
+    margin: 12px 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .preview-thumb img {
+    display: block;
+    width: 100%;
+    max-width: 520px;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+    background: var(--bg-deep);
+  }
+  .preview-thumb-cap {
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+  }
+  .preview-thumb.compact {
+    margin: 0;
+    flex-shrink: 0;
+  }
+  .preview-thumb.compact img {
+    width: 72px;
+    height: 46px;
+    max-width: none;
+    object-fit: cover;
+    object-position: top left;
+    border-radius: var(--r-sm);
+  }
+}
+
+/* ============================================================
+   #11a — tooltip contextual dos 8 termos autorais. O painel segue o mesmo padrão
+   flutuante do dropdown (bg --overlay, borda quente, a MESMA sombra preta reusada
+   — exceção herdada oklch(0 0 0 / a), zero cor nova p/ o guard C3) mas em PROSA
+   sans 12px text-dim: gate C5 (nunca label mono). z-56 fica ACIMA do dropdown (55)
+   e do dialog-panel (51) — "motor" mora num DropdownMenuItem do hire dialog —, e
+   abaixo do toast (60). A .termo pontilhada é a ÚNICA marca visual, restrita aos
+   ~6 sites de PROSA (filtro de subtração C1); os sites via title= não a ganham.
+   ============================================================ */
+@layer components {
+  .tooltip-panel {
+    z-index: 56;
+    max-width: 264px;
+    padding: 7px 10px;
+    background: var(--overlay);
+    border: 1px solid var(--border-hot);
+    border-radius: var(--r-md);
+    font-family: var(--font-plex);
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-dim);
+    box-shadow: 0 16px 44px oklch(0 0 0 / 0.45);
+    animation: dialog-in 140ms var(--ease-out);
+  }
+  .termo {
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: var(--text-faint);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    cursor: help;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .led.running,
+  .led.queued,
+  .pensando i {
+    animation: none;
+  }
+}

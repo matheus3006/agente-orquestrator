@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CEO · Central de Missão — protótipo</title>
+<style>
+  :root {
+    --bg: oklch(0.145 0.012 245);
+    --bg-deep: oklch(0.115 0.012 245);
+    --raised: oklch(0.175 0.014 245);
+    --overlay: oklch(0.21 0.016 245);
+    --terminal: oklch(0.115 0.018 165);
+    --border: oklch(0.3 0.018 245 / 0.55);
+    --border-soft: oklch(0.26 0.016 245 / 0.4);
+    --text: oklch(0.93 0.008 230);
+    --dim: oklch(0.7 0.014 235);
+    --faint: oklch(0.5 0.015 240);
+    --phosphor: oklch(0.86 0.215 152);
+    --phosphor-soft: oklch(0.74 0.16 152);
+    --phosphor-bg: oklch(0.86 0.215 152 / 0.09);
+    --phosphor-glow: oklch(0.86 0.215 152 / 0.35);
+    --amber: oklch(0.83 0.15 80);
+    --amber-bg: oklch(0.83 0.15 80 / 0.1);
+    --coral: oklch(0.71 0.185 28);
+    --coral-bg: oklch(0.71 0.185 28 / 0.11);
+    --ice: oklch(0.79 0.075 235);
+    --idle: oklch(0.55 0.02 240);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    height: 100vh; overflow: hidden; -webkit-font-smoothing: antialiased;
+    background-image: radial-gradient(oklch(0.2 0.02 165 / 0.15) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; }
+  .eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); }
+  .mono { font-family: var(--mono); }
+
+  /* ---- top strip ---- */
+  .topbar { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--border-soft); background: var(--bg-deep); }
+  .wordmark { font-family: var(--mono); font-weight: 700; letter-spacing: 0.14em; font-size: 14px; color: var(--phosphor); }
+  .wordmark b { color: var(--coral); font-weight: 700; }
+  .glyph { width: 22px; height: 22px; border: 1.5px solid var(--phosphor); border-radius: 6px; display: grid; place-items: center; }
+  .glyph::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--phosphor); box-shadow: 0 0 8px var(--phosphor-glow); }
+  .co-chip { display: flex; align-items: center; gap: 8px; padding: 5px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--raised); font-size: 13px; }
+  .co-chip .badge { width: 22px; height: 22px; border-radius: 5px; background: oklch(0.5 0.1 165); display: grid; place-items: center; font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--bg); }
+  .topbar .spacer { flex: 1; }
+  .poll { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .poll b { color: var(--phosphor-soft); }
+
+  /* ---- two zones ---- */
+  .zones { flex: 1; display: grid; grid-template-columns: minmax(360px, 5fr) minmax(420px, 7fr); min-height: 0; }
+  .zone { min-height: 0; display: flex; flex-direction: column; }
+  .zone.teams { border-right: 1px solid var(--border-soft); }
+  .zone-head { display: flex; align-items: baseline; gap: 12px; padding: 14px 18px 10px; }
+  .zone-head h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .zone-head .count { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+
+  /* ---- team filter chips ---- */
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 18px 12px; }
+  .chip { font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--raised); color: var(--dim); cursor: pointer; user-select: none; transition: all 0.18s; display: inline-flex; gap: 6px; align-items: center; }
+  .chip .led { width: 6px; height: 6px; border-radius: 50%; background: var(--idle); }
+  .chip[data-on="true"] { color: var(--phosphor); border-color: oklch(0.5 0.12 152 / 0.6); background: var(--phosphor-bg); }
+  .chip[data-on="true"] .led { background: var(--phosphor); box-shadow: 0 0 6px var(--phosphor-glow); }
+  .chip[data-empty="true"] { opacity: 0.6; font-style: italic; }
+
+  /* ---- team groups ---- */
+  .groups { overflow-y: auto; padding: 2px 14px 20px; flex: 1; }
+  .group { margin-bottom: 6px; }
+  .group-head { display: flex; align-items: center; gap: 9px; padding: 9px 6px; cursor: pointer; user-select: none; }
+  .group-head .caret { font-family: var(--mono); font-size: 10px; color: var(--faint); width: 10px; transition: transform 0.18s; }
+  .group[data-open="false"] .caret { transform: rotate(-90deg); }
+  .group[data-open="false"] .group-body { display: none; }
+  .group-name { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; color: var(--text); font-weight: 600; }
+  .group-lead { font-size: 11px; color: var(--faint); }
+  .group-lead b { color: var(--dim); font-weight: 500; }
+  .group-tally { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--faint); }
+
+  .card { position: relative; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--raised); padding: 11px 13px; margin: 5px 0; }
+  .card-top { display: flex; align-items: center; gap: 9px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.running { background: var(--phosphor); box-shadow: 0 0 8px var(--phosphor-glow); animation: pulse 1.8s var(--ease, ease) infinite; }
+  .dot.queued { background: var(--amber); }
+  .dot.idle { background: var(--idle); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+  .card-name { font-size: 13.5px; font-weight: 600; }
+  .card-role { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+  .card-avatar { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--bg); background: oklch(0.55 0.09 200); flex: none; }
+  .card-step { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-top: 7px; padding-left: 18px; border-left: 2px solid var(--border); line-height: 1.5; }
+  .card-step .k { color: var(--phosphor-soft); }
+  .transcript-link { font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; color: var(--faint); cursor: pointer; margin-top: 8px; display: inline-flex; gap: 5px; align-items: center; }
+  .transcript-link:hover { color: var(--phosphor-soft); }
+  .transcript { display: none; margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--faint); line-height: 1.7; }
+  .card[data-trace="true"] .transcript { display: block; }
+  .ro-tag { position: absolute; top: 10px; right: 12px; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.1em; color: var(--faint); opacity: 0.7; }
+  .empty { border: 1px dashed var(--border); border-radius: 10px; padding: 16px; text-align: center; color: var(--faint); font-size: 12.5px; margin: 5px 0; }
+  .empty b { color: var(--phosphor-soft); font-weight: 600; }
+
+  /* ---- CEO column ---- */
+  .zone.ceo { background: var(--bg-deep); }
+  .tabs { display: flex; gap: 2px; padding: 12px 16px 0; border-bottom: 1px solid var(--border-soft); }
+  .tab { position: relative; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em; padding: 8px 13px; color: var(--faint); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab[data-active="true"] { color: var(--phosphor); border-bottom-color: var(--phosphor); }
+  .tab .pending { position: absolute; top: 3px; right: 2px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--amber); color: var(--bg); font-size: 9px; font-weight: 700; display: grid; place-items: center; }
+  .tab.add { color: var(--faint); font-weight: 700; }
+
+  .thread { flex: 1; overflow-y: auto; padding: 20px 18px 8px; display: flex; flex-direction: column; gap: 16px; }
+  .thread[data-tab="dev"] .msg, .thread[data-tab="dev"] .approval, .thread[data-tab="dev"] .sysline { display: none; }
+  .thread.is-dev .msg, .thread.is-dev .approval, .thread.is-dev .sysline { display: none; }
+  .msg { display: flex; gap: 11px; max-width: 92%; }
+  .msg .who { width: 30px; height: 30px; border-radius: 8px; flex: none; display: grid; place-items: center; font-family: var(--mono); font-size: 11px; font-weight: 700; background: var(--phosphor); color: var(--bg); box-shadow: 0 0 12px var(--phosphor-glow); }
+  .bubble { background: var(--raised); border: 1px solid var(--border-soft); border-radius: 4px 12px 12px 12px; padding: 11px 14px; font-size: 13.5px; line-height: 1.55; color: var(--text); }
+  .bubble .time { display: block; font-family: var(--mono); font-size: 9.5px; color: var(--faint); margin-top: 7px; letter-spacing: 0.05em; }
+  .bubble b { color: var(--phosphor-soft); font-weight: 600; }
+  .msg.me { align-self: flex-end; flex-direction: row-reverse; }
+  .msg.me .who { background: var(--overlay); color: var(--dim); box-shadow: none; }
+  .msg.me .bubble { background: oklch(0.2 0.03 200 / 0.5); border-color: oklch(0.4 0.05 210 / 0.4); border-radius: 12px 4px 12px 12px; }
+
+  .sysline { text-align: center; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--faint); text-transform: uppercase; }
+  .sysline span { padding: 0 10px; }
+
+  /* ---- approval card anchored in thread ---- */
+  .approval { border: 1px solid oklch(0.5 0.12 80 / 0.5); border-radius: 12px; background: linear-gradient(180deg, var(--amber-bg), transparent 60%), var(--raised); overflow: hidden; }
+  .approval-head { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--border-soft); }
+  .approval-head .k { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); }
+  .approval-head .subj { font-size: 12.5px; color: var(--dim); margin-left: auto; }
+  .report { padding: 13px 15px; }
+  .report h4 { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: var(--phosphor-soft); text-transform: uppercase; margin: 12px 0 5px; }
+  .report h4:first-child { margin-top: 0; }
+  .report p, .report li { font-size: 12.5px; line-height: 1.6; color: var(--dim); }
+  .report ul { margin-left: 17px; }
+  .report .risk { color: var(--amber); }
+  .approval-async { display: flex; align-items: center; gap: 8px; padding: 9px 15px; background: var(--phosphor-bg); border-top: 1px solid var(--border-soft); font-family: var(--mono); font-size: 10.5px; color: var(--phosphor-soft); }
+  .approval-actions { display: flex; gap: 9px; padding: 12px 15px; border-top: 1px solid var(--border-soft); }
+  .approval-actions .transcript-link { margin: 0; align-self: center; margin-left: auto; }
+
+  .btn { font-family: var(--sans); font-size: 12.5px; font-weight: 600; padding: 8px 15px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; transition: all 0.15s; }
+  .btn.approve { background: var(--phosphor); color: var(--bg); }
+  .btn.approve:hover { filter: brightness(1.08); }
+  .btn.reject { background: transparent; border-color: var(--border); color: var(--dim); }
+  .btn.reject:hover { border-color: var(--coral); color: var(--coral); }
+  .decided { padding: 12px 15px; border-top: 1px solid var(--border-soft); font-family: var(--mono); font-size: 11px; color: var(--phosphor-soft); display: none; align-items: center; gap: 8px; }
+  .approval[data-decided="true"] .approval-actions { display: none; }
+  .approval[data-decided="true"] .decided { display: flex; }
+
+  /* ---- composer (SÓ na coluna do CEO) ---- */
+  .composer { border-top: 1px solid var(--border-soft); padding: 12px 16px 14px; background: var(--bg); }
+  .composer .row { display: flex; gap: 10px; align-items: flex-end; }
+  .composer textarea { flex: 1; resize: none; background: var(--raised); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: var(--sans); font-size: 13.5px; padding: 11px 13px; line-height: 1.5; height: 44px; max-height: 120px; }
+  .composer textarea:focus { outline: none; border-color: oklch(0.5 0.12 152 / 0.6); }
+  .composer textarea::placeholder { color: var(--faint); }
+  .send { background: var(--phosphor); color: var(--bg); border: none; border-radius: 10px; width: 44px; height: 44px; font-size: 17px; cursor: pointer; flex: none; display: grid; place-items: center; }
+  .composer .hint { font-family: var(--mono); font-size: 9.5px; color: var(--faint); margin-top: 7px; letter-spacing: 0.04em; }
+
+  ::-webkit-scrollbar { width: 9px; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9px; } ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP STRIP -->
+  <div class="topbar">
+    <div class="glyph"></div>
+    <div class="wordmark">ORQUESTRA<b>DOR</b></div>
+    <div class="co-chip"><span class="badge">TD</span> Teams Demo</div>
+    <span class="eyebrow" style="margin-left:6px">CENTRAL DE MISSÃO</span>
+    <div class="spacer"></div>
+    <div class="poll">poll <b>2.0s</b> · <b>23</b>ms · pg16 · board <b>matheus</b></div>
+  </div>
+
+  <!-- TWO ZONES -->
+  <div class="zones">
+
+    <!-- ================= LEFT: times (read-only) ================= -->
+    <div class="zone teams">
+      <div class="zone-head">
+        <h2>Times</h2>
+        <span class="count" id="counter">3 grupos · 6 agentes</span>
+      </div>
+
+      <!-- filtro: chips ligam/desligam -->
+      <div class="chips" id="chips">
+        <div class="chip" data-team="lideranca" data-on="true"><span class="led"></span>Liderança</div>
+        <div class="chip" data-team="frontend" data-on="true"><span class="led"></span>Frontend</div>
+        <div class="chip" data-team="backend" data-on="true"><span class="led"></span>Backend</div>
+        <div class="chip" data-team="marketing" data-on="false" data-empty="true"><span class="led"></span>Marketing · não montado</div>
+      </div>
+
+      <div class="groups" id="groups">
+
+        <!-- LIDERANÇA -->
+        <div class="group" data-team="lideranca" data-open="true">
+          <div class="group-head">
+            <span class="caret">▾</span>
+            <span class="group-name">Liderança</span>
+            <span class="group-lead">· <b>topo da cadeia</b></span>
+            <span class="group-tally">1 · idle</span>
+          </div>
+          <div class="group-body">
+            <div class="card">
+              <span class="ro-tag">SOMENTE LEITURA</span>
+              <div class="card-top">
+                <span class="card-avatar" style="background:oklch(0.86 0.2 152)">CEO</span>
+                <div><div class="card-name">CEO</div><div class="card-role">orquestrador · claude-opus</div></div>
+                <span class="dot idle" style="margin-left:auto"></span>
+              </div>
+              <div class="card-step">aguardando sua direção — <span class="k">roadmap do Q3</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FRONTEND -->
+        <div class="group" data-team="frontend" data-open="true">
+          <div class="group-head">
+            <span class="caret">▾</span>
+            <span class="group-name">Frontend</span>
+            <span class="group-lead">· reporta a <b>Marina · CTO</b></span>
+            <span class="group-tally">2 · 1 rodando</span>
+          </div>
+          <div class="group-body">
+            <div class="card" data-trace="false">
+              <span class="ro-tag">SOMENTE LEITURA</span>
+              <div class="card-top">
+                <span class="dot running"></span>
+                <div><div class="card-name">Lyra</div><div class="card-role">architect · planejamento/arquiteto</div></div>
+              </div>
+              <div class="card-step"><span class="k">STEP</span> decompondo a feature “canvas de times” → 4 tasks</div>
+              <div class="transcript-link" onclick="toggleTrace(this)">▸ abrir transcript</div>
+              <div class="transcript">
+                11:02 · plan → walking-skeleton primeiro<br>
+                11:03 · task#1 criada (issue lock)<br>
+                11:04 · KnowAll match: react-flow → skill AVAILABLE
+              </div>
+            </div>
+            <div class="card" data-trace="false">
+              <span class="ro-tag">SOMENTE LEITURA</span>
+              <div class="card-top">
+                <span class="dot queued"></span>
+                <div><div class="card-name">Íris</div><div class="card-role">executor · execução</div></div>
+              </div>
+              <div class="card-step">na fila — pega a 1ª task quando o arquiteto abrir</div>
+              <div class="transcript-link" onclick="toggleTrace(this)">▸ abrir transcript</div>
+              <div class="transcript">sem run ainda · último wakeup 11:01</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BACKEND -->
+        <div class="group" data-team="backend" data-open="true">
+          <div class="group-head">
+            <span class="caret">▾</span>
+            <span class="group-name">Backend</span>
+            <span class="group-lead">· reporta a <b>Marina · CTO</b></span>
+            <span class="group-tally">3 · 1 rodando</span>
+          </div>
+          <div class="group-body">
+            <div class="card" data-trace="false">
+              <span class="ro-tag">SOMENTE LEITURA</span>
+              <div class="card-top">
+                <span class="dot running"></span>
+                <div><div class="card-name">Atlas</div><div class="card-role">architect · planejamento/arquiteto</div></div>
+              </div>
+              <div class="card-step"><span class="k">STEP</span> revisando o schema V15 (conversation/approval)</div>
+              <div class="transcript-link" onclick="toggleTrace(this)">▸ abrir transcript</div>
+              <div class="transcript">11:00 · migration draft<br>11:02 · risco: uq_approval_pending parcial</div>
+            </div>
+            <div class="card">
+              <span class="ro-tag">SOMENTE LEITURA</span>
+              <div class="card-top"><span class="dot idle"></span>
+                <div><div class="card-name">Vega</div><div class="card-role">executor · execução</div></div></div>
+              <div class="card-step">ocioso — sem task aberta</div>
+            </div>
+            <div class="card">
+              <span class="ro-tag">SOMENTE LEITURA</span>
+              <div class="card-top"><span class="dot idle"></span>
+                <div><div class="card-name">Nyx</div><div class="card-role">executor · execução</div></div></div>
+              <div class="card-step">ocioso — sem task aberta</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MARKETING (não montado) -->
+        <div class="group" data-team="marketing" data-open="true" style="display:none">
+          <div class="group-head">
+            <span class="caret">▾</span>
+            <span class="group-name">Marketing</span>
+            <span class="group-lead">· não montado</span>
+          </div>
+          <div class="group-body">
+            <div class="empty">Time não montado. <b>Peça ao CEO pra montar</b> — “monte um time de marketing pro lançamento”.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ================= RIGHT: conversa do CEO ================= -->
+    <div class="zone ceo">
+      <!-- chats nomeados por ASSUNTO, todos com o MESMO CEO -->
+      <div class="tabs" id="tabs">
+        <div class="tab" data-tab="geral" data-active="true">Geral</div>
+        <div class="tab" data-tab="dev" data-active="false">Desenvolvimento <span class="pending">1</span></div>
+        <div class="tab" data-tab="mkt" data-active="false">Marketing</div>
+        <div class="tab add" title="novo chat por assunto">+</div>
+      </div>
+
+      <!-- GERAL -->
+      <div class="thread" id="thread-geral">
+        <div class="sysline"><span>— hoje · Geral —</span></div>
+        <div class="msg">
+          <div class="who">CE</div>
+          <div class="bubble">
+            Bom dia. Os times de <b>Frontend</b> e <b>Backend</b> estão montados e rodando. O Frontend fechou o hire-a-partir-de-molde; o Backend está no schema da conversa. Quer que eu abra a montagem do <b>Marketing</b> pro lançamento?
+            <span class="time">CEO · 10:58</span>
+          </div>
+        </div>
+        <div class="msg me">
+          <div class="who">MT</div>
+          <div class="bubble">Ainda não. Foca em fechar o canvas de times primeiro. <span class="time">você · 11:01</span></div>
+        </div>
+        <div class="msg">
+          <div class="who">CE</div>
+          <div class="bubble">
+            Combinado. A <b>Lyra</b> (arquiteta do Frontend) já decompôs o canvas em 4 tasks, walking-skeleton primeiro. Te aviso no chat de <b>Desenvolvimento</b> quando o plano precisar da tua aprovação.
+            <span class="time">CEO · 11:01</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DESENVOLVIMENTO (tem aprovação pendente) -->
+      <div class="thread" id="thread-dev" style="display:none">
+        <div class="sysline"><span>— hoje · Desenvolvimento —</span></div>
+        <div class="msg">
+          <div class="who">CE</div>
+          <div class="bubble">
+            A <b>Lyra</b> terminou o plano do canvas de times. Precisa da tua aprovação neste marco antes de a execução abrir as tasks. Deixei o report abaixo.
+            <span class="time">CEO · 11:05</span>
+          </div>
+        </div>
+
+        <!-- CARD DE APROVAÇÃO ancorado na thread; corpo = report .md -->
+        <div class="approval" data-decided="false">
+          <div class="approval-head">
+            <span class="k">◆ Aprovação</span>
+            <span style="font-size:12.5px;color:var(--text);font-weight:600">Plano — Canvas de times (T.1-FE)</span>
+            <span class="subj">marco de feature</span>
+          </div>
+          <div class="report">
+            <h4>Plano</h4>
+            <p>Org-chart read-only (React Flow) + biblioteca de moldes master-detail. Arquiteto obrigatório por drop-zone tipada; invariante validado no backend, o canvas só espelha.</p>
+            <h4>Abordagem</h4>
+            <ul>
+              <li>1ª task = walking-skeleton (nó de agente + aresta reports_to na tela).</li>
+              <li>Biblioteca reusa a superfície do catálogo; skillset via KnowAll match.</li>
+            </ul>
+            <h4>Riscos levantados</h4>
+            <ul>
+              <li class="risk">Arrastar-pra-reparentar precisa de PATCH reports_to (é T.2) — v1 fica read-only.</li>
+              <li class="risk">React Flow é dep nova; reconciliar CSS com os tokens do board.</li>
+            </ul>
+          </div>
+          <div class="approval-async">◈ escalação assíncrona — os outros times continuam rodando; trava só este marco.</div>
+          <div class="approval-actions">
+            <button class="btn approve" onclick="decide(this,'aprovado')">Aprovar</button>
+            <button class="btn reject" onclick="decide(this,'rejeitado')">Rejeitar</button>
+            <span class="transcript-link" onclick="toggleTrace(this.closest('.approval'))">▸ abrir transcript (StepTrace + ledger)</span>
+          </div>
+          <div class="transcript" style="border-top:1px solid var(--border-soft);border-radius:0;padding:12px 15px">
+            run 8f2a · plan.md gerado (2.1k tokens)<br>
+            checkout issue#canvas → lock<br>
+            review PENDING criada · risk_level=3
+          </div>
+          <div class="decided">✓ decisão registrada — a issue segue pro estado final (fonte da verdade: linha review).</div>
+        </div>
+      </div>
+
+      <!-- MARKETING (vazio) -->
+      <div class="thread" id="thread-mkt" style="display:none">
+        <div class="sysline"><span>— Marketing —</span></div>
+        <div class="msg">
+          <div class="who">CE</div>
+          <div class="bubble">Nenhum time de marketing montado ainda. Quando quiser, é só pedir aqui — eu rodo o deep-research dos cargos, o KnowAll casa os conhecimentos com skills, e te proponho o time pra aprovar. <span class="time">CEO · 10:40</span></div>
+        </div>
+      </div>
+
+      <!-- COMPOSER — existe SÓ aqui (o board fala só com o CEO) -->
+      <div class="composer">
+        <div class="row">
+          <textarea placeholder="fale com o CEO — dirija, aprove, peça um time…" oninput="grow(this)"></textarea>
+          <button class="send" title="enviar">↑</button>
+        </div>
+        <div class="hint">a caixa existe só aqui · os cards à esquerda são somente-leitura (cadeia de comando)</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // §3 chats nomeados — troca de assunto, mesmo CEO
+  const tabs = document.getElementById('tabs');
+  const threads = { geral: 'thread-geral', dev: 'thread-dev', mkt: 'thread-mkt' };
+  tabs.addEventListener('click', (e) => {
+    const tab = e.target.closest('.tab'); if (!tab || tab.classList.contains('add')) return;
+    document.querySelectorAll('.tab').forEach(t => t.dataset.active = 'false');
+    tab.dataset.active = 'true';
+    Object.entries(threads).forEach(([k, id]) => {
+      document.getElementById(id).style.display = (k === tab.dataset.tab) ? 'flex' : 'none';
+    });
+  });
+
+  // §6 chips ligam/desligam times + o contador reage ao visível
+  const chips = document.getElementById('chips');
+  chips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip'); if (!chip) return;
+    chip.dataset.on = chip.dataset.on === 'true' ? 'false' : 'true';
+    const g = document.querySelector('.group[data-team="' + chip.dataset.team + '"]');
+    if (g) g.style.display = chip.dataset.on === 'true' ? '' : 'none';
+    recount();
+  });
+  function recount() {
+    let groups = 0, agents = 0;
+    document.querySelectorAll('.group').forEach(g => {
+      if (g.style.display === 'none') return;
+      groups++; agents += g.querySelectorAll('.card').length;
+    });
+    document.getElementById('counter').textContent = groups + ' grupos · ' + agents + ' agentes';
+  }
+
+  // §6 cabeçalhos de grupo recolhem
+  document.querySelectorAll('.group-head').forEach(h => h.addEventListener('click', () => {
+    const g = h.closest('.group'); g.dataset.open = g.dataset.open === 'true' ? 'false' : 'true';
+  }));
+
+  // §5 disclosure — profundidade a 1 clique, nunca despejada na conversa
+  function toggleTrace(el) {
+    const host = el.closest('.card') || el;
+    host.dataset.trace = host.dataset.trace === 'true' ? 'false' : 'true';
+  }
+
+  // §4 aprovação — decisão projeta o estado (fonte da verdade = linha review no backend)
+  function decide(btn, outcome) {
+    const card = btn.closest('.approval');
+    card.dataset.decided = 'true';
+    card.querySelector('.decided').firstChild.textContent =
+      (outcome === 'aprovado' ? '✓ aprovado' : '✕ rejeitado') + ' — ';
+    // remove o badge da aba (a pendência foi resolvida)
+    const pending = document.querySelector('.tab[data-tab="dev"] .pending');
+    if (pending) pending.remove();
+  }
+
+  function grow(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 120) + 'px'; }
+</script>
+</body>
+</html>

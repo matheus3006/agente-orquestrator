@@ -1,0 +1,24 @@
+[
+  {
+    "id": "213eb466-93a1-4dd0-9256-684ead1235a2",
+    "agentId": "19f8600c-221a-41b9-8d76-c5b0c5f90b6f",
+    "issueId": "c981a028-a3c7-46ce-a719-da66ef4fb819",
+    "status": "FAILED",
+    "attempt": 1,
+    "createdAt": "2026-07-02T17:44:48.803980Z",
+    "startedAt": "2026-07-02T17:44:49.462638Z",
+    "finishedAt": "2026-07-02T17:44:53.542491Z",
+    "lastError": "processo terminou com exit 1"
+  },
+  {
+    "id": "b5ff041c-dc2c-4ef6-a945-acede038bcd4",
+    "agentId": "19f8600c-221a-41b9-8d76-c5b0c5f90b6f",
+    "issueId": "c981a028-a3c7-46ce-a719-da66ef4fb819",
+    "status": "FAILED",
+    "attempt": 1,
+    "createdAt": "2026-07-02T17:44:40.750222Z",
+    "startedAt": "2026-07-02T17:44:41.314056Z",
+    "finishedAt": "2026-07-02T17:44:45.411277Z",
+    "lastError": "processo terminou com exit 1"
+  }
+]

@@ -1,0 +1,52 @@
+# ADR-0004: Contrato do AgentAdapter.execute()
+
+**Status:** Aceito (2026-06-30)
+
+## Contexto
+O Paperclip tem **um único call site** que invoca qualquer runtime de agente, com toda diferença absorvida atrás de `execute()`. Replicamos isso em Java, agora que Session (ADR-0002), StepTrace e materialização de skills estão resolvidos.
+
+## Decisão
+Interface única, um único ponto de invocação no módulo `execution`:
+
+```
+interface AgentAdapter {
+    AdapterDescriptor descriptor();        // tipo, capacidades, detecção de modelo
+    RunResult execute(RunContext ctx);     // o ÚNICO call site
+}
+```
+
+**RunContext (entra):** company, agent, issue + ancestralidade de goal, **Workspace** (caminho montado), **priorSession** (handle do ADR-0002 ou null), **skillSet** (caminhos já materializados do banco), budgetView (preflight), secrets (escopados), executionTarget (`docker`/`local`), **eventSink** (canal de StepTrace).
+
+**RunResult (sai):** **updatedSession** (handle), status, costEvents, **error tipado** (`transient_upstream`+`retryNotBefore` | `model_refusal` | …), producedArtifacts (incl. PreviewArtifact).
+
+**StepTrace:** o adapter alimenta `ctx.eventSink` por **parser de stdout** (universal, default) e/ou **canal estruturado** opcional (agentes cooperativos). Transmitido por SSE.
+
+## Alternativas consideradas
+- Múltiplos pontos de invocação por tipo de runtime — rejeitado: foi exatamente o que o "1 call site" do Paperclip evitou.
+- Só canal estruturado para StepTrace — rejeitado (quebra "bring your own agent").
+
+## Consequências
+- Novo runtime = nova impl de `AgentAdapter` (built-in ou plugin), **zero mudança no core**.
+- O contrato carrega o **no-remote-git** implícito: o Workspace montado é a única persistência de arquivos entre Runs; falha de sync = erro de Run.
+- Erros tipados habilitam retry com backoff (`retryNotBefore`) vs. parada (`model_refusal`).
+
+## Revisão 2026-07-02 (grilling motores, ADR-0014)
+- **`Context` ganha `model` e `effort`** (String, nullable, `null` = default do plano); o adapter os traduz nas
+  flags do seu CLI (dicionário no ADR-0014). A "detecção de modelo" prevista no `descriptor()` se concretiza no motor.
+- **`Result.costEvents`** passa a ser **emitido pelos adapters ricos** com `provider`+`model`+tokens reais e
+  `costCents=0` (ADR-0006/0014, Q7). A fatia B adicionou a factory **`fail(error, costEvents)`**: os tokens gastos
+  ANTES de falhar contam (o `AdapterRunExecutor` roteia no sucesso E na falha).
+- **StepTrace:** o parser de stdout dos adapters ricos (a) traduz eventos JSON do CLI em steps **semânticos**
+  (`type` = evento nativo em UPPER; linha não-JSON → `STDOUT`, fail-soft) e (b) **extrai `usage`/tokens**. São
+  módulos PUROS atrás de seams pequenos (`ClaudeStreamParser`/`CodexStreamParser`, regra de ouro ADR-0010),
+  testáveis isolados porque o CLI real não roda no teste.
+- **"Zero mudança no core" CONFIRMADO:** `ClaudeCodeAdapter`/`CodexAdapter` são novas impls; o `AdapterRunExecutor`
+  só passou a injetar `model`/`effort` e a rotear `costEvents` (dependência one-way executor→`BudgetService`, sem
+  ciclo de bean). O erro tipado (`model_refusal`/`transient_upstream`) segue **fatia futura** — no v1 recusa do
+  CLI vira `Result.fail(...)` (fail-soft, string).
+
+## Revisão 2026-07-04 (frente Teams — ADR-0018)
+- O `command` do `Context` passa a ser **montado por-Run** (estado vivo do `LiveStateProjector` + a mensagem do
+  turno) em vez do `runtimeCommand` estático — o CEO conversacional não tem comando fixo.
+- O **CEO roda com `issueId=null`** (delegador-puro, sem workspace de código; **um turno = 1 Run** por-Conversation).
+  O `SkillMaterializer` ganha um irmão, `CompanyMemoryMaterializer` (materializa a carta → `.claude/CLAUDE.md`).

@@ -1,0 +1,36 @@
+[
+  {
+    "id": "fcbe6c11-4273-4897-9db6-2b2d4ef0f4a4",
+    "actorType": "AGENT",
+    "actorId": "19f8600c-221a-41b9-8d76-c5b0c5f90b6f",
+    "action": "ISSUE_BLOCKED",
+    "entityType": "issue",
+    "entityId": "c981a028-a3c7-46ce-a719-da66ef4fb819",
+    "detail": {
+      "runId": "213eb466-93a1-4dd0-9256-684ead1235a2"
+    },
+    "createdAt": "2026-07-02T17:44:53.537313Z"
+  },
+  {
+    "id": "4d6a5665-adc3-4702-b701-e4d9f2e3574b",
+    "actorType": "BOARD",
+    "actorId": "b0a7d000-0000-4000-8000-000000000001",
+    "action": "ISSUE_REOPENED",
+    "entityType": "issue",
+    "entityId": "c981a028-a3c7-46ce-a719-da66ef4fb819",
+    "detail": null,
+    "createdAt": "2026-07-02T17:44:48.785527Z"
+  },
+  {
+    "id": "17c1abb8-a14e-476d-9d90-0d56b632d2ae",
+    "actorType": "AGENT",
+    "actorId": "19f8600c-221a-41b9-8d76-c5b0c5f90b6f",
+    "action": "ISSUE_BLOCKED",
+    "entityType": "issue",
+    "entityId": "c981a028-a3c7-46ce-a719-da66ef4fb819",
+    "detail": {
+      "runId": "b5ff041c-dc2c-4ef6-a945-acede038bcd4"
+    },
+    "createdAt": "2026-07-02T17:44:45.400688Z"
+  }
+]
