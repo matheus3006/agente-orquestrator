@@ -54,7 +54,8 @@ public class ClaudeCodeAdapter implements AgentAdapter {
             return Result.ok(context.priorSession());
         }
 
-        List<String> argv = ClaudeArgv.build(context.command(), context.model(), context.effort());
+        List<String> argv = ClaudeArgv.build(context.command(), context.model(), context.effort(),
+                context.priorSession());
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,

@@ -29,11 +29,23 @@ final class CodexArgv {
     private CodexArgv() {
     }
 
+    /** Run normal: sem religar sessão (o caso comum — D4, --resume desligado para continuar). */
     static List<String> build(String prompt, String model, String effort, IsolationPosture posture) {
+        return build(prompt, model, effort, posture, null);
+    }
+
+    static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
+                              String priorSession) {
         List<String> argv = new ArrayList<>();
         argv.add("codex");
         argv.add("exec");
         argv.add("--json");
+        // ADR-0030/M9: religa a sessão só para a rede resume-cirúrgico do handoff (todo run normal
+        // passa null — D4). Claude-first; a sintaxe exata do resume no codex é best-effort no v1.
+        if (isPresent(priorSession)) {
+            argv.add("--resume");
+            argv.add(priorSession.trim());
+        }
         if (isPresent(model)) {
             argv.add("--model");
             argv.add(model.trim());

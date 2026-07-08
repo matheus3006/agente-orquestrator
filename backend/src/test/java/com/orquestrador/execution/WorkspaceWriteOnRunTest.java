@@ -117,6 +117,27 @@ class WorkspaceWriteOnRunTest {
     }
 
     @Test
+    void nenhumSubtreeOrqEMaterializado_oReplaceApagariaOBilheteDeHandoff() {
+        // Guard-rail anti-regressão (M6, risco #3 — ADR-0030): .orq/* JAMAIS entra em
+        // materializedSubtrees. writeWorkspaceFiles tem semântica REPLACE (membro ausente no host
+        // some do volume) — materializar .orq/handoff apagaria o bilhete entre Runs sob Docker,
+        // quebrando o loop de handoff. Este teste FALHA se alguém adicionar .orq/ à lista.
+        UUID companyId = novaCompany();
+        Agent ceo = new Agent(UUID.randomUUID(), companyId, "Atlas", "ceo", null);
+        ceo.configureRuntime("process", "printf '%s' \"$ORQ_PROMPT\"", "LOCAL");
+        agents.save(ceo);
+        Conversation geral = conversations.open(companyId, "Geral");
+        conversations.postMessage(companyId, geral.getId(), "oi", ActorType.BOARD, UUID.randomUUID());
+
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(recorder.writes).isNotEmpty();
+        for (WorkspaceWrite write : recorder.writes) {
+            assertThat(write.relativePaths()).noneMatch(path -> path.startsWith(".orq"));
+        }
+    }
+
+    @Test
     void falhaDoEscritorEFalhaLegivelDoRunNuncaRodaSemAsSkills() {
         // O anti-F.9d: se a arvore nao chega ao workspace, o run NAO executa "sem skills em
         // silencio" — falha, e a Issue liquida BLOCKED pelo settle normal.

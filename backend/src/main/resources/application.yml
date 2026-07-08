@@ -27,6 +27,13 @@ management:
       probes:
         enabled: true
 
+# ADR-0030 — loop de handoff de contexto do CEO: ao cruzar este % da janela do engine_catalog
+# (medido pós-run pelos CostEvents), o turno destila um bilhete e uma continuação FRESCA retoma,
+# em vez de --resume bruto (a regra de ouro da ADR-0015, agora automatizada).
+orquestrador:
+  handoff:
+    context-threshold-percent: 55
+
 ---
 spring:
   config:

@@ -38,3 +38,11 @@ No modelo Docker-first, o **Workspace** (arquivos) mora num volume nomeado. Mas 
   **WRITE-ONLY** no settle de cada Run de turno (`AgentSessionStore`; handle nulo — ex.: process — não cria
   linha). Religar o `--resume` = ler daqui e preencher `priorSession` no Context. Status/custo/lease da
   forma-alvo continuam de fora até existir leitor.
+
+## Revisão 2026-07-07 (loop de handoff — ADR-0030)
+- Surge o **1º leitor de produção** do `external_session_id` (`AgentSessionStore.currentHandle`): a **rede
+  resume-cirúrgico** do handoff ([ADR-0030](0030-loop-handoff-contexto.md), D6/M9). É uma **exceção escopada**
+  ao "`--resume` desligado" desta ADR: religa a MESMA sessão UMA vez, terminal, só para DESTILAR o bilhete, e
+  DESCARTA a sessão. `--resume` para **CONTINUAR** o trabalho segue PROIBIDO (a janela cresceria); só o
+  destilar-e-encerrar o liga. `ClaudeArgv`/`CodexArgv` emitem `--resume <handle>` apenas quando `priorSession`
+  é preenchido — todo run normal ainda passa `null`.

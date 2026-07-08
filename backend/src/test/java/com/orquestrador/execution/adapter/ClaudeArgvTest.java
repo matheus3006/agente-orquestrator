@@ -54,4 +54,20 @@ class ClaudeArgvTest {
                 .containsExactly("claude", "-p", "t", "--output-format", "stream-json", "--verbose",
                         "--permission-mode", "bypassPermissions");
     }
+
+    @Test
+    void priorSessionLigaOResumeCirurgico() {
+        // M9 (ADR-0030): a rede resume-cirúrgico religa a MESMA sessão só para destilar.
+        List<String> argv = ClaudeArgv.build("destile", "opus", "high", "sess-abc123");
+        int i = argv.indexOf("--resume");
+        assertThat(i).isPositive();
+        assertThat(argv.get(i + 1)).isEqualTo("sess-abc123");
+    }
+
+    @Test
+    void semPriorSessionNaoLigaResume() {
+        // Todo run normal (D4): --resume desligado para CONTINUAR o trabalho.
+        assertThat(ClaudeArgv.build("t", "opus", "high")).doesNotContain("--resume");
+        assertThat(ClaudeArgv.build("t", "opus", "high", null)).doesNotContain("--resume");
+    }
 }

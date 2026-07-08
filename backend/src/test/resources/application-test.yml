@@ -18,3 +18,5 @@ orquestrador:
     enabled: false
   workspace:
     root: ${java.io.tmpdir}/orquestrador-test-ws
+  handoff:
+    context-threshold-percent: 55

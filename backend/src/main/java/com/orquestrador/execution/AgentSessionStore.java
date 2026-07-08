@@ -3,6 +3,7 @@ package com.orquestrador.execution;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -30,5 +31,17 @@ public class AgentSessionStore {
                 .orElseGet(() -> new AgentSession(UUID.randomUUID(), companyId, agentId, conversationId, adapterType));
         session.touch(externalSessionId, runId, adapterType);
         sessions.save(session);
+    }
+
+    /**
+     * O handle nativo de sessão de uma conversa (ADR-0002: "religar = ler daqui") — o PRIMEIRO leitor
+     * de produção. Usado SÓ pela rede resume-cirúrgico do handoff (ADR-0030/M9), escopada a
+     * destilar-e-encerrar; {@code --resume} segue desligado para CONTINUAR o trabalho (D4).
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> currentHandle(UUID agentId, UUID conversationId) {
+        return sessions.findByAgentIdAndConversationId(agentId, conversationId)
+                .map(AgentSession::getExternalSessionId)
+                .filter(handle -> handle != null && !handle.isBlank());
     }
 }

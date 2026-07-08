@@ -21,6 +21,9 @@ e emite `CostEvent`; os 50-60% se calculam contra a **janela de contexto** do `e
 
 **Fatia futura (o loop completo):** detectar o limite → disparar a destilação (mandar o agente escrever o handoff)
 → iniciar um turno novo lendo o bilhete → retomar o plano. Não construído no v1.
+**→ CONSTRUÍDA na [ADR-0030](0030-loop-handoff-contexto.md)** (Fatia 1 do v1 do CEO, 2026-07-07): o loop
+existe para o CEO conversacional (gatilho pós-settle, bilhete `.orq/handoff/<conv>.md`, continuação fresca,
+trava anti-loop N=5, fail-open).
 
 ## Consequências
 - Positiva: qualidade estável independente do tamanho da task; sessões novas começam "frescas" com só o essencial;

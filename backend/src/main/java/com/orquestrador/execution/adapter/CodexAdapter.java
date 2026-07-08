@@ -36,7 +36,7 @@ public class CodexAdapter implements AgentAdapter {
         }
 
         List<String> argv = CodexArgv.build(context.command(), context.model(), context.effort(),
-                context.target().posture());
+                context.target().posture(), context.priorSession());
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,

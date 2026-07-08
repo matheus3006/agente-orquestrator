@@ -7,12 +7,15 @@ import com.orquestrador.execution.runtime.ExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTargets;
 import com.orquestrador.execution.runtime.WorkspaceResolver;
 import com.orquestrador.governance.budget.BudgetService;
+import com.orquestrador.handoff.ContextHandoffLoop;
+import com.orquestrador.handoff.DistillationSkill;
 import com.orquestrador.memory.CompanyMemoryMaterializer;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.preview.PreviewArtifactCapturer;
 import com.orquestrador.preview.server.PreviewServerManifestRegistrar;
 import com.orquestrador.preview.server.PreviewServerSupervisor;
+import com.orquestrador.skills.CompanySkillVersion;
 import com.orquestrador.skills.SkillMaterializer;
 import com.orquestrador.skills.SkillSetService;
 import com.orquestrador.work.issue.CheckoutResult;
@@ -54,6 +57,8 @@ public class AdapterRunExecutor implements RunExecutor {
     private final PreviewArtifactCapturer previews;
     private final PreviewServerManifestRegistrar serverManifests;
     private final PreviewServerSupervisor previewServers;
+    private final DistillationSkill distillationSkill;
+    private final ContextHandoffLoop handoffLoop;
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
@@ -61,7 +66,8 @@ public class AdapterRunExecutor implements RunExecutor {
                               ConversationTurnCoordinator turnCoordinator, AgentSessionStore agentSessions,
                               CompanyMemoryMaterializer memoryMaterializer, PreviewArtifactCapturer previews,
                               PreviewServerManifestRegistrar serverManifests,
-                              PreviewServerSupervisor previewServers) {
+                              PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
+                              ContextHandoffLoop handoffLoop) {
         this.agents = agents;
         this.issues = issues;
         this.workspaces = workspaces;
@@ -77,6 +83,8 @@ public class AdapterRunExecutor implements RunExecutor {
         this.previews = previews;
         this.serverManifests = serverManifests;
         this.previewServers = previewServers;
+        this.distillationSkill = distillationSkill;
+        this.handoffLoop = handoffLoop;
     }
 
     @Override
@@ -112,8 +120,12 @@ public class AdapterRunExecutor implements RunExecutor {
         // travada por um run morto (o checkout ainda não ocorreu).
         Path workDir = workspaces.resolve(runContext.companyId(), runContext.agentId(), runContext.issueId());
         try {
-            materializer.materialize(workDir,
-                    skillSets.resolveForRun(runContext.companyId(), runContext.agentId(), runContext.issueId()));
+            // M4 (ADR-0030): o CEO ganha a skill `distillation` (capacidade de plataforma, injetada
+            // por-run — zero migração, invisível à biblioteca da company). Demais agentes: set intacto.
+            List<CompanySkillVersion> skills = distillationSkill.augment(
+                    skillSets.resolveForRun(runContext.companyId(), runContext.agentId(), runContext.issueId()),
+                    agent.getRole());
+            materializer.materialize(workDir, skills);
         } catch (RuntimeException exception) {
             return RunOutcome.failure("falha ao materializar o SkillSet: " + exception.getMessage());
         }
@@ -166,6 +178,10 @@ public class AdapterRunExecutor implements RunExecutor {
         // turno (espelha QUEM materializou). Falha aqui e failure LEGIVEL, e no turno liquida
         // FAILED como a carta acima — rodar sem a arvore seria divergencia silenciosa.
         String volumeName = workspaces.volumeName(runContext.companyId(), runContext.agentId(), runContext.issueId());
+        // M6 (ADR-0030, risco #3): NUNCA adicionar `.orq/*` aqui. writeWorkspaceFiles é REPLACE por
+        // subtree (membro ausente no host some do volume); materializar `.orq/handoff` apagaria o
+        // bilhete entre Runs sob Docker e quebraria o loop de handoff. Guard-rail:
+        // WorkspaceWriteOnRunTest.nenhumSubtreeOrqEMaterializado_* FALHA se alguém violar isto.
         List<String> materializedSubtrees = turno != null
                 ? List.of(SkillMaterializer.SKILLS_SUBDIR, CompanyMemoryMaterializer.CLAUDE_MD)
                 : List.of(SkillMaterializer.SKILLS_SUBDIR);
@@ -218,6 +234,15 @@ public class AdapterRunExecutor implements RunExecutor {
             }
             agentSessions.record(runContext.companyId(), runContext.agentId(), turno.conversationId(),
                     agent.getAdapterType(), result.session(), runContext.runId());
+            // M8 (ADR-0030): pós-settle, o loop de handoff. Só em SUCESSO (um turno falho não tem
+            // estado coerente a continuar). O handle de sessão já foi gravado acima — a rede
+            // resume-cirúrgico (M9) pode lê-lo. Best-effort: o loop nunca reabre o turno liquidado.
+            if (result.succeeded()) {
+                handoffLoop.afterCeoTurn(new ContextHandoffLoop.FinishedCeoTurn(
+                        runContext.companyId(), runContext.agentId(), turno.conversationId(), runContext.runId(),
+                        agent.getAdapterType(), agent.getModel(), agent.getEffort(), result.costEvents(),
+                        adapter, target, workDir, volumeName));
+            }
         }
 
         if (!result.succeeded()) {
