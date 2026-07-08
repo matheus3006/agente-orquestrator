@@ -94,6 +94,24 @@ class CeoTurnExecutionTest {
     }
 
     @Test
+    void promptCarregaAInstrucaoEstaticaDeHandoffComOCaminhoDoBilheteDaConversa() {
+        UUID companyId = novaCompany();
+        contrataCeoEcho(companyId);
+
+        Conversation estrategia = conversations.open(companyId, "Estratégia");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, estrategia.getId(), "qual o próximo passo?", ActorType.BOARD, UUID.randomUUID());
+
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        // O prompt ecoado carrega a instrução ESTÁTICA de handoff (M5) apontando o bilhete DESTA conversa.
+        String promptEcoado = turno(receipt.turnId()).getCeoReply();
+        assertThat(promptEcoado).contains("Regra de ouro do handoff");
+        assertThat(promptEcoado).contains("distillation");
+        assertThat(promptEcoado).contains(".orq/handoff/" + estrategia.getId() + ".md");
+    }
+
+    @Test
     void umTurnoPorRunComDrainDaFila() {
         UUID companyId = novaCompany();
         contrataCeoEcho(companyId);

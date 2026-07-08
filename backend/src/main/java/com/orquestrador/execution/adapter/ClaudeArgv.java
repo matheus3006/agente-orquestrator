@@ -24,7 +24,12 @@ final class ClaudeArgv {
     private ClaudeArgv() {
     }
 
+    /** Run normal: sem religar sessão (o caso comum — D4, --resume desligado para continuar). */
     static List<String> build(String prompt, String model, String effort) {
+        return build(prompt, model, effort, null);
+    }
+
+    static List<String> build(String prompt, String model, String effort, String priorSession) {
         List<String> argv = new ArrayList<>();
         argv.add("claude");
         argv.add("-p");
@@ -37,6 +42,12 @@ final class ClaudeArgv {
         // de seguranca e o CONTAINER (F.8/ADR-0016), nao o prompt do CLI.
         argv.add("--permission-mode");
         argv.add("bypassPermissions");
+        // ADR-0030/M9: SÓ a rede resume-cirúrgico do handoff preenche priorSession (todo run normal
+        // passa null — D4, --resume desligado para CONTINUAR). Religa a MESMA sessão só p/ destilar.
+        if (isPresent(priorSession)) {
+            argv.add("--resume");
+            argv.add(priorSession.trim());
+        }
         if (isPresent(model)) {
             argv.add("--model");
             argv.add(model.trim());

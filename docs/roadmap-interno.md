@@ -125,12 +125,12 @@ tokens* no código; o loop automático é a Fatia 1. A camada de **orquestraçã
 ## Frente B — v1 do CEO (a camada de ORQUESTRAÇÃO) — a construir
 
 Sequência: **Fatia 1 (fundação do transporte)** e **Fatia 2** são **PARALELAS** (o grill fechado da Fatia 2
-tornou o bilhete conversation-scoped — ver § Div). Ambas `PLANEJADO`: **código intencionalmente ausente,
-NÃO é lacuna.** Auditoria confirmou a ausência limpa e a fundação que as suporta.
+tornou o bilhete conversation-scoped — ver § Div). **Fatia 1 IMPLEMENTADA (ADR-0030, 2026-07-07);** Fatia 2
+segue `PLANEJADO` (código intencionalmente ausente, NÃO é lacuna — auditoria confirmou a ausência limpa).
 
 | Item | Verdict · Estágio | Evidência de ausência-limpa / fundação | Ponteiro · Próxima ação (dono) |
 |------|-------------------|----------------------------------------|--------------------------------|
-| **Fatia 1** — loop de handoff de contexto (50-60%) | ⚪ AUSENTE · 🟡 PLANEJADO | `grep context-threshold\|handoff.\|shouldTriggerHandoff` no backend = **vazio**; `application.yml` sem bloco `orquestrador.handoff` (dial M3 ausente). Fundação: medição de tokens já existe (`ClaudeStreamParser.java:47`) | `handoff-grilling-loop-handoff-contexto-fechado` → **ADR-0030** (a criar) · EXECUTAR M1–M10 (**A**) |
+| **Fatia 1** — loop de handoff de contexto (50-60%) | ✅ IMPLEMENTADA · VENDO (integração) | M1–M10 verdes (423 testes): `handoff/HandoffThresholdDetector.java:45-64` (% pós-run + fail-open + dial 55) · `handoff/ContextHandoffLoop.java:44-77` (detectar→garantir bilhete→continuar + rede resume-cirúrgico) · `handoff/ContinuationTurnPoster.java:52-73` (sentinela + trava N=5 + idempotência) · `handoff/DistillationSkill.java:60-96` (skill sintética = template) · `conversation/ConversationTurnCoordinator.java:98-112` (M5) · `execution/AgentSessionStore.java:37-45` (1º leitor `--resume` cirúrgico) · `application.yml:30-34` (dial). Prova ponta-a-ponta: `HandoffLoopTest` (cruza+bilhete→1 continuação · sem bilhete→rede→continuação · abaixo→nada). **/verify live teams-demo = confirmação final** | **ADR-0030** · `handoff-grilling-loop-handoff-contexto-fechado` |
 | **Fatia 2** — CEO em 3 personas (Q/P/E) | ⚪ AUSENTE · 🟡 PLANEJADO | `grep persona\|questionador\|needs-grilling` = **vazio**; `V1__init.sql:34` `agent.role` é `text` **sem** coluna `persona` → M1 (add column) é net-new, sem constraint a brigar (seam D1 confirmado) | `handoff-grilling-3-ceos-personas-fechado` → **ADR-0031** (a criar) · EXECUTAR M1–M9 + 3 SKILL.md (**A**) · vetos (**H**) |
 | Autoria dos 3 SKILL.md (`writing-doc-plans` · `being-ceo` · `delegation`) | ⚪ AUSENTE · ⚪ A FAZER | — | guia `writing-great-skills` · fatia à parte, pós-Fatia 2 (**A**) |
 

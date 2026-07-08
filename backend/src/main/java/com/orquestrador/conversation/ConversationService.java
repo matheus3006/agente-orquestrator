@@ -5,6 +5,7 @@ import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.WakeupOutcome;
 import com.orquestrador.execution.WakeupService;
+import com.orquestrador.handoff.ContinuationSentinel;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import org.springframework.stereotype.Service;
@@ -76,7 +77,12 @@ public class ConversationService {
     public List<ConversationTurn> thread(UUID companyId, UUID conversationId) {
         conversations.findByIdAndCompanyId(conversationId, companyId)
                 .orElseThrow(() -> new NotFoundException("Conversa nao encontrada: " + conversationId));
-        return turns.findByConversationIdAndCompanyIdOrderByCreatedAtAsc(conversationId, companyId);
+        // Board INVISÍVEL na conversa (ADR-0030/D5): os turnos-continuação (sentinela) são internos —
+        // o dono vê pergunta → resposta coerente; eles seguem VISÍVEIS na trilha (runs/steps). O aviso
+        // de corte da trava (D7) NÃO é sentinela, então aparece normalmente.
+        return turns.findByConversationIdAndCompanyIdOrderByCreatedAtAsc(conversationId, companyId).stream()
+                .filter(turno -> !ContinuationSentinel.isContinuation(turno.getOwnerMessage()))
+                .toList();
     }
 
     /** O recibo do post: o turno criado + o Run do CEO que vai atendê-lo (novo ou coalescido). */

@@ -3,6 +3,7 @@ package com.orquestrador.conversation;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.governance.approval.ApprovalService;
 import com.orquestrador.governance.approval.ProposalScanner;
+import com.orquestrador.handoff.HandoffNote;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,7 +57,8 @@ public class ConversationTurnCoordinator {
         String subject = conversations.findById(turno.getConversationId())
                 .map(Conversation::getSubject)
                 .orElse("(sem assunto)");
-        String prompt = composePrompt(subject, liveState.project(companyId), turno.getOwnerMessage());
+        String prompt = composePrompt(subject, liveState.project(companyId), turno.getOwnerMessage(),
+                HandoffNote.relativePath(turno.getConversationId()));
         return Optional.of(new TurnAssignment(turno.getId(), turno.getConversationId(), prompt));
     }
 
@@ -91,14 +93,23 @@ public class ConversationTurnCoordinator {
         }
     }
 
-    private static String composePrompt(String subject, String estadoVivo, String ownerMessage) {
+    private static String composePrompt(String subject, String estadoVivo, String ownerMessage,
+                                        String handoffNotePath) {
         return "# Conversa com o dono — chat \"" + subject + "\"\n\n"
                 + estadoVivo
                 + "\n## Mensagem do dono\n" + ownerMessage + "\n\n"
                 + "## Instruções do turno\n"
                 + "- Você é o CEO — delegador PURO (ADR-0018): grelhe, descubra, proponha, contrate,"
                 + " delegue; nunca produza o conteúdo você mesmo.\n"
-                + "- Responda ao dono em texto direto e curto; sua resposta vira a thread do chat.\n";
+                + "- Responda ao dono em texto direto e curto; sua resposta vira a thread do chat.\n"
+                // M5 (ADR-0030) — instrução ESTÁTICA de handoff: não depende do custo (que só existe
+                // pós-run), então é dada em TODO turno. Se um turno-continuação for a leitura de "##
+                // Mensagem do dono" (a sentinela), estas linhas reforçam retomar pelo mesmo bilhete.
+                + "- Regra de ouro do handoff (ADR-0015): se a conversa aprofundou e a janela de"
+                + " contexto está enchendo (~50-60%), DESTILE antes de fechar o turno.\n"
+                + "- Use a skill `distillation` e grave o bilhete de handoff em `" + handoffNotePath + "`.\n"
+                + "- O bilhete leva estado vivo, decisões-com-racional, próximos passos e ponteiros de"
+                + " arquivo; uma sessão NOVA retoma por ele em vez de recarregar a conversa inteira.\n";
     }
 
     /** O turno claimado por este Run + o prompt por-Run que vai ao CLI. */
