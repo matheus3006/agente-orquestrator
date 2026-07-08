@@ -210,3 +210,42 @@ na 0030) e na 0002 (a exceção do `--resume`).
 - **N=5 da trava anti-loop** (D7) — número espelha `MAX_DEPTH`; veto livre.
 - **Nome do dial** `orquestrador.handoff.context-threshold-percent` e o **default 55** — cosmético/ajustável.
 - **ADR-0030 nova** vs adendo à 0015 — preferência sinalizada (nova); confirmar.
+
+---
+
+## §RESULTADO — execução (2026-07-07)
+
+**Status:** código FECHADO e verde por integração; **VENDO live em teams-demo + merge = PENDENTE** (precisa
+do operador reiniciar o `:8080` compartilhado com o build novo). Landado como **PR #1**
+(`feat/loop-handoff-contexto-adr0030`), **não** merged.
+
+**M1–M10 + D5 implementados** (pacote novo `backend/.../handoff/`, 6 classes + 7 testes):
+- M1 `EngineCatalogRepository.findFirstByAdapterTypeAndModelAndEffort` · M2/M3/D9
+  `HandoffThresholdDetector` (% pós-run, dial `:55` em `application.yml`, fail-open com WARN).
+- M4 `DistillationSkill` (skill sintética de plataforma, corpo = contrato do bilhete) injetada em
+  `AdapterRunExecutor` só para `role='ceo'`.
+- M5 `ConversationTurnCoordinator.composePrompt` (instrução estática + caminho do bilhete).
+- M6 guard-rail `.orq/*` fora de `materializedSubtrees` (`WorkspaceWriteOnRunTest`).
+- M7/M10 `ContinuationTurnPoster` (sentinela + trava N=5 + idempotência).
+- M8 `ContextHandoffLoop.afterCeoTurn` (detectar→garantir→continuar), chamado pós-`agentSessions.record`.
+- M9 `AgentSessionStore.currentHandle` (1º leitor) + `ContextHandoffLoop.surgicalDistill` + `--resume`
+  em `ClaudeArgv`/`CodexArgv`.
+- D5 `ConversationService.thread` esconde continuações (visíveis na trilha).
+
+**Vetos — defaults tomados (não divergi ⟹ não travei):** dial 55 · N=5 · template = esqueleto `/nova-sessao`
+(em `DistillationSkill.BODY`) — sinalizados no PR/ADR para veto no review.
+
+**Divergências de mecanismo conscientes (na ADR-0030):** (1) skill de destilação **sintética** — não há
+tabela de skill-de-sistema no v1; (2) `--resume` do **codex** best-effort (claude-first; fail-open cobre);
+(3) aviso de corte da trava aparece como turno com `owner_message` de sistema (refino de FE é follow-up).
+
+**Gates:** `mvn -o test` = **423 verdes** (piso ~403; +20). `HandoffLoopTest` prova o loop pelo executor real.
+**ADR-0030** escrita; forward-refs na 0015 e 0002; roadmap Frente B → Fatia 1 VENDO(integração).
+
+**PARA A PRÓXIMA SESSÃO (fresca — regra de ouro aplicada aqui):**
+1. **VENDO live (§D)** em teams-demo: baixar o dial `orquestrador.handoff.context-threshold-percent` para `1`,
+   um turno do CEO cruza → bilhete `.orq/handoff/<conv>.md` → **1** continuação; rede (sem bilhete → resume);
+   `--resume` OFF na continuação; board invisível; abaixo→nada; trava N=5; fail-open. **O operador** rebuilda
+   (`cd backend && mvn -o -DskipTests package`) e reinicia o `:8080` — o agente faz verificação read-only.
+2. Reverter o dial/seed do VENDO. 3. **Merge** do PR #1. 4. Memória de fechamento (ver
+   `f-loop-handoff-contexto` / `roadmap-inventario-auditado`).
