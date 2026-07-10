@@ -38,6 +38,8 @@ class IssueSeqTest {
     @Autowired
     private IssueService issues;
     @Autowired
+    private IssueRepository repository;
+    @Autowired
     private CompanyService companies;
     @Autowired
     private MockMvc mvc;
@@ -125,6 +127,25 @@ class IssueSeqTest {
                         .header("X-Board-User", boardUser.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].seq").value(1));
+    }
+
+    /**
+     * O lookup do #N que a ADR-0033 §4 já previa ("dar ao CEO busca de qualquer #N é mecanismo
+     * do caso B" — ADR-0034/M1): resolve "a task #2" para a Issue; company errada não vaza
+     * (o #N é identidade POR COMPANY, nunca global).
+     */
+    @Test
+    void achaPorNumeroSemVazarEntreCompanies() {
+        UUID companyA = novaCompany();
+        UUID companyB = novaCompany();
+        issues.create(companyA, "primeira", null);
+        UUID segundaId = issues.create(companyA, "segunda", null).getId();
+
+        assertThat(repository.findByCompanyIdAndSeq(companyA, 2))
+                .map(Issue::getId).hasValue(segundaId);
+        assertThat(repository.findByCompanyIdAndSeq(companyB, 2))
+                .as("o #2 da company A não existe na B").isEmpty();
+        assertThat(repository.findByCompanyIdAndSeq(companyA, 99)).isEmpty();
     }
 
     private UUID novaCompany() {

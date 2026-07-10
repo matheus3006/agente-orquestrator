@@ -49,6 +49,11 @@ public class Issue {
     @Column(name = "execution_lock_run_id")
     private UUID executionLockRunId;
 
+    // Caso B (ADR-0034, V26): a task que esta corrige (self-FK, 1:1). Vazia em task normal;
+    // preenchida so na corretiva — a linhagem (correcao de correcao) e a corrente ate a raiz.
+    @Column(name = "corrige_issue_id")
+    private UUID corrigeIssueId;
+
     // Escala 1-5 do review gate (ADR-0012): 1 = sem risco; risco >= limiar → PENDING_REVIEW no settle.
     @Column(name = "risk_level", nullable = false)
     private int riskLevel = 1;
@@ -104,6 +109,21 @@ public class Issue {
 
     public UUID getExecutionLockRunId() {
         return executionLockRunId;
+    }
+
+    public UUID getCorrigeIssueId() {
+        return corrigeIssueId;
+    }
+
+    /**
+     * O nascimento da CORRETIVA (caso B, ADR-0034): ligada a task que corrige e JA COM DONO —
+     * o assignee pre-setado entrega a task na mesa do arquiteto; o guard do
+     * {@link IssueRepository#tryCheckout} ({@code assignee is null or = :agentId}) garante que
+     * so ele a executa. So faz sentido antes do primeiro save (e o caminho de nascer, nao um update).
+     */
+    void nascerCorrigindo(UUID corrigeIssueId, UUID assigneeAgentId) {
+        this.corrigeIssueId = corrigeIssueId;
+        this.assigneeAgentId = assigneeAgentId;
     }
 
     public int getRiskLevel() {

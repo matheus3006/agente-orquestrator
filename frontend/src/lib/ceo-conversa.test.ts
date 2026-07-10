@@ -277,6 +277,8 @@ describe("issueDaApproval (CREATE_ISSUE aprovada → a issue criada, pro report 
     assigneeAgentId: null,
     executionLockRunId: null,
     createdAt,
+    corrigeIssueId: null,
+    corrigeSeq: null,
   });
 
   it("acha a issue pelo título exato do alvo; empate fica com a mais recente", () => {

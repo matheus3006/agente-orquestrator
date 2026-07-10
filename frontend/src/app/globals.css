@@ -1128,6 +1128,20 @@ button:focus-visible,
     border-color: var(--border);
   }
 
+  /* Caso B (ADR-0034): o selo da task corretiva — "corrige #N" torna a
+     reincidência visível; tom quieto (o alerta é informação, não perigo). */
+  .corrige-selo {
+    font-family: var(--font-plex-mono);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    padding: 2px 7px;
+    border-radius: var(--r-sm);
+    color: var(--text-faint);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
   .assignee-chip {
     display: inline-flex;
     align-items: center;

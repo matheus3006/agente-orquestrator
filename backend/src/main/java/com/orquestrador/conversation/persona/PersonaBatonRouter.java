@@ -3,6 +3,7 @@ package com.orquestrador.conversation.persona;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
+import com.orquestrador.work.issue.CorrecaoDeEntregaRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -25,12 +26,14 @@ public class PersonaBatonRouter {
     private final AgentRepository agents;
     private final PersonaHandoffScanner scanner;
     private final PersonaContinuationPoster poster;
+    private final CorrecaoDeEntregaRouter correcoes;
 
     public PersonaBatonRouter(AgentRepository agents, PersonaHandoffScanner scanner,
-                              PersonaContinuationPoster poster) {
+                              PersonaContinuationPoster poster, CorrecaoDeEntregaRouter correcoes) {
         this.agents = agents;
         this.scanner = scanner;
         this.poster = poster;
+        this.correcoes = correcoes;
     }
 
     public void afterCeoTurnAnswered(ConversationTurn turno, String reply) {
@@ -48,6 +51,17 @@ public class PersonaBatonRouter {
                 case PersonaHandoffScanner.NeedsGrilling kickback ->
                         poster.postKickback(turno.getCompanyId(), turno.getConversationId(), origem,
                                 kickback.lacuna());
+                // Caso B (ADR-0034/D1): roteado DIRETO — sem cascata P→E, sem gate (o pedido do
+                // dono É a autorização). Restrição de emissor: só o BALCÃO roteia correção; P/E
+                // emitindo é log + descarte, espelho do "uma virada por settle".
+                case PersonaHandoffScanner.Correcao correcao -> {
+                    if (origem != CeoPersona.QUESTIONADOR) {
+                        log.warn("correcao: persona '{}' emitiu ```correcao``` — só o Questionador"
+                                + " roteia o caso B (descartado, fail-soft)", origem.dbValue());
+                        yield false;
+                    }
+                    yield correcoes.rotear(turno, correcao.issue());
+                }
             };
             if (posted) {
                 if (i < routes.size() - 1) {

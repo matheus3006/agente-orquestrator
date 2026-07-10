@@ -28,6 +28,18 @@ export function RiskBadge({
 }
 
 /**
+ * O selo da task corretiva (caso B, ADR-0034): a reincidência VISÍVEL — a
+ * corretiva declara na superfície qual entrega ela corrige. `null` = sem selo
+ * (task normal, ou alvo colhido — a coluna segue auditável no backend).
+ */
+export function CorrigeSelo({ selo }: { selo: string | null }) {
+  if (selo === null) {
+    return null;
+  }
+  return <span className="corrige-selo">{selo}</span>;
+}
+
+/**
  * `null` = SEM assignee (afirma "— livre"); `undefined` = nome ainda não
  * resolvível (agents carregando/falhou) — mostra só "—", nunca afirma
  * "livre" para issue designada (achado da revisão).

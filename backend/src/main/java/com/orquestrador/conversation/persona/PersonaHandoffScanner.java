@@ -33,6 +33,8 @@ public class PersonaHandoffScanner {
             Pattern.compile("(?m)^```handoff[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
     private static final Pattern NEEDS_GRILLING_BLOCK =
             Pattern.compile("(?m)^```needs-grilling[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
+    private static final Pattern CORRECAO_BLOCK =
+            Pattern.compile("(?m)^```correcao[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -53,6 +55,13 @@ public class PersonaHandoffScanner {
             NeedsGrilling kickback = parseNeedsGrilling(kickbacks.group(1));
             if (kickback != null) {
                 found.add(new PositionedRoute(kickbacks.start(), kickback));
+            }
+        }
+        Matcher correcoes = CORRECAO_BLOCK.matcher(reply);
+        while (correcoes.find()) {
+            Correcao correcao = parseCorrecao(correcoes.group(1));
+            if (correcao != null) {
+                found.add(new PositionedRoute(correcoes.start(), correcao));
             }
         }
         return found.stream()
@@ -84,6 +93,18 @@ public class PersonaHandoffScanner {
         return lacuna == null ? null : new NeedsGrilling(lacuna);
     }
 
+    private static Correcao parseCorrecao(String block) {
+        JsonNode node = readObject(block);
+        if (node == null) {
+            return null;
+        }
+        JsonNode issue = node.path("issue");
+        if (!issue.isIntegralNumber() || !issue.canConvertToInt() || issue.asInt() < 1) {
+            return null; // #N e sempre um inteiro >= 1 (ADR-0033); o resto e ruido do motor
+        }
+        return new Correcao(issue.asInt());
+    }
+
     private static JsonNode readObject(String block) {
         try {
             JsonNode node = MAPPER.readTree(block.strip());
@@ -102,7 +123,7 @@ public class PersonaHandoffScanner {
     }
 
     /** Uma virada extraída da resposta, na ordem do texto. */
-    public sealed interface Route permits Handoff, NeedsGrilling {
+    public sealed interface Route permits Handoff, NeedsGrilling, Correcao {
     }
 
     /** Bastão adiante (D6): a persona {@code para} reivindica o próximo turno com o entregável. */
@@ -111,5 +132,13 @@ public class PersonaHandoffScanner {
 
     /** Kickback cirúrgico (D7): lacuna grande demais para chutar — o Questionador re-grelha o dono. */
     public record NeedsGrilling(String lacuna) implements Route {
+    }
+
+    /**
+     * Caso B (ADR-0034/D1): o dono apontou que a task ENTREGUE #{@code issue} ficou ruim.
+     * Payload mínimo DELIBERADO — só o número: as palavras do dono não viajam no bloco (LLM
+     * redigitando = paráfrase); o verbatim é cópia mecânica do turno no banco (D3).
+     */
+    public record Correcao(int issue) implements Route {
     }
 }

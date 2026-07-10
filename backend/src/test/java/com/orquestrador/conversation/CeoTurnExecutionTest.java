@@ -186,6 +186,33 @@ class CeoTurnExecutionTest {
         assertThat(prompt).contains("Re-grelha");
     }
 
+    /**
+     * Caso B (ADR-0034, §F do handoff): o Questionador ganha a instrução da correção de task
+     * entregue — ACRÉSCIMO ao cabeçalho por-persona (G1/G2 e os deveres da 0031 intocados):
+     * emitir ```correcao``` com SÓ o número (o verbatim é cópia mecânica do banco, nunca
+     * transcrição) e, se a reclamação veio espalhada, pedir consolidação ao dono.
+     */
+    @Test
+    void promptDoQuestionadorInstruiOCasoB() {
+        UUID companyId = novaCompany();
+        contrataCeoEchoComPersona(companyId, "questionador", "CEO Questionador");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, negocio.getId(), "a task #12 ficou ruim", ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        String prompt = turno(receipt.turnId()).getCeoReply();
+        assertThat(prompt).contains("```correcao");
+        assertThat(prompt).contains("SÓ o número");
+        assertThat(prompt).contains("byte a byte");
+        assertThat(prompt).contains("me resume numa mensagem só");
+        // G1/G2 e os deveres da 0031 seguem no prompt — acréscimo, não reescrita
+        assertThat(prompt).contains("MANTENHA UMA CONVERSA");
+        assertThat(prompt).contains("APENDE");
+        assertThat(prompt).contains("```handoff");
+    }
+
     /** M7: o PLANEJADOR é back-office — bastão como insumo, estratégia de ORQUESTRAÇÃO como saída. */
     @Test
     void promptDoPlanejadorEBackOfficeComEstrategiaECalibracao() {

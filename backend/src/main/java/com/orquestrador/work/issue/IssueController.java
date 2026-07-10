@@ -41,14 +41,14 @@ public class IssueController {
     @ResponseStatus(HttpStatus.CREATED)
     public IssueResponse create(@PathVariable UUID companyId, @RequestBody @Valid CreateIssueRequest request) {
         guard.assertMember(companyId);
-        return IssueResponse.from(issues.create(companyId, request.title(), request.description(),
+        return respond(issues.create(companyId, request.title(), request.description(),
                 request.riskLevel()));
     }
 
     @GetMapping
     public List<IssueResponse> list(@PathVariable UUID companyId) {
         guard.assertMember(companyId);
-        return issues.list(companyId).stream().map(IssueResponse::from).toList();
+        return issues.list(companyId).stream().map(this::respond).toList();
     }
 
     @PostMapping("/{issueId}/checkout")
@@ -61,7 +61,7 @@ public class IssueController {
         if (!result.acquired()) {
             throw new ConflictException("Issue ja esta em execucao por outro agente/run");
         }
-        return new CheckoutResponse(IssueResponse.from(result.issue()), result.runId());
+        return new CheckoutResponse(respond(result.issue()), result.runId());
     }
 
     @PostMapping("/{issueId}/complete")
@@ -72,7 +72,7 @@ public class IssueController {
         if (!issues.complete(companyId, issueId, request.runId())) {
             throw new ConflictException("Issue nao esta travada por este run");
         }
-        return IssueResponse.from(issues.get(companyId, issueId));
+        return respond(issues.get(companyId, issueId));
     }
 
     @PostMapping("/{issueId}/review")
@@ -82,7 +82,7 @@ public class IssueController {
         Actor board = requireBoard("Apenas o operador (board) decide uma revisao");
         issues.review(companyId, issueId, request.decision(), request.reason(), request.reviewId(),
                 board.type(), board.id());
-        return IssueResponse.from(issues.get(companyId, issueId));
+        return respond(issues.get(companyId, issueId));
     }
 
     @PostMapping("/{issueId}/unblock")
@@ -91,7 +91,12 @@ public class IssueController {
         guard.assertMember(companyId);
         Actor board = requireBoard("Apenas o operador (board) destrava uma Issue");
         issues.unblock(companyId, issueId, request.decision(), board.type(), board.id());
-        return IssueResponse.from(issues.get(companyId, issueId));
+        return respond(issues.get(companyId, issueId));
+    }
+
+    /** Toda resposta de Issue resolve o selo (corrigeSeq) num lugar só — o DTO segue aditivo. */
+    private IssueResponse respond(Issue issue) {
+        return IssueResponse.from(issue, issues.corrigeSeqDe(issue));
     }
 
     private Actor requireAgent(String message) {
@@ -134,13 +139,16 @@ public class IssueController {
     }
 
     // seq = o #N humano da Issue (ADR-0033); o id UUID segue como identidade de maquina.
+    // corrigeIssueId/corrigeSeq (caso B, ADR-0034): aditivos — preenchidos so na corretiva.
     public record IssueResponse(UUID id, UUID companyId, int seq, String title, String description,
                                 String status, int riskLevel, UUID assigneeAgentId,
-                                UUID executionLockRunId, Instant createdAt) {
-        static IssueResponse from(Issue issue) {
+                                UUID executionLockRunId, Instant createdAt,
+                                UUID corrigeIssueId, Integer corrigeSeq) {
+        static IssueResponse from(Issue issue, Integer corrigeSeq) {
             return new IssueResponse(issue.getId(), issue.getCompanyId(), issue.getSeq(), issue.getTitle(),
                     issue.getDescription(), issue.getStatus().name(), issue.getRiskLevel(),
-                    issue.getAssigneeAgentId(), issue.getExecutionLockRunId(), issue.getCreatedAt());
+                    issue.getAssigneeAgentId(), issue.getExecutionLockRunId(), issue.getCreatedAt(),
+                    issue.getCorrigeIssueId(), corrigeSeq);
         }
     }
 }
