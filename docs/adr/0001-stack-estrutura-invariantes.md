@@ -20,3 +20,20 @@ Novo control-plane de orquestração de agentes derivado do Paperclip (TS/Expres
 - Reaproveita o **modelo** do Paperclip, não o código; tradução TS→Java documentada em `docs/ARQUITETURA.md §5`.
 - jOOQ adiciona uma dependência, mas é onde a corrida importa.
 - deny-by-default exige um wrapper de rota desde a Fase 0 (custo pequeno, evita furo de cross-tenant).
+
+## Nota de reconciliação (2026-07-10 — divergência MÉDIA da auditoria doc×código de 2026-07-07)
+
+**jOOQ nunca foi adotado.** O `pom.xml` não tem a dependência e não existe `import org.jooq` no
+backend. As queries de corrida que este ADR reservava ao jOOQ foram construídas em **Spring Data
+`@Query`**, e o invariante de concorrência **é honrado** por esse outro mecanismo:
+
+- **Checkout atômico** = SQL nativo `IssueRepository.tryCheckout` (UPDATE guardado por
+  `status IN ('OPEN','IN_PROGRESS') AND assignee…`; rows==0 → 409, nunca retry).
+- **Claim de heartbeat** = JPQL CAS `HeartbeatRunRepository.claim`
+  (`UPDATE … WHERE status=:queued`; rows==1 → claimed).
+
+A precisão que motivava o jOOQ ("SQL preciso onde a corrida importa") existe — só que via
+`@Modifying @Query`, sem a dependência extra. Direção decidida no levantamento de paralelismo:
+**docs passam a refletir o código** (não adotar jOOQ agora). O texto original acima fica como
+registro do desenho da época; as 5 menções a jOOQ em `docs/ARQUITETURA.md` foram corrigidas
+nesta mesma reconciliação.
