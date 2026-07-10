@@ -276,3 +276,29 @@ ADR-0031 nova ✔ · **PR autorizado** (merge após o VENDO do operador).
 sem V25); (4) skills EXTERNAS ficaram FORA dos moldes v1 (sourcing = veto pendente; entram por v2
 de molde versionado); (5) backfill copia o MOTOR do canônico p/ P/E (precisa RODAR na teams-demo —
 codex provado; moldes claude ficam p/ companies novas).
+
+### VENDO oficial §D — LIVE na teams-demo: **PASS** (2026-07-10, pós-restart do operador)
+
+Restart aplicou **V24+V25 no boot** (`now at version v25`). Provas com runs REAIS (Atlas/codex):
+1. **Backfill (§D.1):** teams-demo E Demo Fixtures com 3 `role='ceo'` por persona; canônicos viraram
+   `questionador` com motor codex/gpt-5.5 INTOCADO; P/E copiaram o motor e nasceram pinados.
+2. **Balcão único (§D.2):** mensagem do dono caiu no Atlas/questionador (trilha atribui a persona).
+3. **Confirma-antes + dossiê (§D.3/A1):** o Q grelhou em voz própria ("qual a ambição em 24
+   meses?"), APENDOU `dossie.md` no workspace DA CONVERSA (palavras exatas do dono) e ESPEROU;
+   o "pode seguir" do dono disparou o turno que carimbou e emitiu ```` ```handoff ````.
+4. **P→E autônoma (§D.4):** estratégia REAL de orquestração (`estrategia.md`, 11,5 KB) citando o
+   dossiê, com `## Premissas`, veredito de lacuna ("não há lacuna grande" — calibração D7 correta),
+   teto explícito ("27 agentes, abaixo do teto de 30", profundidade 10) e a fronteira ADR-0017
+   ("quebra escopo→feature→task é dos arquitetos de domínio") → bastão ao Executor sem humano no meio.
+5. **E→T3 (§D.5/A2/A3):** **27 propostas HIRE_AGENT PENDING** no gate, cada uma com `racional`
+   estruturado ("skills … | motor … | porquê …") e motor sugerido; NADA contratado sem APPROVE.
+6. **Uma voz (§D.7):** o dono vê 2 turnos; a trilha tem 4, atribuídos a questionador/planejador/executor.
+7. **Kickback/anti-loop (§D.6/§D.9):** provados AO VIVO na bancada `:18080` (kickback "Re-grelha"
+   visível → Q; 5 kickbacks → prossiga → reincidência → corte "Bastão parado"); na teams-demo o
+   Planejador corretamente NÃO kickou (não havia lacuna). **§D.8 (delegation web/Task in-run):
+   NÃO exercitado** — o run é codex e a estratégia não exigiu pesquisa; prova plena fica para um
+   run claude com pesquisa real (residual registrado, não-gate — D10 é teto de prompt, código zero).
+8. **Achado ao vivo (confirma o racional do A4):** o CEO codex propôs TODOS os 27 motores como
+   "GPT-5.4" — o viés de motor que motivou a mão soberana do dono no menu.
+9. **Resíduo de VENDO:** a conversa "VENDO F2 — cafeteria" + 27 approvals PENDING ficaram na
+   teams-demo como evidência; rejeitar/limpar é decisão do dono (precedente Demo Fixtures da G3).
