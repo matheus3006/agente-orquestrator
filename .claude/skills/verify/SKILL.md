@@ -1,0 +1,52 @@
+---
+name: verify
+description: Verifica mudanças do backend ao vivo SEM tocar o :8080 compartilhado — instância descartável (porta 18081 + Postgres efêmero) dirigida pela API real. Use antes de PR de mudança no motor de execução ou em qualquer fluxo que o teste de unidade não observa em runtime.
+---
+
+# Verify — instância descartável (o :8080 é do operador)
+
+**Regra da casa:** o processo do :8080 e o DB `agente-orquestrator-db-1` são compartilhados —
+o agente NÃO reinicia nem escreve neles (restart é do operador; leitura read-only ok). Toda
+verificação de runtime roda numa instância própria.
+
+## Receita (validada 2026-07-10, fatia do lease)
+
+```sh
+# 1. Postgres efêmero (schema real via Flyway no boot do app)
+docker run --rm -d --name <fatia>-pg -p 15432:5432 \
+  -e POSTGRES_USER=orquestrador -e POSTGRES_PASSWORD=orquestrador \
+  -e POSTGRES_DB=orquestrador postgres:16-alpine
+
+# 2. JAR + app próprio (porta livre; overrides por argumento)
+cd backend && mvn -o package -DskipTests -q
+java -jar target/orquestrador-0.0.1-SNAPSHOT.jar \
+  --server.port=18081 \
+  --spring.datasource.url=jdbc:postgresql://localhost:15432/orquestrador \
+  --orquestrador.workspace.root=<scratchpad>/ws &   # + properties da fatia
+# health: curl http://localhost:18081/actuator/health
+```
+
+## Dirigir pela API real
+
+- **Ator board (dev):** header `X-Board-User: <uuid qualquer>` (ActorResolutionFilter).
+- **Company:** `POST /api/companies` `{"name":…,"slug":…}` (criador vira membro).
+- **Agente que dorme o quanto você quiser** (observa o motor sem CLI de agente):
+  `POST /api/companies/{c}/agents` com `"adapterType":"process"`,
+  `"runtimeCommand":"sleep 12; echo ok"`, `"executionTarget":"LOCAL"`.
+- **Run:** `POST /api/companies/{c}/agents/{a}/wakeups` `{"reason":"prova"}` → runId.
+- **Observar:** `docker exec <fatia>-pg psql -U orquestrador -d orquestrador -c "select …"`
+  sobre `heartbeat_run` / `heartbeat_run_event` (o scheduler roda por default fora do perfil
+  test; encurte cadências via property, ex.: `--orquestrador.heartbeat.lease-renew-ms=3000`).
+
+## Teardown
+
+```sh
+pkill -f "orquestrador-0.0.1-SNAPSHOT.jar --server.port=18081"; docker stop <fatia>-pg
+```
+
+## Gotchas
+
+- Perfil `test` desliga o scheduler (`orquestrador.scheduling.enabled=false`) — para ver o motor
+  vivo, NÃO use `--spring.profiles.active=test`; use o default + Postgres efêmero.
+- Simular "outro nó levou o run": `update heartbeat_run set lease_owner='node-intruso' where id=…`
+  no pg efêmero, com o run RUNNING.

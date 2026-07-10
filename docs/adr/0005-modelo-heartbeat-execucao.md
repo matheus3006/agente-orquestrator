@@ -27,7 +27,30 @@ O motor de execução é o subsistema mais difícil (no Paperclip virou um arqui
 **Escopo desta nota: apenas o mecanismo de claim do bullet "DB-as-queue".** O trecho de
 **renovação de lease** (bullet "Recovery") é uma divergência ALTA independente, com decisão já
 tomada (implementar a renovação — laudo `docs/laudo-lease-adr0005.md`, 2026-07-10) e fatia
-própria de execução; ele segue **intocado** aqui de propósito.
+própria de execução; ele segue **intocado** aqui de propósito. *(A fatia landou — ver a nota
+seguinte.)*
+
+## Nota de implementação (2026-07-10 — o trecho Recovery/renovação de lease; divergência ALTA da auditoria de 2026-07-07)
+
+**"O worker renova o lease" agora é verdade em código** — o código convergiu para esta ADR
+(grill do COMO em `docs/handoff-grilling-renovacao-lease.md`, D1–D6). O mecanismo construído:
+
+- **Timer por run, thread própria** (`LeaseRenewer`, 1 thread daemon): nasce no claim e morre no
+  `finally` do `HeartbeatDispatcher` que envolve executar E finalizar — JVM morta = pulso morto =
+  morte presumida, sem lógica extra. A thread é própria por necessidade: a única thread do
+  scheduler é exatamente a que fica bloqueada dentro do run síncrono.
+- **Cadência 30s → lease cheio** (`now + 2min`; property `orquestrador.heartbeat.lease-renew-ms`,
+  default 30000): proporção 1:4 — o worker tolera 3 pulsos perdidos seguidos (GC, hiccup de DB)
+  antes de o reaper poder tocá-lo. Lease de 2min e reaper de 5s ficam exatamente como estavam.
+- **Renovação é CAS guardado por dono** (`HeartbeatRunStore.renewLease`): `UPDATE … WHERE
+  status=RUNNING AND lease_owner=:owner`. **Posse perdida** (0 linhas — reaper requeou + outro
+  claim levou, ou hard-stop cancelou em voo) = evento **`RUN_LEASE_LOST`** no rastro do run
+  (anti-silêncio) + timer para + **sem kill**: o run termina em paz e o guard por dono do
+  `finalizeRun` impede que o resultado sobrescreva o do novo dono. Exceção sem evento: run já
+  terminal pelo MESMO dono (o próprio finalize venceu o último pulso — fim normal, não perda).
+- **Prova permanente:** `LeaseRenewalTest` (4 provas: pulso estende · renovado é invisível ao
+  reaper · roteiro worker-vivo do laudo com `RUN_LEASE_LOST` no rastro · timer morre com o run).
+  O `HeartbeatReaperTest` segue provando o lado worker-morto.
 
 **O claim real não usa `SELECT … FOR UPDATE SKIP LOCKED`.** O mecanismo construído é:
 

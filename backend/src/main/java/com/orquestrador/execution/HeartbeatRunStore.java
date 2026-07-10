@@ -76,6 +76,29 @@ public class HeartbeatRunStore {
         }
     }
 
+    /**
+     * Pulso do worker (renovacao de lease, ADR-0005): CAS guardado por dono — so estende quem
+     * ainda POSSUI o Run. true = lease esticado para now+lease. 0 linhas = posse perdida (reaper
+     * requeou + outro claim levou, ou hard-stop cancelou em voo): grava RUN_LEASE_LOST no rastro
+     * (anti-silencio — a sonda do laudo viu o finalize cair no vazio sem UMA linha de evidencia)
+     * e devolve false para o timer parar. Excecao SEM evento: run ja terminal pelo MESMO dono —
+     * e o nosso proprio finalize vencendo o ultimo pulso na corrida finalizar×timer, fim normal,
+     * nao perda.
+     */
+    @Transactional
+    public boolean renewLease(UUID runId, String owner, Duration lease) {
+        if (runs.renewLease(runId, RunStatus.RUNNING, owner, Instant.now().plus(lease)) == 1) {
+            return true;
+        }
+        HeartbeatRun run = runs.findById(runId).orElse(null);
+        boolean fimNormalDoProprioDono = run != null && owner.equals(run.getLeaseOwner())
+                && (run.getStatus() == RunStatus.SUCCEEDED || run.getStatus() == RunStatus.FAILED);
+        if (run != null && !fimNormalDoProprioDono) {
+            recordEvent(runId, "RUN_LEASE_LOST", "posse do lease perdida por " + owner);
+        }
+        return false;
+    }
+
     /** Reaper: Runs com lease expirado voltam para QUEUED (idempotente). Retorna quantos. */
     @Transactional
     public int reapExpired() {
