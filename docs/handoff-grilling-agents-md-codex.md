@@ -99,3 +99,46 @@
 
 > A mensagem de copiar-e-colar vive no fim desta sessão de grill e deve invocar `/tdd` e `/verify`,
 > apontar para ESTE doc como fonte da verdade, e executar M1→M10 na ordem (operação M9 só no VENDO).
+
+---
+
+## §RESULTADO — VENDO live PASS 5/5 (2026-07-10, sessão de fecho /verify)
+
+**Contexto do fecho:** M1–M8 já estavam commitados (`f13b9d0` + `c82ea39`) e o **PR #4 já tinha sido
+criado e MERGED pela própria sessão de execução (00:29)** — este fecho executou M9 + as provas + M10.
+No meio do VENDO a fatia **G5 (ADR-0033) mergeou em paralelo (PR #5)**; as provas 1–4 rodaram no
+binário G3-puro e a prova 5 no binário main G3+G5 — a integração das duas fatias saiu provada de carona.
+
+1. **M9 (operação, operador=dono):** `pg_dump` (2,5 MB) → faxina do DB **24→3 companies** (só as
+   demos Teams/Thumbnail/Fixtures; lista exibida antes) → wipe `~/.orquestrador/workspaces/*` →
+   restart cirúrgico do :8080. **Gotcha real:** `activity_log` é append-only
+   (`trg_activity_log_immutable`) e matou o script do operador — resolvido com
+   `DISABLE TRIGGER` dentro da janela transacional (ENABLE antes do COMMIT). Dial
+   `context-threshold-percent=99` preservado no relaunch.
+2. **Prova da CARTA — PASS:** turno com o Atlas (Teams Demo, codex LOCAL);
+   `_agent/AGENTS.md` == carta v4 do banco **por md5** (`92caa778…`, 1072 bytes; a carta VERBATIM),
+   `.claude/` **ausente**, e a resposta citou o que só a carta diz: nicho **dental** + os 3 motivos
+   (dor aguda, ticket alto, concorrência fraca). Run `a74b5206`, ANSWERED.
+3. **Prova da SKILL — PASS (pipeline inteiro):** skill-sonda escrita no import-root →
+   `POST /skills/import {skillKeys}` (`created:1`) → `POST /agents/{atlas}/skills` (v1 pinada) →
+   turno de invocação → resposta com a palavra-código exata **ABACATE-ROXO-93** e a listagem
+   **`distillation` + `sonda-vendo-adr0032`** (o "de quebra" do D8 confirmado). No disco:
+   `.codex/skills/{distillation,sonda-vendo-adr0032}/SKILL.md`. Run `0fb8d0d7`, ANSWERED.
+   Sonda removida do import-root após o import (vive no DB, v1).
+4. **Métrica do RUÍDO (não-gate):** exatamente **1 `ITEM.COMPLETED|error` por run** nos 2 runs
+   (9 e 12 eventos totais) — o baseline G4 persiste, nem cresceu nem sumiu → fica registrado como
+   **resíduo G4** (investigação própria só se doer, D9).
+5. **Prova DOCKER viva — PASS:** agente codex `role=ceo` `target=DOCKER` criado via API em Demo
+   Fixtures (`73676f52`, gpt-5.5; credencial `orq_codex_creds` já existia) + carta-marcador v1
+   inserida no DB (a ORIGEM da carta — consolidator/ADR-0019 — está fora do seam desta fatia).
+   Turno ANSWERED com a palavra-código **GIRASSOL-CINZA-58** vinda de dentro do container; volume
+   `orq_b92cb312_73676f52`: `AGENTS.md` **md5 idêntico ao banco** (`39fa5325…`),
+   `.codex/skills/distillation/SKILL.md` presente, `.claude/` **ausente**.
+6. **Gates:** `mvn -o test` = **443 verdes** na branch (piso 429+14, pré-merge) e **448 verdes na
+   main pós-merge G3+G5** (novo piso da main). Asserções de layout claude imutáveis (M3 bit-idêntico).
+
+**Artefatos vivos deixados de propósito (evidência):** o agente `Sonda Docker Codex` (CEO codex/DOCKER
+de Demo Fixtures) + a carta-marcador v1 + o volume da prova — remover é trivial se incomodar as demos.
+**Achado de ambiente (não é bug do produto):** trocar o JAR sob o processo vivo (rebuild da sessão
+paralela do G5) quebra o classloader lazy do fat-jar — threads HTTP de rotas frias morrem sem resposta
+(`/steps` pendurado, `NoClassDefFoundError: ThrowableProxy`). Remédio: restart após todo rebuild.
