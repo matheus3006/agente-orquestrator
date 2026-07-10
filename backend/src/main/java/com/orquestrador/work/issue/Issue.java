@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,7 +18,8 @@ import java.util.UUID;
  * nunca por read-modify-write em memoria.
  */
 @Entity
-@Table(name = "issue")
+@Table(name = "issue", uniqueConstraints =
+        @UniqueConstraint(name = "uq_issue_company_seq", columnNames = {"company_id", "seq"}))
 public class Issue {
 
     @Id
@@ -25,6 +27,11 @@ public class Issue {
 
     @Column(name = "company_id", nullable = false)
     private UUID companyId;
+
+    // Identidade sequencial humana (#N por company, ADR-0033): denso, imutavel, comeca em 1.
+    // Alocado em IssueService.create sob o lock da linha da company; a unique e backstop.
+    @Column(nullable = false)
+    private int seq;
 
     @Column(nullable = false)
     private String title;
@@ -55,9 +62,10 @@ public class Issue {
     protected Issue() {
     }
 
-    public Issue(UUID id, UUID companyId, String title, String description, int riskLevel) {
+    public Issue(UUID id, UUID companyId, int seq, String title, String description, int riskLevel) {
         this.id = id;
         this.companyId = companyId;
+        this.seq = seq;
         this.title = title;
         this.description = description;
         this.status = IssueStatus.OPEN;
@@ -72,6 +80,10 @@ public class Issue {
 
     public UUID getCompanyId() {
         return companyId;
+    }
+
+    public int getSeq() {
+        return seq;
     }
 
     public String getTitle() {

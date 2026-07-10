@@ -164,6 +164,8 @@ class PreviewServerHttpTest {
         assertThat(tela.get("live")).hasSize(1);
         JsonNode vivo = tela.get("live").get(0);
         assertThat(vivo.get("issueId").asText()).isEqualTo(cenario.issueId().toString());
+        // #N na tela Servidores (ADR-0033): a issue do cenario e a 1a da company
+        assertThat(vivo.get("issueSeq").asInt()).isEqualTo(1);
         assertThat(vivo.get("issueTitle").asText()).isEqualTo("app com servidor");
         assertThat(vivo.get("agentName").asText()).isEqualTo("A");
         assertThat(vivo.get("command").asText()).isEqualTo("python3 -m http.server " + porta);
@@ -173,6 +175,7 @@ class PreviewServerHttpTest {
         assertThat(tela.get("candidates")).hasSize(1);
         JsonNode candidata = tela.get("candidates").get(0);
         assertThat(candidata.get("issueId").asText()).isEqualTo(cenario.issueId().toString());
+        assertThat(candidata.get("issueSeq").asInt()).isEqualTo(1);
         assertThat(candidata.get("command").asText()).isEqualTo("python3 -m http.server " + porta);
         assertThat(candidata.get("live").asBoolean()).isTrue();
     }

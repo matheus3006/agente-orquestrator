@@ -101,6 +101,8 @@ class MissionControlHttpTest {
         assertThat(runner.get("activeRun").get("issueId").asText()).isEqualTo(issueRodando.toString());
         assertThat(runner.get("activeRun").get("issueTitle").asText())
                 .isEqualTo("Refatorar modulo de pagamentos");
+        // #N no card (ADR-0033): "executando #1 Refatorar..." — issueRodando e a 1a issue da company
+        assertThat(runner.get("activeRun").get("issueSeq").asInt()).isEqualTo(1);
         assertThat(runner.get("activeRun").get("attempt").asInt()).isEqualTo(1);
         assertThat(runner.get("activeRun").get("startedAt").asText()).isNotEmpty();
         // mini-terminal: os ÚLTIMOS 5 (de RUN_STARTED + 7 linhas), em ordem cronológica

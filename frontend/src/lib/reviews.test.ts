@@ -18,6 +18,7 @@ const review = (o: Partial<ReviewSummary> = {}): ReviewSummary => ({
 const issue = (o: Partial<IssueSummary> = {}): IssueSummary => ({
   id: "iss-1",
   companyId: "c1",
+  seq: 9,
   title: "Publicar release notes",
   description: null,
   status: "PENDING_REVIEW",
@@ -45,8 +46,9 @@ const agent = (o: Partial<AgentSummary> = {}): AgentSummary => ({
 });
 
 describe("resolveReviewCard (a ReviewResponse enxuta resolvida pela lista de issues/agentes)", () => {
-  it("resolve título, risco e assignee pela issue + agente correspondentes", () => {
+  it("resolve #N, título, risco e assignee pela issue + agente correspondentes", () => {
     const card = resolveReviewCard(review(), [issue()], [agent()]);
+    expect(card.seq).toBe(9); // o card mostra "#9 Publicar release notes" (ADR-0033)
     expect(card.title).toBe("Publicar release notes");
     expect(card.riskLevel).toBe(5);
     expect(card.assigneeName).toBe("Atlas");
@@ -56,6 +58,7 @@ describe("resolveReviewCard (a ReviewResponse enxuta resolvida pela lista de iss
   it("issue ainda não resolvida (lista carregando): fallback de título + risco null (sem badge)", () => {
     const card = resolveReviewCard(review(), undefined, [agent()]);
     expect(card.riskLevel).toBeNull();
+    expect(card.seq).toBeNull(); // sem a issue não há #N — o fallback segue o id curto
     expect(card.title).toContain("iss-1");
     expect(card.assigneeName).toBeUndefined(); // sem a issue, não afirma "livre"
   });

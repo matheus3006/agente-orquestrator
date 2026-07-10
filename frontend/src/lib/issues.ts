@@ -76,9 +76,9 @@ export function groupIssuesByStatus(issues: IssueSummary[]): IssueGroup[] {
     status,
     label: issueStatusLabel(status),
     led: issueStatusLed(status),
-    issues: (byStatus.get(status) ?? []).toSorted((a, b) =>
-      b.createdAt.localeCompare(a.createdAt),
-    ),
+    // seq desc ≡ createdAt desc (alocação monotônica, ADR-0033) — mas com o #N visível
+    // na linha, a ordem TEM que ser a dos números (a mesma do estado vivo do CEO).
+    issues: (byStatus.get(status) ?? []).toSorted((a, b) => b.seq - a.seq),
   }));
 }
 

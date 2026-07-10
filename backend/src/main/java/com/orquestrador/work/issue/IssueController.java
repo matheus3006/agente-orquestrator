@@ -133,11 +133,12 @@ public class IssueController {
     public record CheckoutResponse(IssueResponse issue, UUID runId) {
     }
 
-    public record IssueResponse(UUID id, UUID companyId, String title, String description,
+    // seq = o #N humano da Issue (ADR-0033); o id UUID segue como identidade de maquina.
+    public record IssueResponse(UUID id, UUID companyId, int seq, String title, String description,
                                 String status, int riskLevel, UUID assigneeAgentId,
                                 UUID executionLockRunId, Instant createdAt) {
         static IssueResponse from(Issue issue) {
-            return new IssueResponse(issue.getId(), issue.getCompanyId(), issue.getTitle(),
+            return new IssueResponse(issue.getId(), issue.getCompanyId(), issue.getSeq(), issue.getTitle(),
                     issue.getDescription(), issue.getStatus().name(), issue.getRiskLevel(),
                     issue.getAssigneeAgentId(), issue.getExecutionLockRunId(), issue.getCreatedAt());
         }

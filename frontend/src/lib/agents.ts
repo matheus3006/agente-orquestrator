@@ -12,12 +12,13 @@ export function rosterDoing(
   issues: IssueSummary[],
 ): StationIssueLine {
   if (!station) {
-    return { note: "sincronizando…", verb: null, title: null };
+    return { note: "sincronizando…", verb: null, seq: null, title: null };
   }
   if (station.status === "IDLE") {
     return {
       note: station.lastSteps.length ? "ocioso — último run concluído" : "ocioso — nunca executou",
       verb: null,
+      seq: null,
       title: null,
     };
   }

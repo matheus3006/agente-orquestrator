@@ -169,6 +169,7 @@ export default function MissionControlPage() {
     () => ({
       agentName: (id) => agents?.find((station) => station.agent.id === id)?.agent.name ?? null,
       issueTitle: (id) => issues.find((issue) => issue.id === id)?.title ?? null,
+      issueSeq: (id) => issues.find((issue) => issue.id === id)?.seq ?? null,
       issueRisk: (id) => issues.find((issue) => issue.id === id)?.riskLevel ?? null,
     }),
     [agents, issues],

@@ -84,16 +84,21 @@ public class LiveStateProjector {
             out.append("\n");
         }
 
+        // seq desc, não createdAt desc: com o #N visível, empate exato de timestamp (rajada na
+        // mesma company) embaralharia #2/#3 — o board ordena por seq (ADR-0033), o recorte espelha.
         List<Issue> board = issues.findByCompanyId(companyId).stream()
-                .sorted(Comparator.comparing(Issue::getCreatedAt).reversed())
+                .sorted(Comparator.comparingInt(Issue::getSeq).reversed())
                 .limit(ISSUES_CAP)
                 .toList();
         out.append("### Issues (").append(board.size()).append(" mais recentes)\n");
         if (board.isEmpty()) {
             out.append("- (nenhuma)\n");
         }
+        // #N e a identidade humana da Issue (ADR-0033): o dono aponta "a task 12" e o CEO acha #12
+        // aqui — o exemplo ensina a notacao, a secao de instrucoes do turno fica intocada (D4).
         for (Issue issue : board) {
-            out.append("- [").append(issue.getStatus().name()).append("] ").append(issue.getTitle());
+            out.append("- #").append(issue.getSeq())
+                    .append(" [").append(issue.getStatus().name()).append("] ").append(issue.getTitle());
             if (issue.getAssigneeAgentId() != null) {
                 String name = agentNameById.get(issue.getAssigneeAgentId());
                 out.append(" — ").append(name != null ? name : issue.getAssigneeAgentId());

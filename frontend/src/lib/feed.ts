@@ -35,6 +35,8 @@ export interface FeedEntry {
 export interface FeedLookups {
   agentName(agentId: string | null | undefined): string | null;
   issueTitle(issueId: string | null | undefined): string | null;
+  /** O #N humano da issue (ADR-0033); null = issue fora dos lookups da tela. */
+  issueSeq(issueId: string | null | undefined): number | null;
   issueRisk(issueId: string | null | undefined): number | null;
 }
 
@@ -57,10 +59,18 @@ export function buildFeedEntry(event: ActivityEvent, lookups: FeedLookups): Feed
   const detailId = (key: string): string | null =>
     typeof detail[key] === "string" ? (detail[key] as string) : null;
 
-  /** Título da issue como segmento: resolvido → strong; senão id curto mono. */
-  const issueSegment = (issueId: string | null): FeedSegment => {
+  /**
+   * A identidade humana da issue em segmentos: `#12 Título` (#N mono, título strong —
+   * ADR-0033, o MESMO número do board). Sem título resolvido o #12 fica sozinho; issue
+   * fora dos lookups (lista ainda carregando) degrada para o id curto mono — nunca quebra.
+   */
+  const issueSegments = (issueId: string | null): FeedSegment[] => {
+    const seq = lookups.issueSeq(issueId);
     const title = lookups.issueTitle(issueId);
-    return title ? strong(title) : mono(shortId(issueId));
+    if (seq === null) {
+      return [mono(shortId(issueId))];
+    }
+    return title ? [mono(`#${seq}`), text(" "), strong(title)] : [mono(`#${seq}`)];
   };
 
   const build = (tone: FeedTone, icon: FeedIcon, segments: FeedSegment[]): FeedEntry => ({
@@ -77,14 +87,14 @@ export function buildFeedEntry(event: ActivityEvent, lookups: FeedLookups): Feed
       return build("bad", "blocked", [
         strong(actor),
         text(" travou em "),
-        issueSegment(event.entityId),
+        ...issueSegments(event.entityId),
         ...(runId ? [text(" — "), mono(`run ${shortId(runId)}`)] : []),
       ]);
     }
     case "ISSUE_REOPENED":
-      return build("info", "reopened", [strong(actor), text(" reabriu "), issueSegment(event.entityId)]);
+      return build("info", "reopened", [strong(actor), text(" reabriu "), ...issueSegments(event.entityId)]);
     case "ISSUE_CANCELLED":
-      return build("info", "cancelled", [strong(actor), text(" cancelou "), issueSegment(event.entityId)]);
+      return build("info", "cancelled", [strong(actor), text(" cancelou "), ...issueSegments(event.entityId)]);
     case "ISSUE_SUBMITTED_FOR_REVIEW": {
       const risk = lookups.issueRisk(event.entityId);
       const reviewId = detailId("reviewId");
@@ -96,7 +106,7 @@ export function buildFeedEntry(event: ActivityEvent, lookups: FeedLookups): Feed
       return build("warn", "review", [
         strong(actor),
         text(" estacionou "),
-        issueSegment(event.entityId),
+        ...issueSegments(event.entityId),
         text(" para review"),
         ...anchor,
       ]);
@@ -109,7 +119,7 @@ export function buildFeedEntry(event: ActivityEvent, lookups: FeedLookups): Feed
         text(approved ? " aprovou o ciclo " : " rejeitou o ciclo "),
         mono(shortId(detailId("reviewId"))),
         text(" de "),
-        issueSegment(event.entityId),
+        ...issueSegments(event.entityId),
       ]);
     }
     case "SKILL_ATTACHED": {
@@ -117,7 +127,7 @@ export function buildFeedEntry(event: ActivityEvent, lookups: FeedLookups): Feed
       return build("info", "skill", [
         strong(actor),
         text(" anexou uma skill à "),
-        issueSegment(detailId("issueId")),
+        ...issueSegments(detailId("issueId")),
         ...(agentName ? [text(" para "), strong(agentName)] : []),
       ]);
     }

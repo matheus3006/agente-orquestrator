@@ -186,6 +186,7 @@ export default function ReviewsPage() {
                   prefetch={false}
                   onMouseEnter={() => nav.prefetch(`/issues/${card.issueId}`)}
                 >
+                  {card.seq !== null && <span className="mono text-faint">#{card.seq}</span>}{" "}
                   {card.title}
                 </CompanyLink>
               </h3>

@@ -271,7 +271,9 @@ function ReportDaIssue({ companyId, issue }: { companyId: string; issue: IssueSu
       <Dialog open={aberto} onOpenChange={setAberto}>
         <DialogContent aria-describedby={undefined} className="max-w-[640px]">
           <div className="dialog-body">
-            <DialogTitle className="dialog-title">Report — {issue.title}</DialogTitle>
+            <DialogTitle className="dialog-title">
+              Report — <span className="mono text-faint">#{issue.seq}</span> {issue.title}
+            </DialogTitle>
             {reportQuery.data && (
               <>
                 <p className="dialog-text font-mono text-[11px]">

@@ -117,6 +117,7 @@ export default function IssueDetailPage() {
     () => ({
       agentName: (id) => agentsQuery.data?.find((agent) => agent.id === id)?.name ?? null,
       issueTitle: (id) => issues?.find((candidate) => candidate.id === id)?.title ?? null,
+      issueSeq: (id) => issues?.find((candidate) => candidate.id === id)?.seq ?? null,
       issueRisk: (id) => issues?.find((candidate) => candidate.id === id)?.riskLevel ?? null,
     }),
     [agentsQuery.data, issues],
@@ -172,7 +173,9 @@ export default function IssueDetailPage() {
 
       <div className="detail-grid">
         <div>
-          <h1 className="detail-title">{issue.title}</h1>
+          <h1 className="detail-title">
+            <span className="mono text-faint">#{issue.seq}</span> {issue.title}
+          </h1>
           <p className="detail-desc">{issue.description || "— sem descrição —"}</p>
 
           {issue.status === "BLOCKED" && (
@@ -285,6 +288,10 @@ export default function IssueDetailPage() {
           <div className="prop">
             <span className="prop-key">criada</span>
             <span className="prop-val mono">{fmtAgo(issue.createdAt, nowMs)}</span>
+          </div>
+          <div className="prop">
+            <span className="prop-key">número</span>
+            <span className="prop-val mono">#{issue.seq}</span>
           </div>
           <div className="prop">
             <span className="prop-key">id</span>

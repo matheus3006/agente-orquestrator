@@ -77,7 +77,7 @@ public class MissionControlService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
 
-        Map<UUID, String> issueTitleById = issueTitlesFor(activeRunByAgent.values());
+        Map<UUID, Issue> issueById = issuesFor(activeRunByAgent.values());
 
         // F.9 (ADR-0021 §5): o badge de preview do card — a captura mais recente de cada agente
         // (lista ordenada desc; a primeira ocorrencia por agente vence). Card leve: so metadados,
@@ -89,23 +89,26 @@ public class MissionControlService {
 
         List<AgentCard> cards = roster.stream()
                 .map(agent -> cardFor(companyId, agent, activeRunByAgent.get(agent.getId()),
-                        agentsWithParkedIssue.contains(agent.getId()), issueTitleById,
+                        agentsWithParkedIssue.contains(agent.getId()), issueById,
                         lastPreviewByAgent.get(agent.getId())))
                 .toList();
         return new Snapshot(cards);
     }
 
     private AgentCard cardFor(UUID companyId, Agent agent, HeartbeatRun activeRun,
-                              boolean hasParkedIssue, Map<UUID, String> issueTitleById,
+                              boolean hasParkedIssue, Map<UUID, Issue> issueById,
                               LastPreview lastPreview) {
         AgentActivityStatus status = deriveStatus(activeRun, hasParkedIssue);
         HeartbeatRun traceSource = activeRun != null ? activeRun
                 : runs.findFirstByCompanyIdAndAgentIdOrderByCreatedAtDesc(companyId, agent.getId())
                         .orElse(null);
         List<TraceStep> lastSteps = traceSource == null ? List.of() : traceTailOf(traceSource);
+        Issue runIssue = activeRun != null && activeRun.getIssueId() != null
+                ? issueById.get(activeRun.getIssueId()) : null;
         ActiveRun activeRunView = activeRun == null ? null
                 : new ActiveRun(activeRun.getId(), activeRun.getIssueId(),
-                        activeRun.getIssueId() != null ? issueTitleById.get(activeRun.getIssueId()) : null,
+                        runIssue != null ? runIssue.getSeq() : null,
+                        runIssue != null ? runIssue.getTitle() : null,
                         activeRun.getStartedAt(), activeRun.getAttempt());
         return new AgentCard(new AgentSummary(agent.getId(), agent.getName(), agent.getRole()),
                 status, activeRunView, lastSteps, lastPreview);
@@ -135,7 +138,7 @@ public class MissionControlService {
                 .toList();
     }
 
-    private Map<UUID, String> issueTitlesFor(Collection<HeartbeatRun> activeRuns) {
+    private Map<UUID, Issue> issuesFor(Collection<HeartbeatRun> activeRuns) {
         Set<UUID> issueIds = activeRuns.stream()
                 .map(HeartbeatRun::getIssueId)
                 .filter(Objects::nonNull)
@@ -144,7 +147,7 @@ public class MissionControlService {
             return Map.of();
         }
         return issues.findAllById(issueIds).stream()
-                .collect(Collectors.toMap(Issue::getId, Issue::getTitle));
+                .collect(Collectors.toMap(Issue::getId, Function.identity()));
     }
 
     public record Snapshot(List<AgentCard> agents) {
@@ -166,7 +169,9 @@ public class MissionControlService {
     public record AgentSummary(UUID id, String name, String role) {
     }
 
-    public record ActiveRun(UUID id, UUID issueId, String issueTitle, Instant startedAt, int attempt) {
+    // issueSeq = o #N humano (ADR-0033): o card mostra "executando #12 Titulo"; nulo em run sem Issue.
+    public record ActiveRun(UUID id, UUID issueId, Integer issueSeq, String issueTitle,
+                            Instant startedAt, int attempt) {
     }
 
     public record TraceStep(UUID runId, String type, String detail, Instant createdAt) {

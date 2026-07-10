@@ -8,6 +8,7 @@ const LOOKUPS: FeedLookups = {
     ({ "issue-billing": "Deploy do servico de billing", "issue-schema": "Migrar schema de billing" })[
       id ?? ""
     ] ?? null,
+  issueSeq: (id) => ({ "issue-billing": 7, "issue-schema": 12 })[id ?? ""] ?? null,
   issueRisk: (id) => ({ "issue-schema": 5 })[id ?? ""] ?? null,
 };
 
@@ -41,8 +42,11 @@ describe("buildFeedEntry (feed do shape REAL do activity_log)", () => {
     );
     expect(entry.tone).toBe("bad");
     expect(entry.icon).toBe("blocked");
-    expect(text(entry)).toBe("Nix travou em Deploy do servico de billing — run 213eb466");
+    // #N vem ANTES do título (ADR-0033): o mesmo número do board, em mono (chip de id)
+    expect(text(entry)).toBe("Nix travou em #7 Deploy do servico de billing — run 213eb466");
     expect(entry.segments[0]).toEqual({ kind: "strong", text: "Nix" });
+    expect(entry.segments).toContainEqual({ kind: "mono", text: "#7" });
+    expect(entry.segments).toContainEqual({ kind: "strong", text: "Deploy do servico de billing" });
     expect(entry.segments.at(-1)).toEqual({ kind: "mono", text: "run 213eb466" });
   });
 
@@ -50,7 +54,7 @@ describe("buildFeedEntry (feed do shape REAL do activity_log)", () => {
     const entry = buildFeedEntry(event({}), LOOKUPS);
     expect(entry.tone).toBe("info");
     expect(entry.icon).toBe("reopened");
-    expect(text(entry)).toBe("board reabriu Deploy do servico de billing");
+    expect(text(entry)).toBe("board reabriu #7 Deploy do servico de billing");
   });
 
   it("ISSUE_SUBMITTED_FOR_REVIEW: risco resolvido vira o mono do protótipo", () => {
@@ -66,7 +70,7 @@ describe("buildFeedEntry (feed do shape REAL do activity_log)", () => {
     );
     expect(entry.tone).toBe("warn");
     expect(entry.icon).toBe("review");
-    expect(text(entry)).toBe("Lyra estacionou Migrar schema de billing para review — risco 5 ≥ limiar");
+    expect(text(entry)).toBe("Lyra estacionou #12 Migrar schema de billing para review — risco 5 ≥ limiar");
   });
 
   it("ISSUE_SUBMITTED_FOR_REVIEW sem risco resolvível ancora no ciclo", () => {
@@ -92,7 +96,7 @@ describe("buildFeedEntry (feed do shape REAL do activity_log)", () => {
       LOOKUPS,
     );
     expect(entry.tone).toBe("good");
-    expect(text(entry)).toBe("board aprovou o ciclo bbbb2222 de Deploy do servico de billing");
+    expect(text(entry)).toBe("board aprovou o ciclo bbbb2222 de #7 Deploy do servico de billing");
   });
 
   it("SKILL_ATTACHED: resolve issue e agente pelos IDs do detail", () => {
@@ -106,7 +110,7 @@ describe("buildFeedEntry (feed do shape REAL do activity_log)", () => {
       LOOKUPS,
     );
     expect(entry.icon).toBe("skill");
-    expect(text(entry)).toBe("board anexou uma skill à Deploy do servico de billing para Nix");
+    expect(text(entry)).toBe("board anexou uma skill à #7 Deploy do servico de billing para Nix");
   });
 
   it("SKILL_IMPORTED: resumo do import no mono", () => {
@@ -122,7 +126,7 @@ describe("buildFeedEntry (feed do shape REAL do activity_log)", () => {
     expect(text(entry)).toBe("board importou o catálogo de skills — 2 novas · 1 atualizadas · 80 iguais");
   });
 
-  it("título não resolvível degrada para id curto (nunca quebra)", () => {
+  it("issue não resolvível nos lookups degrada para id curto (nunca quebra)", () => {
     const entry = buildFeedEntry(event({ entityId: "0d9f3a10-zzzz" }), LOOKUPS);
     expect(text(entry)).toBe("board reabriu 0d9f3a10");
     // segmento do id é mono, não strong
