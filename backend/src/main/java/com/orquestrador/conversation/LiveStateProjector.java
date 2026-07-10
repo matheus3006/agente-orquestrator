@@ -84,8 +84,10 @@ public class LiveStateProjector {
             out.append("\n");
         }
 
+        // seq desc, não createdAt desc: com o #N visível, empate exato de timestamp (rajada na
+        // mesma company) embaralharia #2/#3 — o board ordena por seq (ADR-0033), o recorte espelha.
         List<Issue> board = issues.findByCompanyId(companyId).stream()
-                .sorted(Comparator.comparing(Issue::getCreatedAt).reversed())
+                .sorted(Comparator.comparingInt(Issue::getSeq).reversed())
                 .limit(ISSUES_CAP)
                 .toList();
         out.append("### Issues (").append(board.size()).append(" mais recentes)\n");
