@@ -70,7 +70,7 @@ tokens* no código; o loop automático é a Fatia 1. A camada de **orquestraçã
 
 | Capacidade | Verdict · Estágio | Evidência-âncora | Ponteiro |
 |------------|-------------------|------------------|----------|
-| Modelo de heartbeat / execução (state machine + wakeups) | ✅ IMPLEMENTADA · VENDO | `V3__heartbeat.sql:26` (`uq_run_active_agent`, 1-Run-ativo-por-Agent) + `heartbeat_run_event` append-only | ADR-0005 ⚠ **(§ Div ALTA: lease sem renovação)** |
+| Modelo de heartbeat / execução (state machine + wakeups) | ✅ IMPLEMENTADA · VENDO | `V3__heartbeat.sql:26` (`uq_run_active_agent`, 1-Run-ativo-por-Agent) + `heartbeat_run_event` append-only + `LeaseRenewer` (pulso 30s→lease cheio) | ADR-0005 ✅ (Div ALTA do lease FECHADA 2026-07-10 — renovação implementada) |
 | Isolamento de plano por container (Docker) | ✅ IMPLEMENTADA · VENDO | `execution/adapter/EngineContainer.java:27-46` (imagem pinada + só o volume do plano) | ADR-0016 · `handoff-f8-isolamento` |
 | **1º→2º reaper** — WorkspaceReaper (GC de workspace em disco) | ✅ IMPLEMENTADA · VENDO | `execution/runtime/WorkspaceReaper.java:74-171` (sweep + `WORKSPACE_COLLECTED` SYSTEM) | ADR-0026 |
 | **3º reaper** — cap+graduação de rows (PURE-DB, F.14) | ✅ IMPLEMENTADA · VENDO | `RowRetentionReaper.java:53-107` + `RowRetentionPolicy.java:78-103` (vigente/StepTrace/fixada-por-review sobrevivem) | ADR-0028 |
@@ -220,7 +220,7 @@ a *assinatura do método* (anti-inchaço) ainda não.
 > **runtime** achado no VENDO live do loop de handoff em 2026-07-08 — não da varredura doc×código de 07-07 —
 > já **CORRIGIDA** no mesmo dia, ver abaixo.)
 
-### 🔴 ALTA (1 aberta · a de 2026-07-09 FECHADA em 2026-07-10) — merece o olho do Matheus (**H**)
+### 🔴 ALTA (0 abertas · ambas FECHADAS em 2026-07-10) — merece o olho do Matheus (**H**)
 
 - ~~**NOVA (2026-07-09, achada AO VIVO) · agente codex roda "pelado".**~~ **FECHADA (2026-07-10):**
   fatia G3 executada (branch `feat/agents-md-codex-adr0032`, **ADR-0032**) — o adapter declara a
@@ -228,13 +228,24 @@ a *assinatura do método* (anti-inchaço) ainda não.
   nativos, sondas S1/S2); faxina permanente apaga o espelho `.claude/` que ele nunca leu. Era:
   carta e skills SÓ em `.claude/` — o "motor duplo" (ADR-0024) executava mas não lembrava nem sabia
   (Atlas, run B: *"A skill `distillation` não está disponível"*). Confirmação final = §VENDO live.
-- **ADR-0005 · lease sem renovação.** O ADR afirma *"o worker renova o lease enquanto o Run vive"* (base do
+- ~~**ADR-0005 · lease sem renovação.**~~ **FECHADA (2026-07-10): renovação IMPLEMENTADA** — fatia
+  executada conforme o grill (`docs/handoff-grilling-renovacao-lease.md`, D1–D6): `LeaseRenewer`
+  (timer por run, 1 thread daemon, nasce no claim e morre no finally do dispatcher) + CAS
+  `renewLease` guardado por dono (Store+Repository) + `RUN_LEASE_LOST` anti-silêncio na perda de
+  posse (sem kill; o guard do finalize protege o resultado) + `LeaseRenewalTest` 4 provas +
+  emenda do trecho Recovery na PRÓPRIA ADR-0005 (nota de implementação). `AdapterRunExecutor`
+  intocado (D1); zero migration. Era: O ADR afirma *"o worker renova o lease enquanto o Run vive"* (base do
   objetivo "prevenir double-work"). **No código não há renovação** (`grep renew/extendLease` = vazio): lease
   fixo de 2min (`HeartbeatDispatcher.java:30`), execução **síncrona** de processo de agente real que
   **rotineiramente excede 2min**, e o reaper a cada 5s (`HeartbeatScheduler.java:43`) re-enfileira o `RUNNING`
   vencido. *Mitigante provável:* o índice `uq_run_active_agent` (`V3:26`) barra 2 Runs ativos por agente — então
   o efeito real precisa ser **investigado** (auditoria é read-only, não rodou o cenário). **Ação:** ou implementar
   a renovação de lease, ou reconciliar o ADR-0005 com o desenho lease-fixo+reaper. `direction=doc_afirma_codigo_nao_confirma`.
+  **ATUALIZAÇÃO (2026-07-10):** laudo read-only executado (predição confirmada: 0 reexecuções na história;
+  sonda provou o buraco worker-vivo por construção) → **DECISÃO do Matheus: implementar renovação** →
+  **grill fechado (D1–D6)** em `docs/handoff-grilling-renovacao-lease.md` (timer por run no Dispatcher ·
+  30s→lease cheio · `RUN_LEASE_LOST` sem kill · `LeaseRenewalTest` 4 provas · zumbi de seed via operador ·
+  emenda na própria ADR-0005). Execução CONDICIONADA: R1-E landada + recálculo de colisão com a Fatia 2.
 
 ### 🟠 MÉDIA (6 · 1 CORRIGIDA 2026-07-08 · **5 reconciliadas em doc 2026-07-10** — D5/D11 seguem residual **H**)
 
@@ -332,7 +343,7 @@ a *assinatura do método* (anti-inchaço) ainda não.
 - ADR-0030 nova (confirmar).
 
 **Novo (da auditoria 2026-07-07):**
-- **Divergência ALTA (ADR-0005 lease):** implementar renovação de lease **ou** reconciliar o ADR? (investigar o efeito real primeiro).
+- ~~**Divergência ALTA (ADR-0005 lease):** implementar renovação de lease **ou** reconciliar o ADR? (investigar o efeito real primeiro).~~ **RESPONDIDA (2026-07-10): implementar renovação** — grill fechado, plano em `docs/handoff-grilling-renovacao-lease.md` → **EXECUTADA (2026-07-10):** `LeaseRenewer` + `renewLease` CAS + `RUN_LEASE_LOST` + `LeaseRenewalTest` (4 provas); ADR-0005 emendada (trecho Recovery); pende só o VENDO live do pulso (com operador).
 - **Médias doc×código (jOOQ · SKIP LOCKED · `producedArtifacts` · D5 review→Decision · D11 supersedes):**
   ~~atualizar os ADRs para refletir o código, ou puxar fatias?~~ **Reconciliação em doc EXECUTADA (2026-07-10,
   faixa R1-E):** notas datadas nas ADR-0001/0004/0005 (só claim) /0019 + ARQUITETURA.md corrigida. **Segue H:**
@@ -363,4 +374,5 @@ do cronograma pausado** (Frente B, o v1 do CEO). É só **sinalização** — a 
 | 2026-07-10 | **Fatia G5 (ID sequencial #N)** — grill fechado em sessão própria (R1-B do ledger) | `handoff-grilling-id-sequencial-issue` (D1–D5: lock-da-company+MAX+1 · backfill retroativo · "#N é o que eu vejo, UUID é auditoria" · #N no estado vivo · **ADR-0033 autorada**) → PLANEJADO; kickoff de execução emitido (V23, branch de main) |
 | 2026-07-10 | **Fatia AGENTS.md (G3) — VENDO live PASS (fechada)** | **PR #4 MERGED**; M9 (pg_dump + faxina DB 24→3 companies + wipe workspaces + restart) e 5/5 provas: carta (Atlas, `AGENTS.md`==carta v4 por md5 + `.claude/` ausente + resposta "dental+3 motivos") · skill (sonda via import→set→`.codex/skills`→`ABACATE-ROXO-93`; lista `distillation`) · ruído (1 `ITEM.COMPLETED\|error`/run = baseline G4, resíduo) · Docker (volume `orq_b92cb312_73676f52`: AGENTS.md md5==banco, `.claude/` ausente) · gates 443 na branch / **448 na main pós-G5** |
 | 2026-07-10 | **Reconciliação doc-only das 5 médias (faixa R1-E)** | notas datadas em ADR-0001/0004/0005 (só o claim; lease intocado) /0019 + 5 menções jOOQ do ARQUITETURA.md corrigidas; D5/D11 registrados como RESIDUAL ABERTO (**H**) |
+| 2026-07-10 | **Renovação de lease (ADR-0005) — EXECUTADA** (/tdd, D1–D6/M1–M5) | `LeaseRenewer` (timer por run, pulso 30s→lease cheio) + `renewLease` CAS por dono + `RUN_LEASE_LOST` anti-silêncio + `LeaseRenewalTest` 4 provas; ADR-0005 emendada (Recovery); divergência 🔴 ALTA do lease FECHADA; suíte **474** (piso 470 + 4); `AdapterRunExecutor` intocado; pende VENDO live do pulso + zumbi D5 (operador) |
 | _próximo_ | Fatia 2 (CEO em 3 personas, ADR-0031) — destravada pelo merge da G3; Frente C idem | — |
