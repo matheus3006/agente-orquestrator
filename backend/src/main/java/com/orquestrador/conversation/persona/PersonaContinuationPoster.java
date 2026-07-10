@@ -28,8 +28,8 @@ import java.util.UUID;
  *   <li><b>Trava anti-loop de kickback (M9):</b> {@value #MAX_KICKBACKS_SEGUIDOS} kickbacks
  *       seguidos SEM o dono no meio → em vez de re-grelhar de novo, a ORIGEM recebe "prossiga com
  *       a melhor premissa e SINALIZE" (o dono pega no review/gate) — nunca trava. N espelha o
- *       {@code SpawnLineageGuard.MAX_DEPTH=5} (veto do dono pendente, como o MAX_CONSECUTIVE da
- *       ADR-0030).</li>
+ *       {@code SpawnLineageGuard.MAX_DEPTH=5} (confirmado pelo dono em 2026-07-10, como o
+ *       MAX_CONSECUTIVE da ADR-0030).</li>
  * </ul>
  */
 @Component

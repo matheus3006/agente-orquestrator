@@ -266,9 +266,9 @@ indentado no prompt e nunca dispara ao ser ecoado/citado). ⚠ avisar R1-D: `SYN
    Itens que SÓ o live com motor real prova: D5 semântico (o Q sentir cobertura e perguntar "posso
    seguir?") e D10 (`delegation` navegando/spawnando sub-agentes num run claude real).
 
-**Pendências de veto do dono (sinalizadas, NÃO decididas):** formato dos blocos (acima) ·
-N=5 da trava M9 (espelha MAX_DEPTH; 1 constante) · governança off-book do `delegation` aceita no
-v1 (confirmar) · ADR-0031 nova (feita como nova — confirmar).
+**Vetos do dono — TODOS CONFIRMADOS (2026-07-10, "OK" na sessão de execução):** formato dos
+blocos (acima) ✔ · N=5 da trava M9 ✔ · governança off-book do `delegation` aceita no v1 ✔ ·
+ADR-0031 nova ✔ · **PR autorizado** (merge após o VENDO do operador).
 
 **Divergências/decisões novas no caminho (com racional):** (1) corte anti-reincidência no M9 (acima);
 (2) kickback VISÍVEL (sem isso o dono nunca veria a re-grelha — run fresco não tem outra memória);

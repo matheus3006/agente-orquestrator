@@ -98,11 +98,12 @@ LLM — ADR-0019): é o que o Planejador lê para propor times.
   já na Fatia 1.
 
 ## Ressalvas honestas
-- **Formato dos blocos tipados = veto pendente do dono** (proposto e PINADO em
-  `PersonaHandoffScannerTest`; a faixa R1-D referencia como `⚠ SYNC-FATIA-2`).
-- **N=5 da trava M9 = veto pendente** (espelha MAX_DEPTH; trocar é 1 constante).
-- **Governança off-book do `delegation` (D10) aceita no v1** — sub-agentes/web do run são
-  invisíveis a lineage/budget; freio duro seria subsistema (adiado, §G.3 do handoff).
+- **Formato dos blocos tipados: CONFIRMADO pelo dono (2026-07-10)** — pinado em
+  `PersonaHandoffScannerTest`; a faixa R1-D (`⚠ SYNC-FATIA-2`) pode sincronizar os drafts.
+- **N=5 da trava M9: CONFIRMADO pelo dono (2026-07-10)** (espelha MAX_DEPTH; trocar é 1 constante).
+- **Governança off-book do `delegation` (D10): aceite no v1 CONFIRMADO (2026-07-10)** —
+  sub-agentes/web do run são invisíveis a lineage/budget; freio duro seria subsistema (adiado,
+  §G.3 do handoff).
 - Os turnos de fluxo compartilham o prefixo `[continuação` com a ADR-0030: contam na régua do
   poster de reset (cap 5) — orçamento de segurança compartilhado, aceito no v1.
 - Backfill copia o motor do canônico para P/E — companies legadas ficam com 3 CEOs do MESMO
