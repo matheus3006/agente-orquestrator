@@ -30,6 +30,8 @@ const issue = (o: Partial<IssueSummary> = {}): IssueSummary => ({
   assigneeAgentId: "ag-1",
   executionLockRunId: null,
   createdAt: "2026-07-02T09:00:00Z",
+  corrigeIssueId: null,
+  corrigeSeq: null,
   ...o,
 });
 

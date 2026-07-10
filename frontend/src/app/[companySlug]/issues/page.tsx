@@ -2,12 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { CompanyLink, useCompanyNav } from "@/components/company-link";
-import { AssigneeChip, RiskBadge } from "@/components/issue-bits";
+import { AssigneeChip, CorrigeSelo, RiskBadge } from "@/components/issue-bits";
 import { NewIssueDialog } from "@/components/new-issue-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { View, ViewHead } from "@/components/view";
 import { listAgents, listIssues } from "@/lib/api";
-import { groupIssuesByStatus } from "@/lib/issues";
+import { corrigeSelo, groupIssuesByStatus } from "@/lib/issues";
 import { queryKeys } from "@/lib/query-keys";
 import { useActiveCompany } from "@/lib/use-active-company";
 
@@ -85,6 +85,7 @@ export default function IssuesPage() {
                 <span className={`led ${group.led}`} />
                 <RiskBadge riskLevel={issue.riskLevel} status={group.status} />
                 <span className="row-title">{issue.title}</span>
+                <CorrigeSelo selo={corrigeSelo(issue)} />
                 <AssigneeChip
                   name={issue.assigneeAgentId ? agentName(issue.assigneeAgentId) : null}
                 />

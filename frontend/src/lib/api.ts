@@ -199,6 +199,10 @@ export interface IssueSummary {
   assigneeAgentId: string | null;
   executionLockRunId: string | null;
   createdAt: string;
+  /** Caso B (ADR-0034): a task que esta corrige — preenchido só na corretiva. */
+  corrigeIssueId: string | null;
+  /** O #N humano do alvo (o selo "corrige #N"); null se o alvo foi colhido. */
+  corrigeSeq: number | null;
 }
 
 export function listIssues(companyId: string): Promise<IssueSummary[]> {

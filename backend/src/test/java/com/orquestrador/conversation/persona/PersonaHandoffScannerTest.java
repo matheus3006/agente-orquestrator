@@ -79,6 +79,34 @@ class PersonaHandoffScannerTest {
         assertThat(scanner.scan("resposta sem bloco nenhum")).isEmpty();
     }
 
+    /**
+     * O 3º irmão (caso B, ADR-0034/M2 — formato proposto ao dono, veto pendente): o Questionador
+     * aponta a task ENTREGUE que ficou ruim com SÓ o número — as palavras do dono NUNCA viajam
+     * no bloco (verbatim é cópia mecânica do banco, D3).
+     */
+    @Test
+    void correcaoCanonicaCarregaSoONumero() {
+        String reply = "Encaminho a correção da #12.\n\n```correcao\n{\"issue\": 12}\n```\n";
+
+        List<PersonaHandoffScanner.Route> routes = scanner.scan(reply);
+
+        assertThat(routes).hasSize(1);
+        PersonaHandoffScanner.Correcao correcao = (PersonaHandoffScanner.Correcao) routes.get(0);
+        assertThat(correcao.issue()).isEqualTo(12);
+    }
+
+    /** Fail-soft do correcao: número ausente/não numérico/não positivo ou cerca indentada = nada. */
+    @Test
+    void correcaoMalformadaOuIndentadaEDescartada() {
+        assertThat(scanner.scan("```correcao\nisto não é json\n```")).isEmpty();
+        assertThat(scanner.scan("```correcao\n{\"issue\": \"doze\"}\n```")).isEmpty();
+        assertThat(scanner.scan("```correcao\n{\"task\": 12}\n```")).isEmpty();
+        assertThat(scanner.scan("```correcao\n{\"issue\": 0}\n```")).isEmpty();
+        assertThat(scanner.scan("```correcao\n{\"issue\": -3}\n```")).isEmpty();
+        assertThat(scanner.scan("O formato é:\n  ```correcao\n  {\"issue\": 12}\n  ```\n"))
+                .as("o exemplo INDENTADO no prompt do Questionador nunca dispara").isEmpty();
+    }
+
     @Test
     void blocosValidosSaemNaOrdemDoTexto() {
         String reply = "```needs-grilling\n{\"lacuna\": \"primeira\"}\n```\n"

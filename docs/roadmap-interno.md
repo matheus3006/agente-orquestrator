@@ -130,7 +130,13 @@ segue `PLANEJADO` (código intencionalmente ausente, NÃO é lacuna — auditori
 **Priorização CONFIRMADA pelo dono (grill 2026-07-09):** fatia AGENTS.md (G3) **antes** da Fatia 2 → G5
 (ID sequencial) → caso B — as skills das personas não chegam ao codex sem G3. **G5 ANTECIPADA em
 paralelo ao fecho da G3** (decisão do dono, 2026-07-10 — colisão zero arquivo a arquivo, ledger
-`controle-paralelismo.md`); grill do G5 FECHADO em 2026-07-10 → PLANEJADO.
+`controle-paralelismo.md`); grill do G5 FECHADO em 2026-07-10 → PLANEJADO. **Grill do CASO B
+FECHADO em 2026-07-10 (faixa R3-C)** → **EXECUTADA + VENDO PASS (2026-07-10, branch
+`feat/caso-b-adr0034`)**: `handoff-grilling-caso-b.md` (D1–D8/M1–M7 + §RESULTADO;
+bloco ```` ```correcao ```` do Questionador → corrente #N→time→arquiteto determinística → corretiva
+`corrige_issue_id` (V26) com verbatim do dono copiado do banco → 1ª Decision origem-AGENTE;
+**ADR-0034 + V26 = reservas consumidas**; divergência assumida da letra do B2 registrada e
+declarada na ADR; novo piso proposto: backend **489** · front **248**).
 
 | Item | Verdict · Estágio | Evidência de ausência-limpa / fundação | Ponteiro · Próxima ação (dono) |
 |------|-------------------|----------------------------------------|--------------------------------|
@@ -375,4 +381,6 @@ do cronograma pausado** (Frente B, o v1 do CEO). É só **sinalização** — a 
 | 2026-07-10 | **Fatia AGENTS.md (G3) — VENDO live PASS (fechada)** | **PR #4 MERGED**; M9 (pg_dump + faxina DB 24→3 companies + wipe workspaces + restart) e 5/5 provas: carta (Atlas, `AGENTS.md`==carta v4 por md5 + `.claude/` ausente + resposta "dental+3 motivos") · skill (sonda via import→set→`.codex/skills`→`ABACATE-ROXO-93`; lista `distillation`) · ruído (1 `ITEM.COMPLETED\|error`/run = baseline G4, resíduo) · Docker (volume `orq_b92cb312_73676f52`: AGENTS.md md5==banco, `.claude/` ausente) · gates 443 na branch / **448 na main pós-G5** |
 | 2026-07-10 | **Reconciliação doc-only das 5 médias (faixa R1-E)** | notas datadas em ADR-0001/0004/0005 (só o claim; lease intocado) /0019 + 5 menções jOOQ do ARQUITETURA.md corrigidas; D5/D11 registrados como RESIDUAL ABERTO (**H**) |
 | 2026-07-10 | **Renovação de lease (ADR-0005) — EXECUTADA** (/tdd, D1–D6/M1–M5) | `LeaseRenewer` (timer por run, pulso 30s→lease cheio) + `renewLease` CAS por dono + `RUN_LEASE_LOST` anti-silêncio + `LeaseRenewalTest` 4 provas; ADR-0005 emendada (Recovery); divergência 🔴 ALTA do lease FECHADA; suíte **474** (piso 470 + 4); `AdapterRunExecutor` intocado; pende VENDO live do pulso + zumbi D5 (operador) |
+| 2026-07-10 | **CASO B (melhoria de task entregue) — grill fechado em sessão própria (R3-C do ledger)** | `handoff-grilling-caso-b.md` (D1–D8: ```` ```correcao ```` Q-direto · corrente quebrada=para-e-avisa · verbatim=cópia do banco · sistema cria/arquiteto é dono (divergência da LETRA do B2, registrada) · `corrige_issue_id` V26 · Decision determinística origem-AGENTE (1º writer) · sem trava, sinal de linhagem · **ADR-0034** a criar) → PLANEJADO; kickoff de execução emitido (branch de main, piso 474/246); seams D5/D11 da 0019 checados = intocados |
+| 2026-07-10 | **CASO B (ADR-0034) — EXECUTADA + VENDO PASS na descartável** (/tdd + /verify, D1–D8/M1–M7) | `CorrecaoDeEntregaRouter` (seam de 1 método) + 3º padrão do scanner + V26 `corrige_issue_id` + `createCorretiva` (chokepoint da 0033) + **1ª Decision origem-AGENTE do produto** + confirmação ANSWERED sem run + selo "corrige #N" (lista+detail); suítes **489** backend (piso 474 + 15) · **248** front (246 + 2), tsc/lint limpos; **VENDO §D 10/10 no 18081+pg efêmero** (:8080 intocado) — feliz com **run claude REAL** (opus emitiu o bloco de 1ª; md5 verbatim true; carta intocada) · corrente quebrada/DONE/linhagem/fail-soft PASS · carona D10: zero sub-agentes no rastro (registro no §RESULTADO do handoff); **pendências de veto no PR** (formato do bloco · textos M6 · título) |
 | _próximo_ | Fatia 2 (CEO em 3 personas, ADR-0031) — destravada pelo merge da G3; Frente C idem | — |

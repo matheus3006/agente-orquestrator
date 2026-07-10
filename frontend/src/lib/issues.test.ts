@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityEvent, IssueRun, IssueSummary } from "./api";
 import {
+  corrigeSelo,
   groupIssuesByStatus,
   issueActivityEvents,
   issueBehindLedger,
@@ -21,7 +22,20 @@ const issue = (overrides: Partial<IssueSummary>): IssueSummary => ({
   assigneeAgentId: null,
   executionLockRunId: null,
   createdAt: "2026-07-02T10:00:00Z",
+  corrigeIssueId: null,
+  corrigeSeq: null,
   ...overrides,
+});
+
+describe("corrigeSelo (caso B, ADR-0034 — o selo 'corrige #N' da corretiva)", () => {
+  it("corretiva ganha o selo com o #N humano do alvo", () => {
+    expect(corrigeSelo(issue({ corrigeIssueId: "orig", corrigeSeq: 12 }))).toBe("corrige #12");
+  });
+
+  it("task normal (e alvo colhido, corrigeSeq null) fica sem selo", () => {
+    expect(corrigeSelo(issue({}))).toBeNull();
+    expect(corrigeSelo(issue({ corrigeIssueId: "orig", corrigeSeq: null }))).toBeNull();
+  });
 });
 
 describe("groupIssuesByStatus (a ordem do protótipo, grupos vazios somem)", () => {
@@ -141,6 +155,8 @@ describe("issueBehindLedger (ledger diz 'liquidado', issue ainda diz IN_PROGRESS
     assigneeAgentId: null,
     executionLockRunId: null,
     createdAt: "",
+    corrigeIssueId: null,
+    corrigeSeq: null,
   });
 
   it("IN_PROGRESS com todos os runs terminais → lista está atrás", () => {

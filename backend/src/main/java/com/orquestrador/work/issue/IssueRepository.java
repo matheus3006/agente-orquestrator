@@ -34,6 +34,13 @@ public interface IssueRepository extends JpaRepository<Issue, UUID> {
     Optional<Issue> findByIdAndCompanyId(UUID id, UUID companyId);
 
     /**
+     * Resolve o #N humano para a Issue (caso B, ADR-0034/M1 — o lookup que a ADR-0033 §4 já
+     * previa): "a task #12 ficou ruim" chega como número, e o roteamento da correção começa
+     * aqui. O índice {@code uq_issue_company_seq} (V23) é o caminho natural.
+     */
+    Optional<Issue> findByCompanyIdAndSeq(UUID companyId, int seq);
+
+    /**
      * F.12 (ADR-0026): as Issues que JÁ rodaram (assignee fixado no checkout ⇒ têm workspace) — a
      * base da DERIVAÇÃO do {@code WorkspaceReaper}. Deriva o ref esperado de cada uma e intersecta
      * com o mundo listado pelo alvo; um ref no mundo fora deste conjunto é órfão (só WARN). Inclui

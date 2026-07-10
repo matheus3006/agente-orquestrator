@@ -70,6 +70,24 @@ public class IssueService {
     }
 
     /**
+     * A task CORRETIVA do caso B (ADR-0034): nasce pelo MESMO chokepoint (lock da company +
+     * MAX+1 — a ADR-0033 segue intocada), ligada a task que corrige ({@code corrige_issue_id})
+     * e com o assignee PRE-SETADO (o arquiteto do time — a task nasce na mesa dele). Quem monta
+     * titulo/descricao (verbatim do dono) e resolve o arquiteto e o caller (o roteador do caso B);
+     * aqui e so o nascimento.
+     */
+    @Transactional
+    public Issue createCorretiva(UUID companyId, String title, String description,
+                                 UUID corrigeIssueId, UUID assigneeAgentId) {
+        companies.findByIdForUpdate(companyId)
+                .orElseThrow(() -> new NotFoundException("Company nao encontrada: " + companyId));
+        int seq = issues.maxSeqByCompany(companyId) + 1;
+        Issue corretiva = new Issue(UUID.randomUUID(), companyId, seq, title, description, 1);
+        corretiva.nascerCorrigindo(corrigeIssueId, assigneeAgentId);
+        return issues.save(corretiva);
+    }
+
+    /**
      * Checkout atomico. Gera um runId se nao vier (na fatia 1 nao ha heartbeat ainda;
      * a partir da fatia 2 o run vem do motor de heartbeat).
      */
@@ -218,6 +236,19 @@ public class IssueService {
     @Transactional(readOnly = true)
     public List<Issue> list(UUID companyId) {
         return issues.findByCompanyId(companyId);
+    }
+
+    /**
+     * O #N humano da task que esta corrige (caso B, ADR-0034/M7) — o selo "corrige #N" da
+     * superfície. Null em task normal; null também se o alvo sumiu (defensivo — o selo se cala,
+     * a coluna segue auditável).
+     */
+    @Transactional(readOnly = true)
+    public Integer corrigeSeqDe(Issue issue) {
+        if (issue.getCorrigeIssueId() == null) {
+            return null;
+        }
+        return issues.findById(issue.getCorrigeIssueId()).map(Issue::getSeq).orElse(null);
     }
 
     @Transactional(readOnly = true)

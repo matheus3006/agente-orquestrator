@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityFeed } from "@/components/activity-feed";
 import { AgentDot } from "@/components/agent-dot";
 import { CompanyLink } from "@/components/company-link";
-import { AssigneeChip, RiskBadge } from "@/components/issue-bits";
+import { AssigneeChip, CorrigeSelo, RiskBadge } from "@/components/issue-bits";
 import { IssuePreviewSection } from "@/components/preview-section";
 import { IssueServerSection } from "@/components/preview-server-section";
 import { StepTraceDrawer, type TranscriptRequest } from "@/components/step-trace-drawer";
@@ -25,6 +25,7 @@ import {
 import type { FeedLookups } from "@/lib/feed";
 import { fmtAgo, shortId } from "@/lib/format";
 import {
+  corrigeSelo,
   issueActivityEvents,
   issueBehindLedger,
   issueStatusLed,
@@ -174,7 +175,8 @@ export default function IssueDetailPage() {
       <div className="detail-grid">
         <div>
           <h1 className="detail-title">
-            <span className="mono text-faint">#{issue.seq}</span> {issue.title}
+            <span className="mono text-faint">#{issue.seq}</span> {issue.title}{" "}
+            <CorrigeSelo selo={corrigeSelo(issue)} />
           </h1>
           <p className="detail-desc">{issue.description || "— sem descrição —"}</p>
 
@@ -293,6 +295,16 @@ export default function IssueDetailPage() {
             <span className="prop-key">número</span>
             <span className="prop-val mono">#{issue.seq}</span>
           </div>
+          {issue.corrigeIssueId !== null && issue.corrigeSeq !== null && (
+            <div className="prop">
+              <span className="prop-key">corrige</span>
+              <span className="prop-val mono">
+                <CompanyLink href={`/issues/${issue.corrigeIssueId}`}>
+                  #{issue.corrigeSeq}
+                </CompanyLink>
+              </span>
+            </div>
+          )}
           <div className="prop">
             <span className="prop-key">id</span>
             <span className="prop-val mono break-all text-right">{issue.id}</span>

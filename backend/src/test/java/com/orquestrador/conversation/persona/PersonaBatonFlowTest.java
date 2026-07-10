@@ -15,6 +15,11 @@ import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
+import com.orquestrador.org.team.Team;
+import com.orquestrador.org.team.TeamRepository;
+import com.orquestrador.work.issue.Issue;
+import com.orquestrador.work.issue.IssueRepository;
+import com.orquestrador.work.issue.IssueService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,6 +57,12 @@ class PersonaBatonFlowTest {
     private WakeupService wakeups;
     @Autowired
     private ApprovalRepository approvals;
+    @Autowired
+    private IssueService issues;
+    @Autowired
+    private IssueRepository issueRepo;
+    @Autowired
+    private TeamRepository teams;
 
     /** A fila do dispatcher é GLOBAL no H2 compartilhado: drenar antes/depois isola as ondas. */
     @BeforeEach
@@ -84,6 +95,26 @@ class PersonaBatonFlowTest {
 
     private List<ConversationTurn> thread(UUID companyId, UUID conversationId) {
         return turns.findByConversationIdAndCompanyIdOrderByCreatedAtAsc(conversationId, companyId);
+    }
+
+    /** Um arquiteto designado no seu time — a ponta da corrente que o caso B resolve. */
+    private UUID agenteEmTime(UUID companyId, String nome) {
+        Team time = teams.save(new Team(UUID.randomUUID(), companyId, "Dev", "Landing"));
+        Agent arquiteto = new Agent(UUID.randomUUID(), companyId, nome, "executor", null);
+        arquiteto.assignTeam(time.getId());
+        UUID arquitetoId = agents.save(arquiteto).getId();
+        time.designarArquiteto(arquitetoId);
+        teams.save(time);
+        return arquitetoId;
+    }
+
+    /** Uma Issue ENTREGUE (checkout + complete = DONE de verdade) pelo agente dado. */
+    private Issue entreguePor(UUID companyId, UUID agenteId, String titulo) {
+        Issue issue = issues.create(companyId, titulo, "entregável original");
+        UUID runId = UUID.randomUUID();
+        issues.checkout(companyId, issue.getId(), agenteId, runId);
+        issues.complete(companyId, issue.getId(), runId);
+        return issue;
     }
 
     @Test
@@ -217,6 +248,59 @@ class PersonaBatonFlowTest {
         assertThat(corte.getOwnerMessage()).startsWith("Bastão parado");
         assertThat(corte.getCeoReply()).contains("segue sem resposta");
         assertThat(dispatcher.dispatchOnce()).isEqualTo(0); // o ping-pong morreu aqui
+    }
+
+    /**
+     * Caso B ponta a ponta (ADR-0034): o dono aponta a task ENTREGUE que ficou ruim; o
+     * Questionador emite ```correcao``` com SÓ o número; o settle cria a corretiva com as
+     * palavras do dono BYTE A BYTE e confirma VISÍVEL na thread — zero LLM em registro permanente.
+     */
+    @Test
+    void correcaoDoQuestionadorProtocolaOCasoBPontaAPonta() {
+        UUID companyId = novaCompany();
+        String reclamacao = "a task #1 ficou ruim — o formulário não valida e-mail";
+        persona(companyId, "questionador", "CEO Questionador",
+                "printf '%s\\n' 'Encaminho a correção da #1.' '```correcao' '{\"issue\": 1}' '```'");
+        UUID arquitetoId = agenteEmTime(companyId, "Ana Arquiteta");
+        Issue entregue = entreguePor(companyId, arquitetoId, "Landing page");
+
+        Conversation negocio = conversations.open(companyId, "Negócio");
+        conversations.postMessage(companyId, negocio.getId(), reclamacao,
+                ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1); // o run do Q emite o bloco
+
+        Issue corretiva = issueRepo.findByCompanyIdAndSeq(companyId, 2).orElseThrow();
+        assertThat(corretiva.getDescription())
+                .as("verbatim: cópia mecânica do banco, nunca do bloco").isEqualTo(reclamacao);
+        assertThat(corretiva.getCorrigeIssueId()).isEqualTo(entregue.getId());
+        // confirmação VISÍVEL (diferente do bastão): o dono lê o protocolo na própria thread
+        List<ConversationTurn> visiveis = conversations.thread(companyId, negocio.getId());
+        ConversationTurn confirmacao = visiveis.get(visiveis.size() - 1);
+        assertThat(confirmacao.getStatus()).isEqualTo(TurnStatus.ANSWERED);
+        assertThat(confirmacao.getCeoReply()).contains("task #2").contains("Ana Arquiteta");
+        assertThat(dispatcher.dispatchOnce()).as("nenhum run novo nasce da confirmação").isEqualTo(0);
+    }
+
+    /** M3: só o QUESTIONADOR roteia ```correcao``` — P/E emitindo = log + descarte (fail-soft). */
+    @Test
+    void correcaoDePlanejadorEDescartadaSemNada() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' 'Corrijo eu.' '```correcao' '{\"issue\": 1}' '```'");
+        UUID arquitetoId = agenteEmTime(companyId, "Ana Arquiteta");
+        entreguePor(companyId, arquitetoId, "Landing page");
+
+        Conversation negocio = conversations.open(companyId, "Negócio");
+        turnoPara(companyId, negocio.getId(), planejadorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.QUESTIONADOR, CeoPersona.PLANEJADOR,
+                        ".orq/conversa/x/dossie.md", "gerar estratégia"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(issueRepo.findByCompanyIdAndSeq(companyId, 2))
+                .as("nenhuma corretiva nasce de bloco fora do balcão").isEmpty();
+        assertThat(thread(companyId, negocio.getId()))
+                .as("nenhum turno de protocolo/aviso além do bastão atendido").hasSize(1);
     }
 
     /** D3/A2: o ```proposta``` do Executor segue INTOCADO pro gate T3 — nada de virada. */

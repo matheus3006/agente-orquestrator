@@ -102,6 +102,12 @@ public class Decision {
         return this;
     }
 
+    /** Proveniência fora de gate (caso B, ADR-0034): a Decisão de um AGENTE ancora direto na Issue. */
+    public Decision anchoredToIssue(UUID issueId) {
+        this.issueId = issueId;
+        return this;
+    }
+
     public Decision withEvidencia(String evidencia) {
         this.evidencia = evidencia;
         return this;

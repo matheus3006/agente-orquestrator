@@ -49,6 +49,15 @@ export function isTerminalIssueStatus(status: string): boolean {
   return status === "DONE" || status === "CANCELLED";
 }
 
+/**
+ * O selo da task corretiva (caso B, ADR-0034): "corrige #N" torna a reincidência
+ * VISÍVEL na superfície — o racional do B2. Null = task normal (sem selo); alvo
+ * colhido (corrigeSeq null) também se cala — a coluna segue auditável no backend.
+ */
+export function corrigeSelo(issue: IssueSummary): string | null {
+  return issue.corrigeSeq === null ? null : `corrige #${issue.corrigeSeq}`;
+}
+
 export interface IssueGroup {
   status: string;
   label: string;

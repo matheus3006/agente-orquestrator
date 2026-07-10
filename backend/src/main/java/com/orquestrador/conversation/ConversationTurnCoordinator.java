@@ -179,6 +179,17 @@ public class ConversationTurnCoordinator {
                 + " à persona de ORIGEM (o `para` do seu `handoff` é a origem indicada na mensagem).\n"
                 + "- Antes de o dono ir ao menu de contratação: entregue NA CONVERSA o racional legível"
                 + " da proposta (por que essas áreas/agentes, citando o dossiê).\n"
+                // Caso B (ADR-0034): correção de task ENTREGUE — payload mínimo deliberado (D1/D3):
+                // as palavras do dono NUNCA viajam no bloco; o backend copia o turno byte a byte.
+                + "- Correção de task ENTREGUE (ex.: \"a task #12 ficou ruim — ...\"): responda"
+                + " confirmando o encaminhamento e emita o bloco `correcao` com SÓ o número da task"
+                + " — NUNCA transcreva as palavras do dono (o sistema copia a mensagem do turno"
+                + " byte a byte para a task corretiva). Emita o bloco no turno em que a reclamação"
+                + " está COMPLETA; se veio espalhada em vários turnos, peça ao dono: \"me resume"
+                + " numa mensagem só\" — e emita só no turno da mensagem consolidada.\n"
+                + "  ```correcao\n"
+                + "  {\"issue\": <o número da task, ex.: 12>}\n"
+                + "  ```\n"
                 + blocoBlocosTipados();
     }
 
