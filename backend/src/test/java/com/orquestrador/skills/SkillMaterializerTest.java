@@ -30,8 +30,19 @@ class SkillMaterializerTest {
     }
 
     @Test
+    void oSubdirEParametroDaConvencaoDoAdapter() throws IOException {
+        // ADR-0032: a árvore do codex tem a MESMA forma da .claude/skills (sonda S2) — o
+        // materializer é reusado mudando só o prefixo, que vem da WorkspaceConvention do adapter.
+        materializer.materialize(workDir, ".codex/skills", List.of(version("tdd", "corpo nativo")));
+
+        assertThat(Files.readString(workDir.resolve(".codex/skills/tdd/SKILL.md")))
+                .isEqualTo("corpo nativo");
+        assertThat(Files.exists(workDir.resolve(".claude"))).isFalse();
+    }
+
+    @Test
     void escreveOConjuntoNoLayoutCanonico() throws IOException {
-        materializer.materialize(workDir, List.of(
+        materializer.materialize(workDir, ".claude/skills", List.of(
                 version("tdd", "# TDD\ncorpo tdd\n"),
                 version("pdf", "# PDF\ncorpo pdf\n")));
 
@@ -44,9 +55,9 @@ class SkillMaterializerTest {
 
     @Test
     void idempotenteReescreveAPastaInteira() throws IOException {
-        materializer.materialize(workDir, List.of(version("tdd", "a"), version("pdf", "b")));
+        materializer.materialize(workDir, ".claude/skills", List.of(version("tdd", "a"), version("pdf", "b")));
         // segundo Run só tem 'tdd' — 'pdf' (desanexada) deve sumir do disco
-        materializer.materialize(workDir, List.of(version("tdd", "a2")));
+        materializer.materialize(workDir, ".claude/skills", List.of(version("tdd", "a2")));
 
         assertThat(Files.exists(workDir.resolve(".claude/skills/tdd/SKILL.md"))).isTrue();
         assertThat(Files.readString(workDir.resolve(".claude/skills/tdd/SKILL.md"))).isEqualTo("a2");
@@ -55,8 +66,8 @@ class SkillMaterializerTest {
 
     @Test
     void conjuntoVazioNaoDeixaSkills() throws IOException {
-        materializer.materialize(workDir, List.of(version("tdd", "a")));
-        materializer.materialize(workDir, List.of());
+        materializer.materialize(workDir, ".claude/skills", List.of(version("tdd", "a")));
+        materializer.materialize(workDir, ".claude/skills", List.of());
 
         Path skillsRoot = workDir.resolve(".claude/skills");
         assertThat(Files.exists(skillsRoot)).isFalse();
@@ -64,7 +75,7 @@ class SkillMaterializerTest {
 
     @Test
     void nomeMaliciosoNaoEscapaDoWorkspace() {
-        materializer.materialize(workDir, List.of(version("../../evil", "x")));
+        materializer.materialize(workDir, ".claude/skills", List.of(version("../../evil", "x")));
 
         // nada escreve fora do workspace
         assertThat(Files.exists(workDir.getParent().resolve("evil"))).isFalse();
@@ -74,7 +85,7 @@ class SkillMaterializerTest {
     @Test
     void nomesQueColidemAoSanitizarNaoPerdemSkill() throws IOException {
         // 'my skill' e 'my-skill' sanitizam para a mesma chave — AMBAS devem sobreviver (sem overwrite)
-        materializer.materialize(workDir, List.of(version("my skill", "corpo-A"), version("my-skill", "corpo-B")));
+        materializer.materialize(workDir, ".claude/skills", List.of(version("my skill", "corpo-A"), version("my-skill", "corpo-B")));
 
         List<String> bodies = new ArrayList<>();
         try (Stream<Path> walk = Files.walk(workDir.resolve(".claude/skills"))) {

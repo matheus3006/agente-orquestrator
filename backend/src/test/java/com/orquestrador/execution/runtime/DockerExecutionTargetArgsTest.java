@@ -94,6 +94,29 @@ class DockerExecutionTargetArgsTest {
     }
 
     @Test
+    void escritorComAUniaoDasConvencoesRemoveOCerebroVelhoDoVolume() {
+        // ADR-0032 (D6/P2): o executor lista a UNIÃO das convenções conhecidas — a ativa vem na
+        // árvore do tar; a inativa, ausente no host, vira SÓ rm no volume (a faxina do DOCKER de
+        // graça). Num volume limpo o rm extra é no-op; num workspace pré-G3 ele apaga o espelho
+        // .claude/ que o codex nunca leu.
+        DockerExecutionTarget target = new DockerExecutionTarget();
+        ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
+                Path.of("/w"), List.of(), Map.of(), "orq-codex:0.142.5", "vol1", List.of());
+
+        List<String> argv = target.buildWriteArgs(spec,
+                List.of(".claude/skills", ".codex/skills", ".claude/CLAUDE.md", "AGENTS.md"), true);
+
+        assertThat(argv).containsExactly(
+                "docker", "run", "--rm", "-i", "--network", "none",
+                "-v", "vol1:/workspace",
+                "orq-codex:0.142.5",
+                "sh", "-c",
+                "rm -rf /workspace/.claude/skills /workspace/.codex/skills"
+                        + " /workspace/.claude/CLAUDE.md /workspace/AGENTS.md"
+                        + " && tar -xf - -C /workspace");
+    }
+
+    @Test
     void escritorSemArvoreMaterializadaSoRemoveOsSubtreesDoVolume() {
         // SkillSet vazio / carta removida: o host nao tem a arvore — o replace vira SO remocao
         // (a skill removida do conjunto some do volume, como some do workDir no LOCAL). Sem

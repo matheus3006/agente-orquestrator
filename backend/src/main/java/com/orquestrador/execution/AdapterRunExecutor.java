@@ -3,6 +3,7 @@ package com.orquestrador.execution;
 import com.orquestrador.conversation.ConversationTurnCoordinator;
 import com.orquestrador.execution.adapter.AdapterRegistry;
 import com.orquestrador.execution.adapter.AgentAdapter;
+import com.orquestrador.execution.adapter.WorkspaceConvention;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTargets;
 import com.orquestrador.execution.runtime.WorkspaceResolver;
@@ -22,10 +23,16 @@ import com.orquestrador.work.issue.CheckoutResult;
 import com.orquestrador.work.issue.IssueService;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Executor real (slice 3): resolve o Workspace, faz o checkout da Issue com o runId, invoca o
@@ -114,6 +121,12 @@ public class AdapterRunExecutor implements RunExecutor {
             return RunOutcome.failure("agente nao encontrado: " + runContext.agentId());
         }
 
+        // ADR-0032 (D3/D4): o adapter resolve ANTES de qualquer preparo — a convenção de workspace
+        // dele dirige os materializers, e tipo desconhecido falha AQUI, com a Issue ainda livre
+        // (antes do checkout, nenhum lock preso por um run morto).
+        AgentAdapter adapter = adapters.forType(agent.getAdapterType());
+        WorkspaceConvention convention = adapter.workspaceConvention();
+
         // Fatia 7a: prepara o workspace ANTES do checkout — materializa a UNIÃO base∪anexos-da-Issue
         // (resolveForRun colapsa por skill com ANEXO-VENCE-A-BASE; anexos de Issue fechada não entram).
         // Uma falha de I/O aqui vira RunOutcome.failure; por ser ANTES do checkout, não deixa a Issue
@@ -125,7 +138,15 @@ public class AdapterRunExecutor implements RunExecutor {
             List<CompanySkillVersion> skills = distillationSkill.augment(
                     skillSets.resolveForRun(runContext.companyId(), runContext.agentId(), runContext.issueId()),
                     agent.getRole());
-            materializer.materialize(workDir, skills);
+            materializer.materialize(workDir, convention.skillsSubdir(), skills);
+            // Faxina permanente (ADR-0032/D6): a árvore de skills das convenções INATIVAS some do
+            // host — troca de motor nunca deixa cérebro velho no chão (o .claude/ que o codex nunca
+            // leu mas exploraria por busca). No DOCKER a remoção atravessa pela união dos subtrees.
+            for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
+                if (!inactive.equals(convention)) {
+                    deleteRecursively(workDir.resolve(inactive.skillsSubdir()));
+                }
+            }
         } catch (RuntimeException exception) {
             return RunOutcome.failure("falha ao materializar o SkillSet: " + exception.getMessage());
         }
@@ -142,7 +163,6 @@ public class AdapterRunExecutor implements RunExecutor {
         }
 
         ExecutionTarget target = targets.forType(ExecutionTargets.parse(agent.getExecutionTarget()));
-        AgentAdapter adapter = adapters.forType(agent.getAdapterType());
 
         // T.3: Run sem Issue pode ser um TURNO de conversa (o claim decide). Com turno, o command
         // vira o prompt por-Run nos adapters ricos; o arquétipo process o recebe SÓ pelo env
@@ -155,11 +175,20 @@ public class AdapterRunExecutor implements RunExecutor {
         Map<String, String> env = Map.of();
         RunFinalOutput replyCollector = null;
         if (turno != null) {
-            // A carta corrente vira .claude/CLAUDE.md no workspace do CEO (ADR-0018/0019): memória
-            // durável pelo canal nativo do CLI; o prompt carrega só o estado VIVO. Falha de I/O
-            // aqui liquida o turno (o claim já ocorreu — FAILED visível > PENDING pendurado).
+            // A carta corrente vira o memoryFile da convenção do adapter — .claude/CLAUDE.md no
+            // Claude Code, AGENTS.md no codex (ADR-0018/0019/0032): memória durável pelo canal
+            // nativo de cada CLI; o prompt carrega só o estado VIVO. Falha de I/O aqui liquida o
+            // turno (o claim já ocorreu — FAILED visível > PENDING pendurado).
             try {
-                memoryMaterializer.materialize(workDir, runContext.companyId());
+                memoryMaterializer.materialize(workDir, convention.memoryFile(), runContext.companyId());
+                // Faxina permanente (D6), lado da carta: o memoryFile das convenções INATIVAS some
+                // — só em run de TURNO (quem materializou faxina; em run de Issue um AGENTS.md ou
+                // CLAUDE.md que o agente escreveu no próprio workspace nunca é tocado).
+                for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
+                    if (!inactive.equals(convention)) {
+                        deleteRecursively(workDir.resolve(inactive.memoryFile()));
+                    }
+                }
             } catch (RuntimeException exception) {
                 turnCoordinator.settleFailed(turno.turnId());
                 return RunOutcome.failure("falha ao materializar a carta: " + exception.getMessage());
@@ -182,9 +211,18 @@ public class AdapterRunExecutor implements RunExecutor {
         // subtree (membro ausente no host some do volume); materializar `.orq/handoff` apagaria o
         // bilhete entre Runs sob Docker e quebraria o loop de handoff. Guard-rail:
         // WorkspaceWriteOnRunTest.nenhumSubtreeOrqEMaterializado_* FALHA se alguém violar isto.
-        List<String> materializedSubtrees = turno != null
-                ? List.of(SkillMaterializer.SKILLS_SUBDIR, CompanyMemoryMaterializer.CLAUDE_MD)
-                : List.of(SkillMaterializer.SKILLS_SUBDIR);
+        // A lista é a UNIÃO das convenções conhecidas (ADR-0032/D6): a ativa atravessa a árvore
+        // recém-materializada; as inativas, apagadas do host pela faxina acima, somem do volume
+        // pelo próprio replace (rm extra é no-op em volume limpo). Issue: só skills; turno: + carta.
+        List<String> materializedSubtrees = new ArrayList<>();
+        for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
+            materializedSubtrees.add(known.skillsSubdir());
+        }
+        if (turno != null) {
+            for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
+                materializedSubtrees.add(known.memoryFile());
+            }
+        }
         ExecutionTarget.WorkspaceFilesWrite workspaceWrite = target.writeWorkspaceFiles(
                 new ExecutionTarget.Spec(workDir, List.of(), Map.of(),
                         adapter.engineContainer().image(), volumeName, List.of()),
@@ -249,6 +287,29 @@ public class AdapterRunExecutor implements RunExecutor {
             return RunOutcome.failure(result.error());
         }
         return RunOutcome.success();
+    }
+
+    /**
+     * O braço da faxina (ADR-0032/D6) no HOST: remove arquivo OU árvore de uma convenção inativa
+     * (no LOCAL o workDir É o workspace; no DOCKER a ausência atravessa pelo replace da união).
+     * Falha vira UncheckedIOException — cai nos mesmos catches dos materializers (falha LEGÍVEL
+     * do run, nunca meia-faxina silenciosa).
+     */
+    private static void deleteRecursively(Path root) {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException exception) {
+                    throw new UncheckedIOException(exception);
+                }
+            });
+        } catch (IOException exception) {
+            throw new UncheckedIOException("falha na faxina de convencao inativa em " + root, exception);
+        }
     }
 
     /** Cada emissão do adapter vira uma linha no ledger (append-only) com costCents=0 (assinatura). */

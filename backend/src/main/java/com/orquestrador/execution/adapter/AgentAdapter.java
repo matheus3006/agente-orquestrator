@@ -27,6 +27,17 @@ public interface AgentAdapter {
     EngineContainer engineContainer();
 
     /**
+     * A convenção de workspace que ESTE adapter declara (ADR-0032, irmã do {@link #engineContainer()}):
+     * onde o CLI lê carta e skills. Default = layout do Claude Code ({@code .claude/}) — o
+     * ProcessAgentAdapter herda por arquétipo (o layout demo estabelecido); só o CodexAdapter
+     * sobrescreve. Consumidores: o executor (subtrees + faxina) e os 2 materializers (caminho
+     * por parâmetro) — o adapter declara DADOS, nunca faz I/O.
+     */
+    default WorkspaceConvention workspaceConvention() {
+        return WorkspaceConvention.claude();
+    }
+
+    /**
      * Como este runtime recebe um PROMPT por-Run (turno de conversa, ADR-0018): {@code true} =
      * o prompt substitui o {@code command} do Context (adapters ricos: vira o {@code -p} do CLI);
      * {@code false} = o {@code command} continua sendo o comando de shell e o prompt chega SÓ pelo

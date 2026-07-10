@@ -58,22 +58,40 @@ class CompanyMemoryMaterializationTest {
         Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
 
         // Sem carta: nada é escrito.
-        materializer.materialize(workDir, companyId);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId);
         assertThat(Files.exists(claudeMd)).isFalse();
 
         memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA, "# Carta v1", 1));
-        materializer.materialize(workDir, companyId);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId);
         assertThat(Files.readString(claudeMd)).isEqualTo("# Carta v1");
 
         // Versão mais nova VENCE (append-only: v2 não apaga v1 no banco, mas o arquivo é o corrente).
         memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA, "# Carta v2", 2));
-        materializer.materialize(workDir, companyId);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId);
         assertThat(Files.readString(claudeMd)).isEqualTo("# Carta v2");
 
         // Carta de OUTRA company nunca vaza; sem carta própria o arquivo é REMOVIDO.
         UUID outraCompany = novaCompany();
-        materializer.materialize(workDir, outraCompany);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", outraCompany);
         assertThat(Files.exists(claudeMd)).isFalse();
+    }
+
+    @Test
+    void oArquivoEParametroDaConvencaoDoAdapter() throws Exception {
+        // ADR-0032: no motor codex a carta vira AGENTS.md na raiz (corpo VERBATIM, irmão exato
+        // do .claude/CLAUDE.md) — o arquivo vem da WorkspaceConvention do adapter, com o MESMO
+        // contrato reescreve-ou-remove (nunca serve carta velha).
+        UUID companyId = novaCompany();
+        Path agentsMd = workDir.resolve("AGENTS.md");
+
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA, "# Carta codex", 1));
+        materializer.materialize(workDir, "AGENTS.md", companyId);
+        assertThat(Files.readString(agentsMd)).isEqualTo("# Carta codex");
+        assertThat(Files.exists(workDir.resolve(".claude/CLAUDE.md"))).isFalse();
+
+        // Sem carta própria (outra company), o AGENTS.md é REMOVIDO.
+        materializer.materialize(workDir, "AGENTS.md", novaCompany());
+        assertThat(Files.exists(agentsMd)).isFalse();
     }
 
     @Test

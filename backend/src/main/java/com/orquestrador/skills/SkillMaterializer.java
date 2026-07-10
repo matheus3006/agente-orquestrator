@@ -15,10 +15,12 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 /**
- * Materializa o SkillSet de um Run no workspace como {@code <workDir>/.claude/skills/<skill_key>/SKILL.md}
- * (layout canônico do Claude Code — Fatia 6, ADR-0007 revisado). IDEMPOTENTE: reescreve a pasta inteira
- * a cada Run — uma skill removida do conjunto some do disco (não há append/cache). Grava só o body
- * REDIGIDO. v1: só skill de 1 arquivo (SKILL.md); multi-arquivo é fatia futura.
+ * Materializa o SkillSet de um Run no workspace como {@code <workDir>/<skillsSubdir>/<skill_key>/SKILL.md}
+ * (Fatia 6, ADR-0007 revisado). O subdir vem da {@code WorkspaceConvention} do adapter (ADR-0032):
+ * {@code .claude/skills} no Claude Code, {@code .codex/skills} no codex — a MESMA forma de árvore,
+ * só o prefixo muda. IDEMPOTENTE: reescreve a pasta inteira a cada Run — uma skill removida do
+ * conjunto some do disco (não há append/cache). Grava só o body REDIGIDO. v1: só skill de 1
+ * arquivo (SKILL.md); multi-arquivo é fatia futura.
  *
  * <p>Recebe o CONJUNTO de versões já resolvido: na Fatia 6 é o set base do agente; a Fatia 7 soma os
  * anexos por-Issue ao MESMO conjunto — a assinatura não muda.
@@ -26,15 +28,8 @@ import java.util.stream.Stream;
 @Component
 public class SkillMaterializer {
 
-    /**
-     * O subtree do contrato. E EXATAMENTE isto que o executor escreve no workspace do Run pelo
-     * {@code ExecutionTarget.writeWorkspaceFiles} — no DOCKER o workDir do host e so a area de
-     * montagem; o volume nomeado e o que o agente ve.
-     */
-    public static final String SKILLS_SUBDIR = ".claude/skills";
-
-    public void materialize(Path workDir, Collection<CompanySkillVersion> versions) {
-        Path skillsRoot = workDir.resolve(SKILLS_SUBDIR);
+    public void materialize(Path workDir, String skillsSubdir, Collection<CompanySkillVersion> versions) {
+        Path skillsRoot = workDir.resolve(skillsSubdir);
         try {
             deleteRecursively(skillsRoot);
             if (versions.isEmpty()) {
