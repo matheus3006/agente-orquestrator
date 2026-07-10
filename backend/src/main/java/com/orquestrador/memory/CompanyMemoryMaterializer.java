@@ -11,21 +11,17 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Materializa a CARTA corrente no workspace como {@code <workDir>/.claude/CLAUDE.md} a cada Run
- * de turno do CEO (ADR-0018 — espelha o {@code SkillMaterializer}). IDEMPOTENTE: reescreve o
+ * Materializa a CARTA corrente no workspace como {@code <workDir>/<memoryFile>} a cada Run
+ * de turno do CEO (ADR-0018 — espelha o {@code SkillMaterializer}). O arquivo vem da
+ * {@code WorkspaceConvention} do adapter (ADR-0032): {@code .claude/CLAUDE.md} no Claude Code,
+ * {@code AGENTS.md} na raiz para o codex — corpo VERBATIM nos dois. IDEMPOTENTE: reescreve o
  * arquivo a cada Run; sem carta consolidada, REMOVE o arquivo (nunca serve carta velha de outra
- * versão do workspace). Só toca o CLAUDE.md — as skills do agente vivem ao lado em
- * {@code .claude/skills/} e são de outro materializer.
+ * versão do workspace). Só toca o arquivo da carta — as skills do agente vivem ao lado (no
+ * {@code skillsSubdir} da convenção) e são de outro materializer. Em run de Issue o executor
+ * não o chama e o escritor não toca o arquivo.
  */
 @Component
 public class CompanyMemoryMaterializer {
-
-    /**
-     * O arquivo do contrato. Em run de TURNO o executor o escreve no workspace do Run pelo
-     * {@code ExecutionTarget.writeWorkspaceFiles} (replace-ou-remove espelhando este
-     * materializer); em run de Issue o escritor NAO o toca.
-     */
-    public static final String CLAUDE_MD = ".claude/CLAUDE.md";
 
     private final CompanyMemoryRepository memories;
 
@@ -33,8 +29,8 @@ public class CompanyMemoryMaterializer {
         this.memories = memories;
     }
 
-    public void materialize(Path workDir, UUID companyId) {
-        Path claudeMd = workDir.resolve(CLAUDE_MD);
+    public void materialize(Path workDir, String memoryFile, UUID companyId) {
+        Path claudeMd = workDir.resolve(memoryFile);
         Optional<CompanyMemory> carta =
                 memories.findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, MemoryKind.CARTA);
         try {

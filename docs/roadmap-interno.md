@@ -127,11 +127,14 @@ tokens* no código; o loop automático é a Fatia 1. A camada de **orquestraçã
 Sequência: **Fatia 1 (fundação do transporte)** e **Fatia 2** são **PARALELAS** (o grill fechado da Fatia 2
 tornou o bilhete conversation-scoped — ver § Div). **Fatia 1 IMPLEMENTADA (ADR-0030, 2026-07-07);** Fatia 2
 segue `PLANEJADO` (código intencionalmente ausente, NÃO é lacuna — auditoria confirmou a ausência limpa).
+**Priorização CONFIRMADA pelo dono (grill 2026-07-09):** fatia AGENTS.md (G3) **antes** da Fatia 2 → G5
+(ID sequencial) → caso B — as skills das personas não chegam ao codex sem G3.
 
 | Item | Verdict · Estágio | Evidência de ausência-limpa / fundação | Ponteiro · Próxima ação (dono) |
 |------|-------------------|----------------------------------------|--------------------------------|
 | **Fatia 1** — loop de handoff de contexto (50-60%) | ✅ IMPLEMENTADA · VENDO (integração) | M1–M10 verdes (423 testes): `handoff/HandoffThresholdDetector.java:45-64` (% pós-run + fail-open + dial 55) · `handoff/ContextHandoffLoop.java:44-77` (detectar→garantir bilhete→continuar + rede resume-cirúrgico) · `handoff/ContinuationTurnPoster.java:52-73` (sentinela + trava N=5 + idempotência) · `handoff/DistillationSkill.java:60-96` (skill sintética = template) · `conversation/ConversationTurnCoordinator.java:98-112` (M5) · `execution/AgentSessionStore.java:37-45` (1º leitor `--resume` cirúrgico) · `application.yml:30-34` (dial). Prova ponta-a-ponta: `HandoffLoopTest` (cruza+bilhete→1 continuação · sem bilhete→rede→continuação · abaixo→nada). **/verify live teams-demo = confirmação final** | **ADR-0030** · `handoff-grilling-loop-handoff-contexto-fechado` |
-| **Fatia 2** — CEO em 3 personas (Q/P/E) | ⚪ AUSENTE · 🟡 PLANEJADO | `grep persona\|questionador\|needs-grilling` = **vazio**; `V1__init.sql:34` `agent.role` é `text` **sem** coluna `persona` → M1 (add column) é net-new, sem constraint a brigar (seam D1 confirmado) | `handoff-grilling-3-ceos-personas-fechado` → **ADR-0031** (a criar) · EXECUTAR M1–M9 + 3 SKILL.md (**A**) · vetos (**H**) |
+| **Fatia AGENTS.md (G3)** — o adapter declara a convenção de workspace (codex recebe carta + skills) | ✅ IMPLEMENTADA · VENDO | M1–M8 verdes (suíte **443** = piso 429 + 14): `execution/adapter/WorkspaceConvention.java` (record `claude()`/`codex()` + `KNOWN`) · `AgentAdapter.java` (default `claude()`; só `CodexAdapter` sobrescreve) · materializers paramétricos no caminho (layout claude **bit-idêntico** — asserções intocadas) · `AdapterRunExecutor` (fail-fast pré-checkout D4 + faxina `KNOWN−ativa` D6 + união no escritor P2) · prova: `CodexWorkspaceConventionOnRunTest` (6 casos, inclui o simétrico codex→claude) | **ADR-0032** · `handoff-grilling-agents-md-codex` · **§VENDO live (M9 operação + provas Atlas/Docker) = confirmação final** |
+| **Fatia 2** — CEO em 3 personas (Q/P/E) | ⚪ AUSENTE · 🟡 PLANEJADO | `grep persona\|questionador\|needs-grilling` = **vazio**; `V1__init.sql:34` `agent.role` é `text` **sem** coluna `persona` → M1 (add column) é net-new, sem constraint a brigar (seam D1 confirmado) | `handoff-grilling-3-ceos-personas-fechado` (+ §ADENDO A1–A5/B1–B2) → **ADR-0031** (a criar) · EXECUTAR M1–M9 + 3 SKILL.md (**A**) · vetos (**H**) — após G3 |
 | Autoria dos 3 SKILL.md (`writing-doc-plans` · `being-ceo` · `delegation`) | ⚪ AUSENTE · ⚪ A FAZER | — | guia `writing-great-skills` · fatia à parte, pós-Fatia 2 (**A**) |
 
 ## Frente C — Método de memória do CEO (2º cérebro) — PARCIAL
@@ -214,8 +217,14 @@ a *assinatura do método* (anti-inchaço) ainda não.
 > **runtime** achado no VENDO live do loop de handoff em 2026-07-08 — não da varredura doc×código de 07-07 —
 > já **CORRIGIDA** no mesmo dia, ver abaixo.)
 
-### 🔴 ALTA (1) — merece o olho do Matheus (**H**)
+### 🔴 ALTA (1 aberta · a de 2026-07-09 FECHADA em 2026-07-10) — merece o olho do Matheus (**H**)
 
+- ~~**NOVA (2026-07-09, achada AO VIVO) · agente codex roda "pelado".**~~ **FECHADA (2026-07-10):**
+  fatia G3 executada (branch `feat/agents-md-codex-adr0032`, **ADR-0032**) — o adapter declara a
+  `WorkspaceConvention` e o codex recebe carta em `AGENTS.md` + skills em `.codex/skills/` (canais
+  nativos, sondas S1/S2); faxina permanente apaga o espelho `.claude/` que ele nunca leu. Era:
+  carta e skills SÓ em `.claude/` — o "motor duplo" (ADR-0024) executava mas não lembrava nem sabia
+  (Atlas, run B: *"A skill `distillation` não está disponível"*). Confirmação final = §VENDO live.
 - **ADR-0005 · lease sem renovação.** O ADR afirma *"o worker renova o lease enquanto o Run vive"* (base do
   objetivo "prevenir double-work"). **No código não há renovação** (`grep renew/extendLease` = vazio): lease
   fixo de 2min (`HeartbeatDispatcher.java:30`), execução **síncrona** de processo de agente real que
@@ -329,4 +338,9 @@ do cronograma pausado** (Frente B, o v1 do CEO). É só **sinalização** — a 
 | 2026-07-07 | **Auditoria de implementação (este inventário)** | 29 ADRs + 40 handoffs verificados contra o código; 28 ADRs VENDO · 1 PARCIAL · 2 fatias PLANEJADO; **25 divergências** (1 alta/5 média/19 baixa) |
 | 2026-07-07 | Loop de handoff de contexto (Fatia 1) | handoff fechado (D1–D9, M1–M10) → PLANEJADO |
 | 2026-07-07 | CEO em 3 personas (Fatia 2) | handoff fechado (D1–D12, M1–M9) → PLANEJADO |
-| _próximo_ | _a definir_ | — |
+| 2026-07-08 | Fix reply do codex (última `agent_message`) | **PR #2 MERGED**; piso 428 |
+| 2026-07-09 | Grill insatisfações do dono (G1–G6) + re-grill fluxos A/B | `handoff-grilling-insatisfacoes-funcionamento-ceo` (§B, §B.2) + §ADENDO na Fatia 2 |
+| 2026-07-09 | Hotfix prompt do CEO (G1 conversa + G2 bilhete condicional) | **PR #3 MERGED**; re-medição: 31→9 eventos, ~1min→8,5s; piso 429 |
+| 2026-07-09 | **Fatia AGENTS.md (G3)** — grill do mecanismo | handoff fechado (D1–D10, M1–M10 + VENDO c/ Docker vivo) → PLANEJADO · **ADR-0032** a criar · divergência 🔴 nova registrada |
+| 2026-07-10 | **Fatia AGENTS.md (G3) — EXECUTADA** (/tdd, M1–M8+M10) | **ADR-0032** criado; suíte **443** (piso 429 + 14); divergência 🔴 "codex pelado" FECHADA; layout claude bit-idêntico |
+| _próximo_ | VENDO live da G3 (M9 operação do dono + provas Atlas/Docker) → Fatia 2 (personas) | — |

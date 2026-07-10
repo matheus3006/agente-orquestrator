@@ -24,6 +24,12 @@ public class CodexAdapter implements AgentAdapter {
         return CONTAINER;
     }
 
+    /** O codex não lê {@code .claude/} — carta em {@code AGENTS.md}, skills em {@code .codex/skills} (ADR-0032). */
+    @Override
+    public WorkspaceConvention workspaceConvention() {
+        return WorkspaceConvention.codex();
+    }
+
     @Override
     public String type() {
         return "codex";
