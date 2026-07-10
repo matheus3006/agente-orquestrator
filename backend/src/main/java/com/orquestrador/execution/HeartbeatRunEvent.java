@@ -28,7 +28,7 @@ public class HeartbeatRunEvent {
     @Column(nullable = false)
     private String type;
 
-    @Column
+    @Column(columnDefinition = "text")
     private String detail;
 
     @Column(name = "created_at", nullable = false)

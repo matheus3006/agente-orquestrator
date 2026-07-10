@@ -94,7 +94,7 @@ class CeoTurnExecutionTest {
     }
 
     @Test
-    void promptCarregaAInstrucaoEstaticaDeHandoffComOCaminhoDoBilheteDaConversa() {
+    void promptDobraOImperativoDeDestilarParaDentroDaCondicaoComTemplateInline() {
         UUID companyId = novaCompany();
         contrataCeoEcho(companyId);
 
@@ -104,11 +104,47 @@ class CeoTurnExecutionTest {
 
         assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
 
-        // O prompt ecoado carrega a instrução ESTÁTICA de handoff (M5) apontando o bilhete DESTA conversa.
+        // G2 (grill 2026-07-09): a instrução de handoff (M5) segue estática e aponta o bilhete DESTA
+        // conversa, mas o imperativo de gravar mora DENTRO da condição — turno trivial NÃO grava.
         String promptEcoado = turno(receipt.turnId()).getCeoReply();
         assertThat(promptEcoado).contains("Regra de ouro do handoff");
-        assertThat(promptEcoado).contains("distillation");
         assertThat(promptEcoado).contains(".orq/handoff/" + estrategia.getId() + ".md");
+        assertThat(promptEcoado).contains("SÓ SE");
+        assertThat(promptEcoado).contains("senão NÃO grave nada");
+        // O formato do bilhete vai INLINE (o motor codex não materializa a skill `distillation`);
+        // a skill pode ser citada apenas como apoio opcional — nunca como pré-requisito.
+        assertThat(promptEcoado).contains("Onde estou");
+        assertThat(promptEcoado).contains("O que já fiz");
+        assertThat(promptEcoado).contains("Próximo passo");
+        assertThat(promptEcoado).contains("Decisões travadas");
+        assertThat(promptEcoado).contains("Ponteiros");
+        assertThat(promptEcoado).contains("apoio OPCIONAL");
+        assertThat(promptEcoado).doesNotContain("Use a skill `distillation`");
+    }
+
+    @Test
+    void promptInstruiConversaComVozPropriaEDelegacaoSoParaTrabalhoReal() {
+        UUID companyId = novaCompany();
+        contrataCeoEcho(companyId);
+
+        Conversation geral = conversations.open(companyId, "Geral");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, geral.getId(), "quem é você?", ActorType.BOARD, UUID.randomUUID());
+
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        // G1 (grill 2026-07-09): o CEO MANTÉM UMA CONVERSA — pergunta trivial se responde direto,
+        // sem delegar (nem a sub-agentes internos do CLI); delegação só nos casos A/B/C do dono.
+        String promptEcoado = turno(receipt.turnId()).getCeoReply();
+        assertThat(promptEcoado).contains("MANTENHA UMA CONVERSA");
+        assertThat(promptEcoado).contains("zero delegação");
+        assertThat(promptEcoado).contains("novo business");
+        assertThat(promptEcoado).contains("PALAVRAS DELE");
+        assertThat(promptEcoado).contains("contratação");
+        // "Delegador puro" (ADR-0018) fica escopado a ENTREGÁVEIS — a generalização que fazia o
+        // CEO delegar até uma frase sai do prompt.
+        assertThat(promptEcoado).contains("ENTREGÁVEIS");
+        assertThat(promptEcoado).doesNotContain("nunca produza o conteúdo");
     }
 
     @Test

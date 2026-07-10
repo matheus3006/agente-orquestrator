@@ -169,3 +169,36 @@ sobrevive).
 - **Sourcing das skills externas** — URLs/versões e import-vs-author de cada: `cs-ceo-advisor`, `brainstorming` (superpowers), `teach` (mattpocock), `adaptive-communication` (bencium), `grill-me` (https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me), `grill-with-docs` (https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs).
 - **Gatilho do bootstrap** — DECIDIDO: auto-seed na criação de company (D9). Backfill das existentes (teams-demo).
 - **ADR-0031 nova** vs revisão — preferência sinalizada (nova); confirmar.
+
+---
+
+## §ADENDO (2026-07-09) — EMENDAS DO DONO, grelhadas em sessão própria (VINCULANTES na execução)
+
+> Origem: grill das insatisfações com o funcionamento observado
+> (`docs/handoff-grilling-insatisfacoes-funcionamento-ceo.md`, decisões A1–A5 + B1–B2, enunciadas
+> pelo Matheus e fechadas uma a uma). Onde um item abaixo conflitar com um D do plano, **o adendo vence**.
+
+- **A1 — Dossiê do grill é APENDADO A CADA TURNO, não escrito no final.** UM arquivo `.md` por
+  business/conversa; o Questionador grava cada pergunta+resposta no turno em que a resposta chega;
+  o "sim" do dono (D5 confirma-antes) apenas CARIMBA o dossiê como pronto — ele já existe inteiro.
+  *Emenda ao D6:* o entregável não nasce no turno do "sim"; ele cresce durante a conversa (se a
+  janela estourar no meio do grill, nada se perde; e as palavras EXATAS do dono ficam preservadas).
+- **A2 — O Executor PROTOCOLA o pedido de contratação sem mexer.** O pedido que chega ao menu do
+  dono é EXATAMENTE o que o Planejador gerou (racional↔pedido 1:1). Buraco visto pelo Executor =
+  kickback `needs-grilling` (D7), nunca conserto silencioso. A autonomia do Executor começa PÓS-approve:
+  contratar, atribuir as skills a cada agente, entregar os briefs aos times.
+- **A3 — Racional da escolha dos agentes existe NOS DOIS LUGARES.** Na CONVERSA: o Questionador
+  entrega o racional legível ao dono (por que essas áreas/agentes, citando o dossiê) ANTES de ele ir
+  ao menu. No MENU: cada agente proposto carrega racional estruturado (skills + motor + porquê).
+- **A4 — No menu do hire: skills SOMENTE-LEITURA; MOTOR livremente editável pelo dono.** Racional
+  do Matheus: o CEO tem viés de motor (CEO claude sempre proporá agentes Anthropic; CEO codex, codex)
+  — a mão soberana no motor é obrigatória. Edição de motor não exige rejeição nem retorno ao Planejador.
+- **A5 — Skill errada NÃO trava o gate.** Dois caminhos, à escolha do dono: (1) editar a skill do
+  agente JÁ CONTRATADO (o pin por-agente que o board já tem); e/ou (2) avisar o Questionador na
+  conversa ("o agente X tem uma skill que não se encaixa"), que roteia a correção pelas personas.
+- **B (fluxo NOVO, fatia própria FUTURA — fica registrado aqui só o contrato de intenção):** dono
+  aponta melhoria de task executada que não atendeu (referência = ID numérico #N, fatia própria já
+  decidida). O CEO faz o racional = ROTEAMENTO (qual time/Arquiteto responsável, qual #N), registrado
+  como Decisão + confirmação ao dono na conversa; o Arquiteto recebe **as palavras do dono VERBATIM**
+  (nunca paráfrase do CEO — zero telefone-sem-fio) + a referência #N; a correção nasce como **task
+  corretiva NOVA ligada à #N** (o Arquiteto a autora — ADR-0017; a #N mantém histórico intacto).

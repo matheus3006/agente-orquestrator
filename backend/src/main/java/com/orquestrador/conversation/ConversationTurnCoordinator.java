@@ -99,17 +99,33 @@ public class ConversationTurnCoordinator {
                 + estadoVivo
                 + "\n## Mensagem do dono\n" + ownerMessage + "\n\n"
                 + "## Instruções do turno\n"
-                + "- Você é o CEO — delegador PURO (ADR-0018): grelhe, descubra, proponha, contrate,"
-                + " delegue; nunca produza o conteúdo você mesmo.\n"
-                + "- Responda ao dono em texto direto e curto; sua resposta vira a thread do chat.\n"
+                // G1 (grill 2026-07-09): "delegador puro" (ADR-0018) sempre foi sobre ENTREGÁVEIS;
+                // generalizado à conversa, o modelo delegava até uma frase (run 043de730).
+                + "- Você é o CEO. MANTENHA UMA CONVERSA com o dono: responda com a SUA voz, em texto"
+                + " direto e curto; sua resposta vira a thread do chat.\n"
+                + "- Pergunta trivial, de identidade ou de status: responda VOCÊ MESMO, imediatamente"
+                + " — zero delegação, zero sub-agentes (nem os internos do seu CLI, ex.: collab/Task).\n"
+                + "- Delegue (às áreas ou a sub-agentes) SOMENTE com trabalho real na mesa:"
+                + " (A) criação de novo business, depois de grelhar meticulosamente com o dono;"
+                + " (B) correção de task que o dono apontou — encaminhe as PALAVRAS DELE, sem"
+                + " parafrasear; (C) contratação pedida explicitamente.\n"
+                + "- \"Delegador puro\" (ADR-0018) vale para ENTREGÁVEIS: o conteúdo de um entregável"
+                + " nunca é seu — mas a conversa é.\n"
                 // M5 (ADR-0030) — instrução ESTÁTICA de handoff: não depende do custo (que só existe
                 // pós-run), então é dada em TODO turno. Se um turno-continuação for a leitura de "##
                 // Mensagem do dono" (a sentinela), estas linhas reforçam retomar pelo mesmo bilhete.
-                + "- Regra de ouro do handoff (ADR-0015): se a conversa aprofundou e a janela de"
-                + " contexto está enchendo (~50-60%), DESTILE antes de fechar o turno.\n"
-                + "- Use a skill `distillation` e grave o bilhete de handoff em `" + handoffNotePath + "`.\n"
-                + "- O bilhete leva estado vivo, decisões-com-racional, próximos passos e ponteiros de"
-                + " arquivo; uma sessão NOVA retoma por ele em vez de recarregar a conversa inteira.\n";
+                // G2 (grill 2026-07-09): o imperativo de gravar mora DENTRO da condição — turno
+                // trivial NÃO grava bilhete (se o % cruzar sem bilhete, a rede pós-settle o garante).
+                // O formato vai INLINE porque nem todo motor materializa a skill `distillation`.
+                + "- Regra de ouro do handoff (ADR-0015): SÓ SE a conversa aprofundou E a sua janela"
+                + " de contexto está enchendo (~50-60%), destile e grave o bilhete de handoff em `"
+                + handoffNotePath + "`; senão NÃO grave nada — nem crie o arquivo.\n"
+                + "- Formato do bilhete (markdown curto, referências CONCRETAS — ids e arquivo:linha):"
+                + " seções `Onde estou` · `O que já fiz` · `Próximo passo` · `Decisões travadas (com"
+                + " racional)` · `Ponteiros (ids + arquivos)`; reescrever substitui o anterior. A"
+                + " skill `distillation`, se disponível, detalha o contrato — apoio OPCIONAL, não"
+                + " pré-requisito.\n"
+                + "- Uma sessão NOVA retoma pelo bilhete em vez de recarregar a conversa inteira.\n";
     }
 
     /** O turno claimado por este Run + o prompt por-Run que vai ao CLI. */

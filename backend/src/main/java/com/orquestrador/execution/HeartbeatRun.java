@@ -46,7 +46,7 @@ public class HeartbeatRun {
     @Column(name = "needs_followup", nullable = false)
     private boolean needsFollowup = false;
 
-    @Column(name = "last_error")
+    @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 
     @Column(name = "created_at", nullable = false)
