@@ -4,8 +4,11 @@ import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.identity.company.CompanyService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +20,10 @@ import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * G5 (ADR-0033): identidade sequencial humana da Issue. O contrato do #N: por company,
@@ -24,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * id unico para auditoria e debug."
  */
 @SpringBootTest
+@AutoConfigureMockMvc
 @ActiveProfiles("test")
 class IssueSeqTest {
 
@@ -31,6 +39,8 @@ class IssueSeqTest {
     private IssueService issues;
     @Autowired
     private CompanyService companies;
+    @Autowired
+    private MockMvc mvc;
 
     @Test
     void numeraDensoAPartirDe1DentroDaCompany() {
@@ -95,6 +105,26 @@ class IssueSeqTest {
         assertThatThrownBy(() -> issues.create(UUID.randomUUID(), "orfa", null))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Company nao encontrada");
+    }
+
+    // T-response: o #N e parte do contrato da API — sem ele nenhuma superficie renderiza "#12".
+    @Test
+    void seqSaiNoJsonDoCreateEDaLista() throws Exception {
+        UUID boardUser = UUID.randomUUID();
+        UUID companyId = companies.create("C", "seq-" + UUID.randomUUID().toString().substring(0, 8),
+                boardUser).getId();
+
+        mvc.perform(post("/api/companies/" + companyId + "/issues")
+                        .header("X-Board-User", boardUser.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"primeira\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.seq").value(1));
+
+        mvc.perform(get("/api/companies/" + companyId + "/issues")
+                        .header("X-Board-User", boardUser.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].seq").value(1));
     }
 
     private UUID novaCompany() {

@@ -88,7 +88,9 @@ class CeoTurnExecutionTest {
         assertThat(atendido.getRunId()).isEqualTo(receipt.runId());
         // O reply é o prompt ecoado: prova que a mensagem E o estado vivo chegaram no CLI.
         assertThat(atendido.getCeoReply()).contains("Montar o time de marketing");
-        assertThat(atendido.getCeoReply()).contains("Landing page do produto");
+        // #N na linha da issue (ADR-0033/D4): o dono diz "a task 1 deu problema" → o CEO acha
+        // #1 no estado vivo e responde citando o MESMO número do board. O exemplo ensina a notação.
+        assertThat(atendido.getCeoReply()).contains("#1 [OPEN] Landing page do produto");
         assertThat(atendido.getCeoReply()).contains("Echo");
         assertThat(runs.findById(receipt.runId()).orElseThrow().getStatus()).isEqualTo(RunStatus.SUCCEEDED);
     }

@@ -92,8 +92,11 @@ public class LiveStateProjector {
         if (board.isEmpty()) {
             out.append("- (nenhuma)\n");
         }
+        // #N e a identidade humana da Issue (ADR-0033): o dono aponta "a task 12" e o CEO acha #12
+        // aqui — o exemplo ensina a notacao, a secao de instrucoes do turno fica intocada (D4).
         for (Issue issue : board) {
-            out.append("- [").append(issue.getStatus().name()).append("] ").append(issue.getTitle());
+            out.append("- #").append(issue.getSeq())
+                    .append(" [").append(issue.getStatus().name()).append("] ").append(issue.getTitle());
             if (issue.getAssigneeAgentId() != null) {
                 String name = agentNameById.get(issue.getAssigneeAgentId());
                 out.append(" — ").append(name != null ? name : issue.getAssigneeAgentId());
