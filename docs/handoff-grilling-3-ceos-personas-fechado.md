@@ -202,3 +202,103 @@ sobrevive).
   como Decisão + confirmação ao dono na conversa; o Arquiteto recebe **as palavras do dono VERBATIM**
   (nunca paráfrase do CEO — zero telefone-sem-fio) + a referência #N; a correção nasce como **task
   corretiva NOVA ligada à #N** (o Arquiteto a autora — ADR-0017; a #N mantém histórico intacto).
+
+---
+
+## §RESULTADO — EXECUTADA (2026-07-10, branch `feat/ceo-tres-personas-adr0031`)
+
+**M1–M9 + adendo A1–A5 no código, TDD ponta a ponta.** Backend **469 verdes** (piso 448 + 21) ·
+front **246** (piso 242 + 4) · tsc/lint limpos. **ADR-0031 commitada** + forward-refs 0017/0018 +
+roadmap (linha Fatia 2 → IMPLEMENTADA). Commit `22ae1d2` (não pusheado; PR só com OK do dono).
+
+**O que entrou** (mapa mecanismo→código):
+- **M1/M3** `V24__agent_persona.sql` + `V25__ceo_persona_moldes.sql` (3 moldes `ceo-*` + BACKFILL:
+  canônico→questionador preservando identidade/motor; P/E copiam o MOTOR do canônico) ·
+  `org/agent/CeoPersona.java` (vocabulário único) · `CeoPersonaSeeder` (auto-seed **dirigido pelos
+  moldes, fail-soft** — H2 dos testes sem V25 não semeia; companies de teste intactas).
+- **M2** resolvedor `(role='ceo', persona='questionador')` + fallback canônico (legado) ·
+  `AgentResponse.persona` · front `api.ts`/`page.tsx`.
+- **M7** `composePrompt` por-persona (persona nula = prompt pós-G1/G2 **byte-idêntico**; Q estende
+  com dossiê A1 + confirma-antes D5 + dever de re-grelha; P = estratégia de orquestração D12 +
+  calibração Premissas×needs-grilling D7 + MAX 30/10 D10; E = protocola SEM MEXER A2 + proposta com
+  `racional` A3 + autonomia PÓS-approve). Blocos tipados INLINE (indentados — ver M5).
+- **M4** `WorkspaceResolver.resolveConversation` (workspace por `conversationId`; peek pré-claim no
+  coordinator; volume 2-segmentos fora do reaper por-Issue) — bastão `.orq/conversa/<conv>/`
+  (`ConversationBaton`: `dossie.md` · `estrategia.md`) cruza a fronteira de agente. ADR-0032 intocada.
+- **M5/M6** `conversation/persona/`: `PersonaHandoffScanner` (JSON em fence, **coluna 0**, fail-soft)
+  · `PersonaBatonRouter` (uma virada por settle) · `PersonaContinuationPoster` (sentinela
+  `[continuação — bastão…]` INVISÍVEL; kickback `Re-grelha — …` VISÍVEL — precedente do aviso de
+  corte da ADR-0030; idempotência sob reexecução) · ```proposta``` segue INTOCADO pro T3.
+- **M9** 5 kickbacks seguidos sem o dono (sentinelas puladas; fala do dono zera) → `prossiga` pra
+  ORIGEM; **decisão nova: reincidência pós-prossiga → CORTE** ("Bastão parado", ANSWERED, sem run
+  novo) — o TDD travou o build em loop infinito antes do corte existir; sem ele o ping-pong
+  autônomo giraria para sempre.
+- **M8** `LiveStateProjector`: `### Equipe` agrupada por `dominio/foco` + `(sem time)`, determinística.
+- **A4** `ApprovalService.EngineOverride` (decide 8-args; motor do ALVO honrado; override do dono
+  vence campo-a-campo) + card com motor editável e racional visível (A3); `splitReply` limpa os
+  blocos de bastão da bolha.
+
+**FORMATO CANÔNICO DOS BLOCOS (proposto — VETO PENDENTE DO DONO; pinado em
+`PersonaHandoffScannerTest`):** irmão exato do ```` ```proposta ```` — JSON numa cerca em coluna 0:
+```handoff
+{"para": "planejador|executor|questionador", "bastao": "<caminho do entregável>", "resumo": "<uma linha>"}
+```
+```needs-grilling
+{"lacuna": "<a pergunta concreta que só o dono responde>"}
+```
+Racional: (1) o parser reusa o padrão já pinado do ProposalScanner (zero segundo dialeto);
+(2) campos tipados sem DSL nova; (3) `origem` NÃO viaja no bloco — o roteador a deriva do EMISSOR
+(fonte da verdade; menos a errar). Diferença deliberada: cerca só em **coluna 0** (o exemplo viaja
+indentado no prompt e nunca dispara ao ser ecoado/citado). ⚠ avisar R1-D: `SYNC-FATIA-2` destravado.
+
+**VENDO (2 camadas):**
+1. **Prova de superfície REAL (2026-07-10, 2ª instância `:18080` + Postgres descartável — `:8080`
+   e o JAR intocados):** Flyway aplicou V1..V25 num banco vazio (validate OK) · `POST /companies`
+   semeou as 3 personas dos moldes (pin + trio por-molde) · **1 mensagem do dono → cascata
+   AUTÔNOMA Q→P→E → approval PENDING** (thread do board = UMA VOZ; trilha com 3 personas
+   atribuídas) · APPROVE com `EngineOverride` → "Dev Backend" nasceu `codex/gpt-5-codex/medium`
+   (override venceu o `claude-code` protocolado) · kickback: `Re-grelha` VISÍVEL na thread com
+   origem+lacuna → e o pior cenário rodou sozinho: **5 Re-grelhas → prossiga → reincidência →
+   "Bastão parado" (corte, zero run novo)** · backfill V25 provado em pg real (Atlas→questionador
+   com motor codex intocado; P/E copiando o motor; 2º CEO legado fica NULL; company sem CEO intocada).
+2. **VENDO oficial §D na teams-demo = OPERADOR** (o harness barra restart do `:8080`; V24/V25
+   aplicam no boot): scripts `f2-vendo-operacao.sh` + `f2-vendo-provas.sh` no scratchpad da sessão.
+   Itens que SÓ o live com motor real prova: D5 semântico (o Q sentir cobertura e perguntar "posso
+   seguir?") e D10 (`delegation` navegando/spawnando sub-agentes num run claude real).
+
+**Vetos do dono — TODOS CONFIRMADOS (2026-07-10, "OK" na sessão de execução):** formato dos
+blocos (acima) ✔ · N=5 da trava M9 ✔ · governança off-book do `delegation` aceita no v1 ✔ ·
+ADR-0031 nova ✔ · **PR autorizado** (merge após o VENDO do operador).
+
+**Divergências/decisões novas no caminho (com racional):** (1) corte anti-reincidência no M9 (acima);
+(2) kickback VISÍVEL (sem isso o dono nunca veria a re-grelha — run fresco não tem outra memória);
+(3) auto-seed fail-soft dirigido por moldes (protege o parque de testes e degrada limpo em banco
+sem V25); (4) skills EXTERNAS ficaram FORA dos moldes v1 (sourcing = veto pendente; entram por v2
+de molde versionado); (5) backfill copia o MOTOR do canônico p/ P/E (precisa RODAR na teams-demo —
+codex provado; moldes claude ficam p/ companies novas).
+
+### VENDO oficial §D — LIVE na teams-demo: **PASS** (2026-07-10, pós-restart do operador)
+
+Restart aplicou **V24+V25 no boot** (`now at version v25`). Provas com runs REAIS (Atlas/codex):
+1. **Backfill (§D.1):** teams-demo E Demo Fixtures com 3 `role='ceo'` por persona; canônicos viraram
+   `questionador` com motor codex/gpt-5.5 INTOCADO; P/E copiaram o motor e nasceram pinados.
+2. **Balcão único (§D.2):** mensagem do dono caiu no Atlas/questionador (trilha atribui a persona).
+3. **Confirma-antes + dossiê (§D.3/A1):** o Q grelhou em voz própria ("qual a ambição em 24
+   meses?"), APENDOU `dossie.md` no workspace DA CONVERSA (palavras exatas do dono) e ESPEROU;
+   o "pode seguir" do dono disparou o turno que carimbou e emitiu ```` ```handoff ````.
+4. **P→E autônoma (§D.4):** estratégia REAL de orquestração (`estrategia.md`, 11,5 KB) citando o
+   dossiê, com `## Premissas`, veredito de lacuna ("não há lacuna grande" — calibração D7 correta),
+   teto explícito ("27 agentes, abaixo do teto de 30", profundidade 10) e a fronteira ADR-0017
+   ("quebra escopo→feature→task é dos arquitetos de domínio") → bastão ao Executor sem humano no meio.
+5. **E→T3 (§D.5/A2/A3):** **27 propostas HIRE_AGENT PENDING** no gate, cada uma com `racional`
+   estruturado ("skills … | motor … | porquê …") e motor sugerido; NADA contratado sem APPROVE.
+6. **Uma voz (§D.7):** o dono vê 2 turnos; a trilha tem 4, atribuídos a questionador/planejador/executor.
+7. **Kickback/anti-loop (§D.6/§D.9):** provados AO VIVO na bancada `:18080` (kickback "Re-grelha"
+   visível → Q; 5 kickbacks → prossiga → reincidência → corte "Bastão parado"); na teams-demo o
+   Planejador corretamente NÃO kickou (não havia lacuna). **§D.8 (delegation web/Task in-run):
+   NÃO exercitado** — o run é codex e a estratégia não exigiu pesquisa; prova plena fica para um
+   run claude com pesquisa real (residual registrado, não-gate — D10 é teto de prompt, código zero).
+8. **Achado ao vivo (confirma o racional do A4):** o CEO codex propôs TODOS os 27 motores como
+   "GPT-5.4" — o viés de motor que motivou a mão soberana do dono no menu.
+9. **Resíduo de VENDO:** a conversa "VENDO F2 — cafeteria" + 27 approvals PENDING ficaram na
+   teams-demo como evidência; rejeitar/limpar é decisão do dono (precedente Demo Fixtures da G3).

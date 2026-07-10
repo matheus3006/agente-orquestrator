@@ -11,7 +11,7 @@ import {
   type Approval,
   type IssueSummary,
 } from "@/lib/api";
-import { acaoLegivel, issueDaApproval } from "@/lib/ceo-conversa";
+import { acaoLegivel, hireDaProposta, issueDaApproval } from "@/lib/ceo-conversa";
 import { fmtClock, shortId } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 import { pushToast } from "@/lib/toaster";
@@ -44,6 +44,15 @@ export function ApprovalThreadCard({
   const [racional, setRacional] = useState("");
   const [falha, setFalha] = useState<string | null>(null);
   const racionalRef = useRef<HTMLTextAreaElement>(null);
+
+  // A4 (adendo ADR-0031): no menu do hire o MOTOR é a mão soberana do dono — editável sem
+  // rejeitar; skills do molde seguem somente-leitura. Prefill = o trio protocolado no alvo.
+  const hire = hireDaProposta(approval);
+  const [motor, setMotor] = useState({
+    adapterType: hire?.motor.adapterType ?? "",
+    model: hire?.motor.model ?? "",
+    effort: hire?.motor.effort ?? "",
+  });
 
   const queryClient = useQueryClient();
   const decisao = useMutation({
@@ -91,7 +100,17 @@ export function ApprovalThreadCard({
       return;
     }
     const texto = racional.trim();
-    decisao.mutate(texto ? { decision, racional: texto } : { decision });
+    // Motor editado só viaja no APPROVE de hire; vazio cai no protocolado (o backend prefere
+    // o não-branco). Enviar o mesmo trio do alvo é no-op — não precisa detectar "mudou".
+    const motorEditado =
+      hire && decision === "APPROVE"
+        ? {
+            adapterType: motor.adapterType.trim() || undefined,
+            model: motor.model.trim() || undefined,
+            effort: motor.effort.trim() || undefined,
+          }
+        : {};
+    decisao.mutate({ decision, ...(texto ? { racional: texto } : {}), ...motorEditado });
   };
 
   const acao = acaoLegivel(approval);
@@ -122,6 +141,43 @@ export function ApprovalThreadCard({
           {approval.racionalTipo === "INTUICAO" && " · área criativa (intuição commita)"}
         </div>
       </div>
+
+      {hire?.racional && (
+        <div className="aprovacao-meta">
+          <b>racional do pedido</b> {hire.racional}
+        </div>
+      )}
+
+      {pendente && hire && (
+        <div className="aprovacao-meta flex flex-wrap items-center gap-2">
+          <b>motor</b>
+          <input
+            className="w-[130px] rounded border border-edge bg-transparent px-1.5 py-0.5 font-mono text-[11px]"
+            aria-label="Motor (adapter)"
+            placeholder="adapter"
+            value={motor.adapterType}
+            onChange={(event) => setMotor({ ...motor, adapterType: event.target.value })}
+          />
+          <input
+            className="w-[110px] rounded border border-edge bg-transparent px-1.5 py-0.5 font-mono text-[11px]"
+            aria-label="Modelo"
+            placeholder="model"
+            value={motor.model}
+            onChange={(event) => setMotor({ ...motor, model: event.target.value })}
+          />
+          <input
+            className="w-[90px] rounded border border-edge bg-transparent px-1.5 py-0.5 font-mono text-[11px]"
+            aria-label="Esforço"
+            placeholder="effort"
+            value={motor.effort}
+            onChange={(event) => setMotor({ ...motor, effort: event.target.value })}
+          />
+          <span className="text-faint">
+            seu ajuste vence o protocolo · skills do molde: somente-leitura (ajuste por-agente
+            depois da contratação)
+          </span>
+        </div>
+      )}
 
       {pendente && (
         <div className="aprovacao-async">

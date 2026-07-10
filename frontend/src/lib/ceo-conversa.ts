@@ -7,6 +7,9 @@ import { shortId } from "./format";
 
 /** O bloco de proposta na SAÍDA do CEO (o mesmo fence que o ProposalScanner lê). */
 const PROPOSTA_FENCE = /```proposta\s*\n[\s\S]*?```/g;
+// Os blocos de bastão das personas (ADR-0031): mecanismo do roteador, nunca conversa — a bolha
+// os limpa como limpa o ```proposta. Coluna 0, espelhando o scanner do backend.
+const BASTAO_FENCE = /^```(?:handoff|needs-grilling)[ \t]*\n[\s\S]*?^```/gm;
 
 export interface ReplySplit {
   prosa: string;
@@ -21,7 +24,7 @@ export interface ReplySplit {
 export function splitReply(ceoReply: string): ReplySplit {
   const temProposta = PROPOSTA_FENCE.test(ceoReply);
   PROPOSTA_FENCE.lastIndex = 0;
-  const prosa = ceoReply.replace(PROPOSTA_FENCE, "").trim();
+  const prosa = ceoReply.replace(PROPOSTA_FENCE, "").replace(BASTAO_FENCE, "").trim();
   return { prosa, temProposta };
 }
 
@@ -133,6 +136,33 @@ export function acaoLegivel(approval: Approval): AcaoLegivel {
     case "WAKEUP_AGENT":
       return { verbo, alvo: typeof alvo.agentId === "string" ? shortId(alvo.agentId) : null };
   }
+}
+
+/** O pedido de hire protocolado, como o menu do gate o lê (A3/A4 do adendo ADR-0031). */
+export interface HireProposto {
+  // O motor SUGERIDO pelo protocolo (viés do CEO) — no menu ele é livremente editável (A4).
+  motor: { adapterType: string | null; model: string | null; effort: string | null };
+  // O racional estruturado por-agente (skills + motor + porquê) — leitura, nunca edição (A3).
+  racional: string | null;
+}
+
+export function hireDaProposta(approval: Approval): HireProposto | null {
+  if (approval.actionType !== "HIRE_AGENT") {
+    return null;
+  }
+  const alvo = alvoDe(approval);
+  if (!alvo) {
+    return null;
+  }
+  const texto = (valor: unknown) => (typeof valor === "string" && valor.trim() !== "" ? valor : null);
+  return {
+    motor: {
+      adapterType: texto(alvo.adapterType),
+      model: texto(alvo.model),
+      effort: texto(alvo.effort),
+    },
+    racional: texto(alvo.racional),
+  };
 }
 
 /**

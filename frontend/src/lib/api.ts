@@ -254,6 +254,8 @@ export interface AgentSummary {
   companyId: string;
   name: string;
   role: string;
+  // Persona do CEO (ADR-0031): questionador/planejador/executor; null = agente comum.
+  persona: string | null;
   reportsToId: string | null;
   adapterType: string;
   executionTarget: string;
@@ -912,6 +914,11 @@ export type ApprovalDecisionInput = {
   decision: "APPROVE" | "REJECT";
   racional?: string;
   reason?: string;
+  // A4 (ADR-0031): o trio de motor editado pelo dono no menu do hire — a mão soberana
+  // vence o motor protocolado no alvo; ausente/vazio cai no protocolo.
+  adapterType?: string;
+  model?: string;
+  effort?: string;
 };
 
 // O espelho do DecideOutcome selado do backend: o 422 do grill NÃO é falha —

@@ -107,6 +107,18 @@ public class ApprovalService {
     @Transactional
     public DecideOutcome decide(UUID companyId, UUID approvalId, ApprovalDecision decision,
                                 String racional, String reason, ActorType actorType, UUID actorId) {
+        return decide(companyId, approvalId, decision, racional, reason, actorType, actorId, null);
+    }
+
+    /**
+     * O commit com a MÃO SOBERANA no motor (A4, adendo ADR-0031): no menu do hire as skills são
+     * somente-leitura, mas o TRIO do motor é livremente editável pelo dono — o override vence o
+     * motor protocolado no alvo, sem rejeitar nem devolver ao Planejador.
+     */
+    @Transactional
+    public DecideOutcome decide(UUID companyId, UUID approvalId, ApprovalDecision decision,
+                                String racional, String reason, ActorType actorType, UUID actorId,
+                                EngineOverride engineOverride) {
         Approval approval = approvals.findByIdAndCompanyId(approvalId, companyId)
                 .orElseThrow(() -> new NotFoundException("Approval nao encontrada: " + approvalId));
         if (approval.getStatus() != ApprovalStatus.PENDING) {
@@ -125,7 +137,7 @@ public class ApprovalService {
         Map<String, Object> detail = new HashMap<>();
         detail.put("requestedByAgentId", approval.getRequestedByAgentId());
         if (decision == ApprovalDecision.APPROVE) {
-            dispatchAction(approval, actorType, actorId, detail);
+            dispatchAction(approval, actorType, actorId, detail, engineOverride);
         }
         approvals.save(approval);
 
@@ -170,7 +182,7 @@ public class ApprovalService {
 
     /** APPROVE dispara a ação REAL com ator=aprovador (ADR-0018); os IDs criados vão no detail. */
     private void dispatchAction(Approval approval, ActorType actorType, UUID actorId,
-                                Map<String, Object> detail) {
+                                Map<String, Object> detail, EngineOverride engineOverride) {
         JsonNode alvo = parseAlvo(approval);
         switch (approval.getActionType()) {
             case HIRE_AGENT -> {
@@ -179,8 +191,15 @@ public class ApprovalService {
                 if (name == null || role == null) {
                     throw new ConflictException("Proposta de hire sem name/role: " + approval.getId());
                 }
+                // Motor (A4): o alvo protocolado carrega o trio sugerido; o override do dono no
+                // menu VENCE campo-a-campo (mão soberana — CEO tem viés de motor).
+                EngineOverride doDono = engineOverride == null ? EngineOverride.none() : engineOverride;
                 Agent hired = hires.hire(approval.getCompanyId(), new AgentHireService.HireCommand(
-                                name, role, uuidOrNull(alvo, "reportsToId"), null, null, null, null, null,
+                                name, role, uuidOrNull(alvo, "reportsToId"),
+                                preferNonBlank(doDono.adapterType(), textOrNull(alvo, "adapterType")),
+                                null, null,
+                                preferNonBlank(doDono.model(), textOrNull(alvo, "model")),
+                                preferNonBlank(doDono.effort(), textOrNull(alvo, "effort")),
                                 uuidOrNull(alvo, "roleTemplateVersionId"), approval.getRequestedByAgentId()),
                         actorType, actorId);
                 detail.put("hiredAgentId", hired.getId());
@@ -243,6 +262,17 @@ public class ApprovalService {
             return HexFormat.of().formatHex(md5.digest(canonicalTarget.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException impossivel) {
             throw new IllegalStateException("MD5 indisponivel", impossivel);
+        }
+    }
+
+    private static String preferNonBlank(String preferred, String fallback) {
+        return preferred != null && !preferred.isBlank() ? preferred : fallback;
+    }
+
+    /** O trio de motor editado pelo dono no menu (A4): campo em branco cai no alvo protocolado. */
+    public record EngineOverride(String adapterType, String model, String effort) {
+        static EngineOverride none() {
+            return new EngineOverride(null, null, null);
         }
     }
 

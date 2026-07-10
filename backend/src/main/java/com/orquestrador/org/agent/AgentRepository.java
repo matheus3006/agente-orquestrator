@@ -25,4 +25,8 @@ public interface AgentRepository extends JpaRepository<Agent, UUID> {
 
     /** O CEO da company é RESOLVIDO por role (ADR-0018); o mais antigo é o canônico se houver mais de um. */
     Optional<Agent> findFirstByCompanyIdAndRoleOrderByCreatedAtAsc(UUID companyId, String role);
+
+    /** A persona de CEO da company (ADR-0031, D2): o balcão único resolve por (role, persona). */
+    Optional<Agent> findFirstByCompanyIdAndRoleAndPersonaOrderByCreatedAtAsc(UUID companyId, String role,
+                                                                             String persona);
 }

@@ -85,3 +85,10 @@ inbound: mensagem-do-dono → turno pendente por Conversation → `WakeupService
 review; a Issue-que-pausa vale só pra executor); ADR-0004 (`command` montado por-Run, CEO `issueId=null`);
 ADR-0002 (session → Agent+Conversation, `--resume` desligado v1); ADR-0009 (`approval_id`, novos `ActivityAction`);
 ADR-0016 (mãos + LOCAL → `spawn_lineage`); ADR-0019/0020 (memória/decisão/racional); ADR-0017 (o CEO cria molde).
+
+## Forward-ref (2026-07-10 — ADR-0031, Fatia 2 do v1)
+O CEO virou **3 personas duráveis** (`agent.persona`, V24): o balcão único resolve para o
+**Questionador**; o **Planejador PRODUZ a estratégia de orquestração** — divergência consciente e
+escopada do núcleo "o CEO não produz conteúdo" (orquestração sim, execução não; o racional vive na
+ADR-0031 §10). "Delegador puro" segue escopado a ENTREGÁVEIS (hotfix G1). O canal `` ```proposta ``
+e o gate T3 seguem intocados; o menu do hire ganhou a mão soberana no MOTOR (A4).

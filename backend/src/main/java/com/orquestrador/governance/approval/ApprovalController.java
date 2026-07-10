@@ -54,8 +54,12 @@ public class ApprovalController {
                                     @RequestBody @Valid DecisionRequest request) {
         guard.assertBoardMember(companyId);
         Actor actor = guard.currentActor();
+        // A4 (ADR-0031): o trio de motor do request é a mão soberana do dono no menu do hire —
+        // ausente/em branco cai no motor protocolado no alvo.
+        ApprovalService.EngineOverride engine = new ApprovalService.EngineOverride(
+                request.adapterType(), request.model(), request.effort());
         DecideOutcome outcome = approvals.decide(companyId, approvalId, request.decision(),
-                request.racional(), request.reason(), actor.type(), actor.id());
+                request.racional(), request.reason(), actor.type(), actor.id(), engine);
         return switch (outcome) {
             case DecideOutcome.Grilled grilled -> ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                     .body(new GrilledResponse(true, grilled.probe(), grilled.rounds()));
@@ -64,9 +68,13 @@ public class ApprovalController {
         };
     }
 
+    /** O trio adapterType/model/effort é o motor editado pelo dono no menu do hire (A4). */
     public record DecisionRequest(@NotNull ApprovalDecision decision,
                                   @Size(max = 4000) String racional,
-                                  @Size(max = 2000) String reason) {
+                                  @Size(max = 2000) String reason,
+                                  @Size(max = 120) String adapterType,
+                                  @Size(max = 120) String model,
+                                  @Size(max = 120) String effort) {
     }
 
     /** O 422 do grill: o commit NÃO aconteceu; o probe é a pergunta do escriba-que-insiste. */

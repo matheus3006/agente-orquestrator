@@ -8,6 +8,7 @@ import com.orquestrador.execution.WakeupService;
 import com.orquestrador.handoff.ContinuationSentinel;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.agent.CeoPersona;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,7 +60,12 @@ public class ConversationService {
                                    ActorType actorType, UUID actorId) {
         Conversation conversation = conversations.findByIdAndCompanyId(conversationId, companyId)
                 .orElseThrow(() -> new NotFoundException("Conversa nao encontrada: " + conversationId));
-        Agent ceo = agents.findFirstByCompanyIdAndRoleOrderByCreatedAtAsc(companyId, CEO_ROLE)
+        // Balcão único (ADR-0031, D2): o dono fala SÓ com o Questionador; Planejador/Executor são
+        // back-office (recebem bastão, nunca inbound). Fallback pro CEO canônico = companies
+        // legadas pré-backfill (V25) e o parque de testes sem personas.
+        Agent ceo = agents.findFirstByCompanyIdAndRoleAndPersonaOrderByCreatedAtAsc(
+                        companyId, CEO_ROLE, CeoPersona.QUESTIONADOR.dbValue())
+                .or(() -> agents.findFirstByCompanyIdAndRoleOrderByCreatedAtAsc(companyId, CEO_ROLE))
                 .orElseThrow(() -> new ConflictException(
                         "A company nao tem CEO contratado (role='ceo') — o board fala so com o CEO"));
 

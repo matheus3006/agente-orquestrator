@@ -34,6 +34,7 @@ const agent = (o: Partial<AgentSummary> = {}): AgentSummary => ({
   companyId: "c1",
   name: "Atlas",
   role: "architect",
+  persona: null,
   reportsToId: null,
   adapterType: "process",
   executionTarget: "LOCAL",
