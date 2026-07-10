@@ -20,9 +20,9 @@ class CodexStreamParserTest {
     private static final List<String> STREAM = List.of(
             "{\"type\":\"thread.started\",\"thread_id\":\"th_123\"}",
             "{\"type\":\"turn.started\"}",
-            "{\"type\":\"item.completed\",\"item\":{\"item_type\":\"reasoning\",\"text\":\"Planejando.\"}}",
-            "{\"type\":\"item.completed\",\"item\":{\"item_type\":\"command_execution\",\"command\":\"ls\"}}",
-            "{\"type\":\"item.completed\",\"item\":{\"item_type\":\"assistant_message\",\"text\":\"Pronto.\"}}",
+            "{\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\",\"text\":\"Planejando.\"}}",
+            "{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"command\":\"ls\"}}",
+            "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Pronto.\"}}",
             "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":200,\"cached_input_tokens\":1000,"
                     + "\"output_tokens\":50}}");
 
@@ -30,9 +30,11 @@ class CodexStreamParserTest {
     void traduzCadaEventoEmStepSemantico() {
         CodexStreamParser parser = new CodexStreamParser();
         List<Step> steps = STREAM.stream().map(parser::accept).toList();
+        // A mensagem do agente (agent_message) sobe ao nível compartilhado RESULT (last-wins — a última
+        // mensagem é a resposta ao dono, vence o STDOUT); reasoning e comando seguem ITEM.COMPLETED.
         assertThat(steps).extracting(Step::type)
                 .containsExactly("THREAD.STARTED", "TURN.STARTED",
-                        "ITEM.COMPLETED", "ITEM.COMPLETED", "ITEM.COMPLETED", "TURN.COMPLETED");
+                        "ITEM.COMPLETED", "ITEM.COMPLETED", "RESULT", "TURN.COMPLETED");
         assertThat(steps.get(2).detail()).isEqualTo("Planejando.");
         assertThat(steps.get(3).detail()).isEqualTo("ls");
         assertThat(steps.get(4).detail()).isEqualTo("Pronto.");

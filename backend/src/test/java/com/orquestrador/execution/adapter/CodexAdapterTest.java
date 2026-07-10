@@ -26,7 +26,7 @@ class CodexAdapterTest {
 
     private static final List<String> STREAM = List.of(
             "{\"type\":\"thread.started\",\"thread_id\":\"th_123\"}",
-            "{\"type\":\"item.completed\",\"item\":{\"item_type\":\"assistant_message\",\"text\":\"Pronto.\"}}",
+            "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Pronto.\"}}",
             "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":200,\"cached_input_tokens\":1000,"
                     + "\"output_tokens\":50}}");
 
@@ -52,7 +52,8 @@ class CodexAdapterTest {
         assertThat(target.spec.image()).isEqualTo(EngineContainer.codex().image());
         assertThat(target.spec.credentialMounts())
                 .isEqualTo(EngineContainer.codex().credentialMounts());
-        assertThat(sink.types).containsExactly("THREAD.STARTED", "ITEM.COMPLETED", "TURN.COMPLETED");
+        // A mensagem do agente sobe ao nível RESULT (last-wins — a correção do reply do codex, ADR-0030).
+        assertThat(sink.types).containsExactly("THREAD.STARTED", "RESULT", "TURN.COMPLETED");
         assertThat(result.succeeded()).isTrue();
         assertThat(result.session()).isEqualTo("th_123");
         assertThat(result.costEvents()).hasSize(1);
