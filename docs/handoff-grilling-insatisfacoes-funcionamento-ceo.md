@@ -64,3 +64,36 @@ caso B = fluxo NOVO (não coberto por nada planejado); caso C = propose→gate T
 - A `main` já contém o `composePrompt` com a instrução M5 ⟹ o hotfix G1+G2 nasce de branch própria
   a partir da `main`, independente do fix codex (arquivos diferentes, zero conflito).
 - `:8080` segue com dial `context-threshold-percent=99` (gatilho off) — restaurar `=1` para testar o loop.
+
+## §RESULTADO — hotfix do prompt (G1+G2) EXECUTADO e provado ao vivo (2026-07-09)
+
+**Branch `fix/prompt-ceo-conversa-destilacao-condicional`** (a partir da main pós-PR #2, que já
+estava MERGED). A seção "## Instruções do turno" de `ConversationTurnCoordinator.composePrompt`
+foi reescrita via TDD (`CeoTurnExecutionTest`, +1 teste; **429 verdes**, piso 428):
+
+- **G1:** "MANTENHA UMA CONVERSA … responda com a SUA voz"; trivial/identidade/status = "zero
+  delegação, zero sub-agentes (nem os internos do seu CLI, ex.: collab/Task)"; delegação SÓ nos
+  casos A/B/C; "delegador puro" (ADR-0018) escopado a ENTREGÁVEIS. O "nunca produza o conteúdo
+  você mesmo" saiu do prompt.
+- **G2:** imperativo dobrado para dentro da condição ("SÓ SE … ~50-60% … senão NÃO grave nada —
+  nem crie o arquivo"); formato do bilhete INLINE (Onde estou · O que já fiz · Próximo passo ·
+  Decisões travadas com racional · Ponteiros); skill `distillation` citada como "apoio OPCIONAL,
+  não pré-requisito". Mecanismo intocado (pacote `handoff/` zero-diff; a rede pós-settle segue).
+- **Carona habilitadora:** a bullet do template (>255 chars/linha) expôs divergência do schema H2
+  de teste vs V3 real — `HeartbeatRunEvent.detail` e `HeartbeatRun.last_error` ganharam
+  `columnDefinition = "text"` (produção já era `text`; zero migração).
+
+**Re-medição G4 (VENDO live, Atlas/codex, teams-demo, conversa nova `3ed803cd`, dial=99):**
+
+| Métrica | Baseline run B (`043de730`) | Pós-fix (`ada665a3`) |
+|---|---|---|
+| Linhas em `heartbeat_run_event` (mesma régua SQL) | **31** (o "19" citado em §B era só parte dos itens: 9 ITEM.STARTED + 9 ITEM.COMPLETED + 6 RESULT + lifecycle) | **9** (1 ITEM.COMPLETED + 1 RESULT + lifecycle) |
+| Duração do turno | ~1 min | **~8,5 s** |
+| `collab_tool_call` / delegação | sim ("worker Feynman") | **zero** |
+| Bilhete `.orq/handoff/<conv>.md` | criado (ritual de ~10 eventos) | **não criado** (dir sem arquivo novo) |
+| Reply | narração empilhada (pré-fix do parser) | **1 frase em voz própria:** "Sou o Atlas, CEO: defino direção, priorizo apostas e cobro execução para a empresa avançar." |
+
+Probe extra (2º turno, categoria status): mesma forma — 9 eventos, zero delegação, zero bilhete,
+resposta em voz própria citando o estado vivo real ("time ocioso, entregas fechadas"). Ruído
+residual: 1 `ITEM.COMPLETED | error` por run (interno do CLI codex, já classificado informativo
+em G4); some com a fatia AGENTS.md (G3), que segue EM ABERTO junto com a priorização (§C).
