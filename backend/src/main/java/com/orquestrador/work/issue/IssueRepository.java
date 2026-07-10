@@ -15,6 +15,15 @@ public interface IssueRepository extends JpaRepository<Issue, UUID> {
     List<Issue> findByCompanyId(UUID companyId);
 
     /**
+     * Maior #N ja alocado nesta company (0 se nenhum) — a base do MAX+1 do create (ADR-0033).
+     * Espelha {@link com.orquestrador.org.roletemplate.RoleTemplateVersionRepository#maxVersion}
+     * — {@code max(seq)+1} (nunca {@code count+1}, que reciclaria numero apos qualquer gap).
+     * So e seguro sob o lock da linha da company ({@code CompanyRepository#findByIdForUpdate}).
+     */
+    @Query("select coalesce(max(i.seq), 0) from Issue i where i.companyId = :companyId")
+    int maxSeqByCompany(@Param("companyId") UUID companyId);
+
+    /**
      * F.14 (ADR-0028): as Issues de uma company num conjunto de status — a base da varredura do
      * {@code RowRetentionReaper} (terminais DONE/CANCELLED). O gate de retenção (updated_at vencido)
      * é da {@code RowRetentionPolicy}, não da query; aqui só afunila por status (a Issue é a tabela

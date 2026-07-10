@@ -6,6 +6,7 @@ import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.identity.company.CompanyRepository;
 import com.orquestrador.execution.RunOutcome;
 import com.orquestrador.work.review.Review;
 import com.orquestrador.work.review.ReviewDecision;
@@ -23,13 +24,14 @@ import java.util.UUID;
 public class IssueService {
 
     private final IssueRepository issues;
+    private final CompanyRepository companies;
     private final ReviewRepository reviews;
     private final HeartbeatRunRepository heartbeatRuns;
     private final ActivityLogService activityLog;
     private final int reviewRiskThreshold;
 
-    public IssueService(IssueRepository issues, ReviewRepository reviews, HeartbeatRunRepository heartbeatRuns,
-                        ActivityLogService activityLog,
+    public IssueService(IssueRepository issues, CompanyRepository companies, ReviewRepository reviews,
+                        HeartbeatRunRepository heartbeatRuns, ActivityLogService activityLog,
                         @Value("${orquestrador.review.risk-threshold:5}") int reviewRiskThreshold) {
         // Fora da escala 1-5 o gate desligaria SILENCIOSAMENTE (limiar 6 nunca é atingível) —
         // fail-open de mecanismo de segurança. Melhor derrubar o boot com mensagem clara.
@@ -39,6 +41,7 @@ public class IssueService {
                             + reviewRiskThreshold);
         }
         this.issues = issues;
+        this.companies = companies;
         this.reviews = reviews;
         this.heartbeatRuns = heartbeatRuns;
         this.activityLog = activityLog;
@@ -50,10 +53,20 @@ public class IssueService {
         return create(companyId, title, description, null);
     }
 
+    /**
+     * Chokepoint unico de criacao (toda Issue nasce aqui — POST do board e CREATE_ISSUE do
+     * approve). O #N (ADR-0033) e alocado sob o lock da linha da company: criacao de Issue nao
+     * tem serializador natural (dono na UI + approve do CEO correm em threads concorrentes) —
+     * o lock E o serializador do MAX+1; a unique (company_id, seq) e backstop, nao mecanismo.
+     * Alocacao na MESMA tx do insert: rollback nao queima numero (o denso do contrato).
+     */
     @Transactional
     public Issue create(UUID companyId, String title, String description, Integer riskLevel) {
         int effectiveRiskLevel = riskLevel != null ? riskLevel : 1;
-        return issues.save(new Issue(UUID.randomUUID(), companyId, title, description, effectiveRiskLevel));
+        companies.findByIdForUpdate(companyId)
+                .orElseThrow(() -> new NotFoundException("Company nao encontrada: " + companyId));
+        int seq = issues.maxSeqByCompany(companyId) + 1;
+        return issues.save(new Issue(UUID.randomUUID(), companyId, seq, title, description, effectiveRiskLevel));
     }
 
     /**

@@ -221,8 +221,12 @@ class ApprovalGateTest {
                 "o nicho dental tem dor aguda e ticket alto", null, ActorType.BOARD, UUID.randomUUID());
 
         // A ação real: Issue criada. A Decisão é de DIREÇÃO → a carta consolida (v1).
+        // O caminho do approve passa pelo MESMO chokepoint do POST do board — a Issue nasce com #N (ADR-0033).
         assertThat(issues.findByCompanyId(companyId))
-                .anySatisfy(issue -> assertThat(issue.getTitle()).isEqualTo("Focar no nicho dental"));
+                .anySatisfy(issue -> {
+                    assertThat(issue.getTitle()).isEqualTo("Focar no nicho dental");
+                    assertThat(issue.getSeq()).isEqualTo(1);
+                });
         Decision decisao = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).get(0);
         assertThat(decisao.getTipo()).isEqualTo(DecisionTipo.DIRECAO);
 
