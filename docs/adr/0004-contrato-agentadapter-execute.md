@@ -50,3 +50,19 @@ interface AgentAdapter {
   turno) em vez do `runtimeCommand` estático — o CEO conversacional não tem comando fixo.
 - O **CEO roda com `issueId=null`** (delegador-puro, sem workspace de código; **um turno = 1 Run** por-Conversation).
   O `SkillMaterializer` ganha um irmão, `CompanyMemoryMaterializer` (materializa a carta → `.claude/CLAUDE.md`).
+
+## Nota de reconciliação (2026-07-10 — divergência MÉDIA da auditoria doc×código de 2026-07-07)
+
+**`RunResult.producedArtifacts` não existe.** O `Result` como construído
+(`AgentAdapter.Result`) tem 4 campos: `succeeded`, `error`, `session` (o *updatedSession* do
+contrato) e `costEvents` — sem campo de artefatos. A intenção ("o Run produz um
+PreviewArtifact") é honrada **fora do Result**, por captura lateral no único call site
+(`AdapterRunExecutor.execute`): após o sucesso e ANTES do settle, fora de transação,
+`PreviewArtifactCapturer.captureIfPublished(runContext)` lê os arquivos que o agente publicou
+no workspace por convenção (ADR-0021, best-effort — falha de captura nunca vira exceção); a
+declaração de servidor segue o mesmo ponto (`registerIfDeclared`, ADR-0023). O adapter continua
+sem saber de preview — o mecanismo é do executor, não do contrato. Direção decidida no
+levantamento de paralelismo: **contrato do ADR atualizado para o código** (a captura-por-
+convenção substituiu o campo; o texto original acima fica como registro do desenho da época).
+Obs.: o "error tipado" do contrato original também segue simplificado (`error` String,
+fail-soft) — já registrado na Revisão 2026-07-02 como fatia futura.

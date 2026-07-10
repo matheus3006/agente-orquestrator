@@ -25,10 +25,10 @@ Um deployment self-hosted que roda uma ou mais "empresas" de agentes de IA. Cada
 |---|---|---|
 | Linguagem backend | **Java 21 LTS** | (alt: Java 25 LTS) |
 | Framework | **Spring Boot 3.5.x** | confirmar patch exato em start.spring.io no scaffold; 4.0 é caminho futuro |
-| Persistência | **PostgreSQL 15+** + JPA/Hibernate (jOOQ p/ queries críticas de concorrência) | `SKIP LOCKED`, `pg_trgm`; `pgvector` plugável p/ KnowAll RAG |
+| Persistência | **PostgreSQL 15+** + JPA/Hibernate (Spring Data `@Query` — SQL nativo/JPQL — p/ queries críticas de concorrência) | `SKIP LOCKED`, `pg_trgm`; `pgvector` plugável p/ KnowAll RAG |
 | Auth | Spring Security (sessão board + API keys de agente + run-JWT por-empresa) | **deny-by-default** |
 | Realtime | **SSE** (streaming de plano/steps) | WebSocket só se bidirecional (ex: chat c/ agente) |
-| ORM | **JPA/Hibernate** (CRUD) + **jOOQ** (queries de corrida) | checkout atômico e claim de heartbeat em SQL preciso |
+| ORM | **JPA/Hibernate** (CRUD) + **Spring Data `@Query`** (queries de corrida) | checkout atômico em SQL nativo (`IssueRepository.tryCheckout`); claim de heartbeat em JPQL CAS (`HeartbeatRunRepository.claim`) |
 | Fila/worker | **Postgres-as-queue** (`SELECT … FOR UPDATE SKIP LOCKED`) + worker agendado | sem broker externo no v1; lease+reaper cobre recovery |
 | Imagens runtime | base comum + **camadas por-adapter** | reuso + isolamento por runtime |
 | Execução agente | **Docker-first** (`ExecutionTarget` plugável; driver `local` p/ dev) | imprescindível rodar em Docker |
@@ -87,8 +87,8 @@ Monólito modular (não microserviços) — adequado a solo/single-node; frontei
 | Paperclip | Aqui |
 |---|---|
 | Express + rotas | Spring MVC controllers + `@RestControllerAdvice` (erros 400/401/403/404/409/422/500) |
-| Drizzle + Postgres | JPA/Hibernate; jOOQ nas queries de checkout/heartbeat |
-| Checkout atômico (UPDATE guardado) | `UPDATE … WHERE status IN(...) AND assignee…` via jOOQ; rowsAffected==0 → `409` |
+| Drizzle + Postgres | JPA/Hibernate; Spring Data `@Query` (SQL nativo/JPQL) nas queries de checkout/heartbeat |
+| Checkout atômico (UPDATE guardado) | `UPDATE … WHERE status IN(...) AND assignee…` em SQL nativo (`IssueRepository.tryCheckout`); rowsAffected==0 → `409` |
 | Heartbeat = DB-as-queue + FOR UPDATE | `SELECT … FOR UPDATE SKIP LOCKED` + worker pool (`@Scheduled`/Quartz) |
 | Budget hard-stop (recompute ledger) | serviço transacional recomputa `SUM(cost_cents)`; pausa + cancela |
 | Adapter `execute()` (1 call site) | `interface AgentAdapter { Result execute(RunContext ctx); }` |
@@ -140,7 +140,7 @@ Deps voláteis isoladas por `adapters`: CLIs (Claude Code/Codex), APIs de LLM, P
 | **Estado do agente entre heartbeats** | **Volume nomeado por workspace** (git worktree montado no container a cada Run) | espelha o contrato de cwd único do Paperclip; estado durável sem peso de snapshot |
 | **Multi-company no v1** | **Isolamento real desde já** | o dono roda vários produtos distintos = várias companies reais |
 | **KnowAll** | **Tool de busca (`pg_trgm`) + persona "KnowAll"**, keyword no v1 | cobre uso por agente (tool) e por humano (persona); `pgvector`/RAG plugável depois |
-| **ORM** | JPA/Hibernate + jOOQ nas queries de corrida | produtividade no CRUD, precisão onde a corrida importa |
+| **ORM** | JPA/Hibernate + Spring Data `@Query` nas queries de corrida | produtividade no CRUD, precisão onde a corrida importa (SQL nativo/JPQL; jOOQ do desenho original nunca foi adotado — nota na ADR-0001, 2026-07-10) |
 | **Fila/worker** | Postgres-as-queue (`SKIP LOCKED`) + worker agendado | menos infra; lease+reaper cobre recovery |
 | **Realtime** | SSE (plano/steps); WS só bidirecional | streaming uma-via é mais simples e reconecta fácil |
 | **Imagens runtime** | base comum + camadas por-adapter | reuso + isolamento por runtime |

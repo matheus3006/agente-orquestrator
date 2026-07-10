@@ -236,25 +236,36 @@ a *assinatura do método* (anti-inchaço) ainda não.
   o efeito real precisa ser **investigado** (auditoria é read-only, não rodou o cenário). **Ação:** ou implementar
   a renovação de lease, ou reconciliar o ADR-0005 com o desenho lease-fixo+reaper. `direction=doc_afirma_codigo_nao_confirma`.
 
-### 🟠 MÉDIA (6 · 1 CORRIGIDA 2026-07-08 → 5 abertas)
+### 🟠 MÉDIA (6 · 1 CORRIGIDA 2026-07-08 · **5 reconciliadas em doc 2026-07-10** — D5/D11 seguem residual **H**)
 
 - **ADR-0001 · jOOQ nunca adotado.** Stack pinada (e ARQUITETURA.md ×5) cita *"jOOQ nas queries de corrida"*;
   `pom.xml` **sem** jOOQ, zero `import org.jooq` no backend. As queries de corrida existem em **Spring Data**:
   SQL nativo `IssueRepository.java:48-64` (checkout) e JPQL CAS `HeartbeatRunRepository.java:64-72` (claim). O
   invariante de concorrência **é honrado**, por outro mecanismo. **Ação:** atualizar ADR-0001/ARQUITETURA (ou adotar jOOQ).
+  ✅ **Reconciliada em doc (2026-07-10):** nota na ADR-0001 + as 5 menções do ARQUITETURA.md corrigidas (faixa R1-E, docs-only).
 - **ADR-0005 · sem `SELECT … FOR UPDATE SKIP LOCKED` no claim.** O ADR descreve DB-as-queue com SKIP LOCKED; o
   claim é `findTop50ByStatus…(QUEUED)` (SELECT simples) + CAS `UPDATE … WHERE status=:queued`
   (`HeartbeatRunRepository.java:16,66`). Metade CAS presente, metade SKIP LOCKED ausente (o único `FOR UPDATE` é
   `PESSIMISTIC_WRITE` no Agent, `AgentRepository.java:22`, não no claim do Run).
+  ✅ **Reconciliada em doc (2026-07-10):** nota na ADR-0005 descreve o mecanismo real (enumeração sem lock + CAS;
+  o invariante anti-double-claim é do CAS) — **SÓ o trecho do claim**; o trecho de renovação de lease (ALTA acima)
+  segue **intocado**, tratado pela fatia própria.
 - **ADR-0004 · `RunResult.producedArtifacts` inexistente.** O ADR diz que o Result inclui `producedArtifacts`
   (incl. PreviewArtifact); `AgentAdapter.java:67` (Result) **não tem** o campo — o preview é capturado **fora** do
   Result, por `PreviewArtifactCapturer` lendo arquivos publicados (`AdapterRunExecutor.java:88-92`). Contrato do ADR desatualizado.
+  ✅ **Reconciliada em doc (2026-07-10):** nota na ADR-0004 — contrato atualizado para a captura lateral no executor
+  (pós-sucesso, pré-settle, best-effort; ADR-0021/0023).
 - **ADR-0019 · D5: passagem pela review NÃO emite Decision.** Só `ApprovalService.decide→recordGateDecision`
   fabrica Decision; `IssueService.java:158-184` grava `REVIEW_APPROVED/REJECTED` no activity_log mas **não** cria
   Decision. `Decision.anchoredToReview` (`Decision.java:99`) e a coluna `review_id` (`V18:35`) **sem caller** — seam/coluna mortos.
+  🟠 **Reconciliada em doc (2026-07-10), RESIDUAL ABERTO:** nota na ADR-0019 registra o seam morto; decisão **H**
+  pendente (puxar fatia p/ ligar review→Decision × aceitar como está).
 - **ADR-0019 · D11: `supersedes` sem caminho de escrita.** O consolidador **lê** e filtra `superseded`
   (`CompanyMemoryConsolidator.java:36-42`), mas **nenhum writer** seta `supersedesId` (`Decision.java:62-63,150` só
   getter). Existe a fundação (coluna + read-filter), não a revisão-como-nova-Decisão.
+  🟠 **Reconciliada em doc (2026-07-10), RESIDUAL ABERTO:** nota na ADR-0019 registra o seam morto (confirmado
+  também no `DecisionController`: GET-only, o campo sai na resposta mas nunca entra); decisão **H** pendente
+  (puxar fatia da linhagem × aceitar como está).
 - **✅ CORRIGIDA (2026-07-08) — Adapter codex · `ceo_reply` pegava o `STDOUT` cru em vez da mensagem final do
   agente** (achado no VENDO live da ADR-0030 — **visível ao dono**, o único desta lista que o cliente via).
   `RunFinalOutput.text()` (`execution/RunFinalOutput.java:45-53`) escolhe o reply por prioridade
@@ -322,7 +333,10 @@ a *assinatura do método* (anti-inchaço) ainda não.
 
 **Novo (da auditoria 2026-07-07):**
 - **Divergência ALTA (ADR-0005 lease):** implementar renovação de lease **ou** reconciliar o ADR? (investigar o efeito real primeiro).
-- **Médias doc×código (jOOQ · SKIP LOCKED · `producedArtifacts` · D5 review→Decision · D11 supersedes):** atualizar os ADRs para refletir o código, ou puxar fatias para fechar os seams mortos (`review_id`, `supersedesId`)?
+- **Médias doc×código (jOOQ · SKIP LOCKED · `producedArtifacts` · D5 review→Decision · D11 supersedes):**
+  ~~atualizar os ADRs para refletir o código, ou puxar fatias?~~ **Reconciliação em doc EXECUTADA (2026-07-10,
+  faixa R1-E):** notas datadas nas ADR-0001/0004/0005 (só claim) /0019 + ARQUITETURA.md corrigida. **Segue H:**
+  destino dos seams mortos da 0019 (`review_id` / `supersedesId`) — puxar fatia × aceitar como está.
 
 ---
 
@@ -348,4 +362,5 @@ do cronograma pausado** (Frente B, o v1 do CEO). É só **sinalização** — a 
 | 2026-07-10 | **Fatia AGENTS.md (G3) — EXECUTADA** (/tdd, M1–M8+M10) | **ADR-0032** criado; suíte **443** (piso 429 + 14); divergência 🔴 "codex pelado" FECHADA; layout claude bit-idêntico |
 | 2026-07-10 | **Fatia G5 (ID sequencial #N)** — grill fechado em sessão própria (R1-B do ledger) | `handoff-grilling-id-sequencial-issue` (D1–D5: lock-da-company+MAX+1 · backfill retroativo · "#N é o que eu vejo, UUID é auditoria" · #N no estado vivo · **ADR-0033 autorada**) → PLANEJADO; kickoff de execução emitido (V23, branch de main) |
 | 2026-07-10 | **Fatia AGENTS.md (G3) — VENDO live PASS (fechada)** | **PR #4 MERGED**; M9 (pg_dump + faxina DB 24→3 companies + wipe workspaces + restart) e 5/5 provas: carta (Atlas, `AGENTS.md`==carta v4 por md5 + `.claude/` ausente + resposta "dental+3 motivos") · skill (sonda via import→set→`.codex/skills`→`ABACATE-ROXO-93`; lista `distillation`) · ruído (1 `ITEM.COMPLETED\|error`/run = baseline G4, resíduo) · Docker (volume `orq_b92cb312_73676f52`: AGENTS.md md5==banco, `.claude/` ausente) · gates 443 na branch / **448 na main pós-G5** |
+| 2026-07-10 | **Reconciliação doc-only das 5 médias (faixa R1-E)** | notas datadas em ADR-0001/0004/0005 (só o claim; lease intocado) /0019 + 5 menções jOOQ do ARQUITETURA.md corrigidas; D5/D11 registrados como RESIDUAL ABERTO (**H**) |
 | _próximo_ | Fatia 2 (CEO em 3 personas, ADR-0031) — destravada pelo merge da G3; Frente C idem | — |

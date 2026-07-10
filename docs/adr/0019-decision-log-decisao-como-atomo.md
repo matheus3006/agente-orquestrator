@@ -77,6 +77,25 @@ agente). É o `CompanyMemoryConsolidator` do ADR-0018.
    `GET /decisions?area=&tipo=&from=&to=` (board-only). A carta é projeção SOBRE estas linhas
    (`CompanyMemoryConsolidator`, determinística, na MESMA tx do gate).
 
+## Nota de reconciliação (2026-07-10 — divergências MÉDIAS D5/D11 da auditoria doc×código de 2026-07-07)
+
+**Status: RESIDUAL ABERTO — decisão do Matheus (H) pendente.** Esta nota REGISTRA os seams
+mortos; não decide o destino deles ("puxar fatia para ligar" × "aceitar como está").
+
+- **D5 — a passagem pela review NÃO fabrica Decision.** Das duas portas do gate, só a
+  `approval` emite: `ApprovalService.decide → recordGateDecision`. A `review` (ADR-0012),
+  em `IssueService.review`, grava `REVIEW_APPROVED/REJECTED` no activity_log e fecha o ciclo,
+  mas **não cria Decision**. A fundação está pronta e morta: `Decision.anchoredToReview(reviewId,
+  issueId)` (zero callers) e a coluna `review_id` da V18 (sempre NULL).
+- **D11 — `supersedes` sem caminho de escrita.** O leitor existe e funciona: o
+  `CompanyMemoryConsolidator` filtra as supersedidas da projeção da carta. Mas **nenhum writer
+  seta `supersedesId`** — a entidade só tem getter e o `DecisionController` é GET-only (o campo
+  aparece na resposta, nunca entra). Existe a fundação (coluna + read-filter), não a
+  revisão-como-nova-Decisão da linhagem D4.
+
+Nos dois casos o desenho acima segue válido como intenção; o que falta é o elo de escrita.
+Inventário: `docs/roadmap-interno.md §Divergências`.
+
 ## Relaciona
 `docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D1–D12, schema, findability); ADR-0018 (carta/
 `company_memory`/materialização + `CompanyMemoryConsolidator`); ADR-0020 (racional-por-grill — D6–D12);
