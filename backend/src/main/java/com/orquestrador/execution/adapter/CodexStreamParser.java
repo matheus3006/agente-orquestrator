@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Parser do {@code codex exec --json} (ADR-0014). Mesmo contrato do {@link ClaudeStreamParser} (Step + os
@@ -19,6 +20,13 @@ import java.util.Locale;
 final class CodexStreamParser {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * Os rótulos de item do codex que carregam a MENSAGEM do agente (a prosa endereçada ao dono). O CLI
+     * real (0.142.5) usa {@code agent_message}; {@code assistant_message} aparece na documentação/fixtures
+     * — os dois valem. NÃO inclui {@code reasoning} (que também tem {@code text}) nem {@code command_execution}.
+     */
+    private static final Set<String> AGENT_MESSAGE_ITEM_TYPES = Set.of("agent_message", "assistant_message");
 
     private String session;
     private String model;
@@ -51,8 +59,36 @@ final class CodexStreamParser {
                 credentialFailureLine = message;
             }
         }
-        String tag = (type == null) ? "EVENT" : type.toUpperCase(Locale.ROOT);
-        return new Step(tag, describe(node, type));
+        return new Step(stepTag(node, type), describe(node, type));
+    }
+
+    /**
+     * O nível do Step no vocabulário compartilhado do {@code RunFinalOutput} (ADR-0010:
+     * {@code RESULT > ASSISTANT > STDOUT}). Quase sempre é o evento nativo em UPPER; a exceção é a
+     * MENSAGEM do agente ({@code agent_message}), que sobe ao nível {@code RESULT} — last-wins, então o
+     * reply do turno é a ÚLTIMA mensagem (a resposta ao dono), VENCENDO o {@code STDOUT} cru (o aviso
+     * "Reading additional input from stdin..."). Difere do claude de propósito: os {@code ASSISTANT} do
+     * claude são CHUNKS de uma resposta (juntam); cada {@code agent_message} do codex é uma mensagem
+     * COMPLETA e a última é a resposta — daí {@code RESULT} (last-wins), não {@code ASSISTANT} (junta), que
+     * despejaria a narração de progresso no reply. Reasoning e comando seguem {@code ITEM.COMPLETED}, fora do reply.
+     */
+    private static String stepTag(JsonNode node, String type) {
+        if (type == null) {
+            return "EVENT";
+        }
+        if (isAgentMessage(type, node.path("item"))) {
+            return "RESULT";
+        }
+        return type.toUpperCase(Locale.ROOT);
+    }
+
+    /** A mensagem do agente: um {@code item.completed} cujo item é uma mensagem do agente COM texto. */
+    private static boolean isAgentMessage(String type, JsonNode item) {
+        if (!"item.completed".equals(type)) {
+            return false;
+        }
+        String itemType = firstNonBlank(text(item, "type"), text(item, "item_type"));
+        return AGENT_MESSAGE_ITEM_TYPES.contains(itemType) && !firstNonBlank(text(item, "text")).isBlank();
     }
 
     String session() {

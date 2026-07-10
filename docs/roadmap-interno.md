@@ -209,8 +209,10 @@ a *assinatura do método* (anti-inchaço) ainda não.
 ## § Divergências (doc × código — sobreviventes da refutação)
 
 > 48 candidatas → **25 confirmadas** (refutação adversarial matou 23 falsos-positivos de busca incompleta).
-> **1 alta · 5 média · 19 baixa.** As baixa são, em bloco, envelhecimento de handoff consumido ou residual
-> consciente — **não** defeito. O sinal acionável está na ALTA e nas MÉDIAS.
+> **1 alta · 6 média · 19 baixa.** As baixa são, em bloco, envelhecimento de handoff consumido ou residual
+> consciente — **não** defeito. O sinal acionável está na ALTA e nas MÉDIAS. (A 6ª média = defeito de
+> **runtime** achado no VENDO live do loop de handoff em 2026-07-08 — não da varredura doc×código de 07-07 —
+> já **CORRIGIDA** no mesmo dia, ver abaixo.)
 
 ### 🔴 ALTA (1) — merece o olho do Matheus (**H**)
 
@@ -222,7 +224,7 @@ a *assinatura do método* (anti-inchaço) ainda não.
   o efeito real precisa ser **investigado** (auditoria é read-only, não rodou o cenário). **Ação:** ou implementar
   a renovação de lease, ou reconciliar o ADR-0005 com o desenho lease-fixo+reaper. `direction=doc_afirma_codigo_nao_confirma`.
 
-### 🟠 MÉDIA (5)
+### 🟠 MÉDIA (6 · 1 CORRIGIDA 2026-07-08 → 5 abertas)
 
 - **ADR-0001 · jOOQ nunca adotado.** Stack pinada (e ARQUITETURA.md ×5) cita *"jOOQ nas queries de corrida"*;
   `pom.xml` **sem** jOOQ, zero `import org.jooq` no backend. As queries de corrida existem em **Spring Data**:
@@ -241,6 +243,26 @@ a *assinatura do método* (anti-inchaço) ainda não.
 - **ADR-0019 · D11: `supersedes` sem caminho de escrita.** O consolidador **lê** e filtra `superseded`
   (`CompanyMemoryConsolidator.java:36-42`), mas **nenhum writer** seta `supersedesId` (`Decision.java:62-63,150` só
   getter). Existe a fundação (coluna + read-filter), não a revisão-como-nova-Decisão.
+- **✅ CORRIGIDA (2026-07-08) — Adapter codex · `ceo_reply` pegava o `STDOUT` cru em vez da mensagem final do
+  agente** (achado no VENDO live da ADR-0030 — **visível ao dono**, o único desta lista que o cliente via).
+  `RunFinalOutput.text()` (`execution/RunFinalOutput.java:45-53`) escolhe o reply por prioridade
+  `RESULT → ASSISTANT → STDOUT`; o codex rotulava a mensagem final como `ITEM.COMPLETED` → caía no `STDOUT` cru
+  (*"Reading additional input from stdin…"*), descartando a prosa real (ex.: *"Gravei o bilhete…; passo 1:
+  contratar Lyra…"*). **Correção — NÃO onde o roadmap supôs:** o defeito mora no PARSER, não no `RunFinalOutput`.
+  Reasoning **também** carrega `text`, então só o parser (que ainda tem o `item.type`) distingue a mensagem do
+  agente do raciocínio/comando — o `RunFinalOutput` só vê `(type, detail)` achatado. `CodexStreamParser` agora
+  promove a mensagem do agente (`item.completed` com `item.type=agent_message` **com texto** — o shape
+  REAL do CLI 0.142.5, §A do `handoff-f11`, não o `item_type=assistant_message` sintético das fixtures antigas)
+  ao nível compartilhado `RESULT` (**last-wins**: a ÚLTIMA mensagem é a resposta ao dono); o `RunFinalOutput`
+  ficou **intocado**. Diferença semântica proposital: os `ASSISTANT` do claude são CHUNKS de uma resposta
+  (juntam); cada `agent_message` do codex é uma mensagem COMPLETA e só a última importa — daí `RESULT`, não
+  `ASSISTANT` (que despejaria a narração de progresso no reply). Reasoning/comando seguem `ITEM.COMPLETED`, fora
+  do reply. TDD (`AgentReplyDerivationTest` — tracer ponta-a-ponta linhas cruas → parser → RunFinalOutput + teste
+  de last-wins multi-mensagem) + fixtures corrigidas para o shape real; **428 testes verdes**. Pacote `handoff/`
+  intocado. **VENDO live 2026-07-08**: a 1ª volta (nível `ASSISTANT`/junta) rodou no run `68aac0d4` (Atlas) e o
+  dono, VENDO os 8 passos de narração empilhados no reply, decidiu **última-vence** — reply = só a última
+  mensagem (*"Sou Atlas, o CEO delegador…"*); o `STDOUT` *"Reading additional input…"* segue no StepTrace **mas
+  perde**. `direction=runtime_defeito`.
 
 ### 🟡 BAIXA (19) — em blocos (sem ação; registrados p/ inventário)
 
