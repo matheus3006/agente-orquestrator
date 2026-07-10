@@ -101,6 +101,31 @@ class ConversationInboundSeamTest {
                 .hasSize(2); // os DOIS turnos ficam PENDING; o motor os atende um por Run
     }
 
+    /**
+     * Balcão único (ADR-0031, D2): com as 3 personas semeadas, a mensagem do dono cai SEMPRE no
+     * Questionador — mesmo que outra persona seja mais antiga. Planejador e Executor são
+     * back-office: nunca recebem inbound do dono.
+     */
+    @Test
+    void mensagemDoDonoCaiNoQuestionador_balcaoUnico() {
+        UUID companyId = novaCompany();
+        Agent executor = new Agent(UUID.randomUUID(), companyId, "CEO Executor", "ceo", null);
+        executor.definePersona("executor");
+        agents.save(executor); // o MAIS ANTIGO — e mesmo assim não é o balcão
+        Agent questionador = new Agent(UUID.randomUUID(), companyId, "CEO Questionador", "ceo", null);
+        questionador.definePersona("questionador");
+        UUID questionadorId = agents.save(questionador).getId();
+        Agent planejador = new Agent(UUID.randomUUID(), companyId, "CEO Planejador", "ceo", null);
+        planejador.definePersona("planejador");
+        agents.save(planejador);
+
+        Conversation geral = conversations.open(companyId, "Geral");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, geral.getId(), "novo business: cafeteria", ActorType.BOARD, UUID.randomUUID());
+
+        assertThat(turns.findById(receipt.turnId()).orElseThrow().getAgentId()).isEqualTo(questionadorId);
+    }
+
     @Test
     void postMessageSemCeoContratadoE409() {
         UUID companyId = novaCompany();

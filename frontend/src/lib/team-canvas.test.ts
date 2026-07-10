@@ -9,6 +9,7 @@ import { montarOrganograma, ORG_NODE_H, ORG_NODE_W } from "./team-canvas";
 const agent = (o: Partial<AgentSummary> & { id: string; name: string }): AgentSummary => ({
   companyId: "c1",
   role: "executor",
+  persona: null,
   reportsToId: null,
   adapterType: "process",
   executionTarget: "LOCAL",

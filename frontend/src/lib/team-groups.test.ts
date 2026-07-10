@@ -23,6 +23,7 @@ const detalhe = (o: Partial<AgentSummary> & { id: string }): AgentSummary => ({
   companyId: "c1",
   name: "Agente",
   role: "executor",
+  persona: null,
   reportsToId: null,
   adapterType: "process",
   executionTarget: "LOCAL",

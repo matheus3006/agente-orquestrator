@@ -86,3 +86,9 @@ nasce válida, não lint depois). Spec de entrada: `docs/handoff-t1-fe-canvas.md
 `docs/handoff-grilling-teams-fechado.md` (A.2–A.5, B, C-T.1/T.2); ADR-0018 (CEO cria molde, gate por alcance);
 ADR-0007 (skills 2-camadas — o SkillSet do preset); ADR-0014 (motor = trio `adapter_type+model+effort`; o `engine_catalog` só sugere);
 ADR-0012 (governança de molde reusa a Review; QA reservado); ADR-0010 (nomes + módulos profundos).
+
+## Forward-ref (2026-07-10 — ADR-0031, Fatia 2 do v1)
+A cadeia PO→Arquiteto **de orquestração** virou personas do CEO (Planejador/Executor); o
+**arquiteto-de-domínio SOBREVIVE como empregado** — por-time, fonte das Issues-task, com o
+`PLANEJAMENTO_ARQUITETO` valendo como sempre. A V25 soma 3 moldes de sistema `ceo-*` ao seed
+V14 e o hire ganhou um consumidor novo (o `CeoPersonaSeeder`, auto-seed na criação da company).

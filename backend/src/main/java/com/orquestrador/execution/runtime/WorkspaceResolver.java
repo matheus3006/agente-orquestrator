@@ -51,6 +51,22 @@ public class WorkspaceResolver {
                 .resolve(issueId != null ? issueId.toString() : "_agent");
     }
 
+    /**
+     * O workspace de CONVERSA das personas de CEO (ADR-0031, M4/D4): chaveado por conversationId —
+     * as 3 personas resolvem o MESMO chão e o bastão ({@code .orq/conversa/...}) cruza a fronteira
+     * de agente. MESMA forma do workspace de agente (o conversationId ocupa o slot do agentId):
+     * volume {@code orq_<c8>_<conv8>} tem 2 segmentos, estruturalmente FORA do formato por-Issue
+     * que o reaper varre ({@link #isIssueVolumeName} não casa — nada vira candidato/órfão).
+     */
+    public Path resolveConversation(UUID companyId, UUID conversationId) {
+        return resolve(companyId, conversationId, null);
+    }
+
+    /** Par DOCKER do {@link #resolveConversation}: o nome do volume compartilhado da conversa. */
+    public String conversationVolumeName(UUID companyId, UUID conversationId) {
+        return volumeName(companyId, conversationId, null);
+    }
+
     /** A raiz de todos os workspaces — o teto do GUARD de path do delete no alvo LOCAL. */
     public Path root() {
         return root;

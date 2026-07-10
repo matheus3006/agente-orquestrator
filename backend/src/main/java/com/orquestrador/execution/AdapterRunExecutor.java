@@ -13,6 +13,7 @@ import com.orquestrador.handoff.DistillationSkill;
 import com.orquestrador.memory.CompanyMemoryMaterializer;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.agent.CeoPersona;
 import com.orquestrador.preview.PreviewArtifactCapturer;
 import com.orquestrador.preview.server.PreviewServerManifestRegistrar;
 import com.orquestrador.preview.server.PreviewServerSupervisor;
@@ -127,11 +128,23 @@ public class AdapterRunExecutor implements RunExecutor {
         AgentAdapter adapter = adapters.forType(agent.getAdapterType());
         WorkspaceConvention convention = adapter.workspaceConvention();
 
+        // M4 (ADR-0031, D4): run de TURNO de uma persona de CEO usa o workspace COMPARTILHADO da
+        // conversa (keyed por conversationId) — o bastão em .orq/conversa/ cruza a fronteira de
+        // agente. O PEEK antecede o claim (que só ocorre após o preparo do workspace) e devolve a
+        // MESMA conversa que o claim vai atender. Persona nula (CEO legado/agente comum) e run de
+        // Issue seguem no chão por-agente de sempre.
+        UUID conversaCompartilhada = runContext.issueId() == null
+                && CeoPersona.fromDbValue(agent.getPersona()).isPresent()
+                ? turnCoordinator.pendingConversationOf(runContext.agentId()).orElse(null)
+                : null;
+
         // Fatia 7a: prepara o workspace ANTES do checkout — materializa a UNIÃO base∪anexos-da-Issue
         // (resolveForRun colapsa por skill com ANEXO-VENCE-A-BASE; anexos de Issue fechada não entram).
         // Uma falha de I/O aqui vira RunOutcome.failure; por ser ANTES do checkout, não deixa a Issue
         // travada por um run morto (o checkout ainda não ocorreu).
-        Path workDir = workspaces.resolve(runContext.companyId(), runContext.agentId(), runContext.issueId());
+        Path workDir = conversaCompartilhada != null
+                ? workspaces.resolveConversation(runContext.companyId(), conversaCompartilhada)
+                : workspaces.resolve(runContext.companyId(), runContext.agentId(), runContext.issueId());
         try {
             // M4 (ADR-0030): o CEO ganha a skill `distillation` (capacidade de plataforma, injetada
             // por-run — zero migração, invisível à biblioteca da company). Demais agentes: set intacto.
@@ -206,7 +219,9 @@ public class AdapterRunExecutor implements RunExecutor {
         // skill anexada nunca chegou em /workspace/.claude/skills). A carta so entra em run de
         // turno (espelha QUEM materializou). Falha aqui e failure LEGIVEL, e no turno liquida
         // FAILED como a carta acima — rodar sem a arvore seria divergencia silenciosa.
-        String volumeName = workspaces.volumeName(runContext.companyId(), runContext.agentId(), runContext.issueId());
+        String volumeName = conversaCompartilhada != null
+                ? workspaces.conversationVolumeName(runContext.companyId(), conversaCompartilhada)
+                : workspaces.volumeName(runContext.companyId(), runContext.agentId(), runContext.issueId());
         // M6 (ADR-0030, risco #3): NUNCA adicionar `.orq/*` aqui. writeWorkspaceFiles é REPLACE por
         // subtree (membro ausente no host some do volume); materializar `.orq/handoff` apagaria o
         // bilhete entre Runs sob Docker e quebraria o loop de handoff. Guard-rail:

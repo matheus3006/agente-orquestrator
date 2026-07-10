@@ -123,6 +123,58 @@ class ApprovalGateTest {
                 });
     }
 
+    /**
+     * A4 (adendo ADR-0031): o pedido protocolado carrega o MOTOR sugerido (o Executor não mexe —
+     * 1:1 com a estratégia) e o hire do APPROVE o honra; skills seguem SOMENTE-LEITURA no menu.
+     */
+    @Test
+    void aproveHonraOMotorProtocoladoNoAlvo() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
+                        "{\"name\":\"Vega\",\"role\":\"executor\",\"adapterType\":\"claude-code\","
+                                + "\"model\":\"opus\",\"effort\":\"high\","
+                                + "\"racional\":\"skills tdd; motor claude-code; time de produto\"}",
+                        "Contratar Vega", null));
+
+        approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
+                "estrategia aprovada no dossie", null, ActorType.BOARD, UUID.randomUUID());
+
+        Agent vega = agents.findByCompanyId(companyId).stream()
+                .filter(agent -> agent.getName().equals("Vega")).findFirst().orElseThrow();
+        assertThat(vega.getAdapterType()).isEqualTo("claude-code");
+        assertThat(vega.getModel()).isEqualTo("opus");
+        assertThat(vega.getEffort()).isEqualTo("high");
+    }
+
+    /**
+     * A4 (palavras do dono): o CEO tem viés de motor — no menu do hire o MOTOR é livremente
+     * editável pelo dono, sem rejeitar nem voltar ao Planejador. O override do decide VENCE o alvo.
+     */
+    @Test
+    void donoSobrescreveOMotorNoAproveSemRejeitar() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
+                        "{\"name\":\"Sirius\",\"role\":\"executor\",\"adapterType\":\"claude-code\","
+                                + "\"model\":\"opus\"}", "Contratar Sirius", null));
+
+        approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
+                "prefiro o motor codex neste time", null, ActorType.BOARD, UUID.randomUUID(),
+                new ApprovalService.EngineOverride("codex", "gpt-5-codex", "medium"));
+
+        Agent sirius = agents.findByCompanyId(companyId).stream()
+                .filter(agent -> agent.getName().equals("Sirius")).findFirst().orElseThrow();
+        assertThat(sirius.getAdapterType()).isEqualTo("codex");   // a mão soberana venceu
+        assertThat(sirius.getModel()).isEqualTo("gpt-5-codex");
+        assertThat(sirius.getEffort()).isEqualTo("medium");
+        assertThat(sirius.getRole()).isEqualTo("executor");       // o RESTO do pedido, intocado
+        assertThat(approvalRepo.findById(proposta.getId()).orElseThrow().getStatus())
+                .isEqualTo(ApprovalStatus.APPROVED);              // editar motor não exige rejeição
+    }
+
     @Test
     void reEmissaoDaMesmaPropostaNaoEmpilhaPendente() {
         UUID companyId = novaCompany();

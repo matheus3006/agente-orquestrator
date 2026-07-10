@@ -1,0 +1,266 @@
+package com.orquestrador.conversation.persona;
+
+import com.orquestrador.common.security.ActorType;
+import com.orquestrador.conversation.Conversation;
+import com.orquestrador.conversation.ConversationService;
+import com.orquestrador.conversation.ConversationTurn;
+import com.orquestrador.conversation.ConversationTurnRepository;
+import com.orquestrador.conversation.TurnStatus;
+import com.orquestrador.execution.HeartbeatDispatcher;
+import com.orquestrador.execution.WakeupService;
+import com.orquestrador.governance.approval.Approval;
+import com.orquestrador.governance.approval.ApprovalRepository;
+import com.orquestrador.governance.approval.ApprovalStatus;
+import com.orquestrador.identity.company.CompanyService;
+import com.orquestrador.org.agent.Agent;
+import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.agent.CeoPersona;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * O bastão de ponta a ponta pelo seam REAL do motor (ADR-0031, M5/M6/M9 + D5/D6/D7): a persona
+ * emite o bloco tipado na RESPOSTA do run; o settle roteia — ```handoff``` vira continuação
+ * (invisível) da persona-alvo; ```needs-grilling``` vira kickback VISÍVEL do Questionador;
+ * ```proposta``` segue intocado pro gate T3; sem bloco, NADA acontece (confirma-antes fica idle);
+ * no teto M9 a origem prossegue-e-sinaliza.
+ */
+@SpringBootTest
+@ActiveProfiles("test")
+class PersonaBatonFlowTest {
+
+    @Autowired
+    private ConversationService conversations;
+    @Autowired
+    private ConversationTurnRepository turns;
+    @Autowired
+    private HeartbeatDispatcher dispatcher;
+    @Autowired
+    private CompanyService companies;
+    @Autowired
+    private AgentRepository agents;
+    @Autowired
+    private WakeupService wakeups;
+    @Autowired
+    private ApprovalRepository approvals;
+
+    /** A fila do dispatcher é GLOBAL no H2 compartilhado: drenar antes/depois isola as ondas. */
+    @BeforeEach
+    @AfterEach
+    void drenaFilaGlobal() {
+        while (dispatcher.dispatchOnce() > 0) {
+            // esvazia
+        }
+    }
+
+    private UUID novaCompany() {
+        return companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8),
+                UUID.randomUUID()).getId();
+    }
+
+    private UUID persona(UUID companyId, String persona, String nome, String runtimeCommand) {
+        Agent agent = new Agent(UUID.randomUUID(), companyId, nome, "ceo", null);
+        agent.configureRuntime("process", runtimeCommand, "LOCAL");
+        agent.definePersona(persona);
+        return agents.save(agent).getId();
+    }
+
+    /** Um turno interno do fluxo (bastão/kickback) postado direto no seam do repositório+wakeup. */
+    private UUID turnoPara(UUID companyId, UUID conversationId, UUID agentId, String ownerMessage) {
+        ConversationTurn turno = turns.save(new ConversationTurn(
+                UUID.randomUUID(), conversationId, companyId, agentId, ownerMessage));
+        wakeups.enqueue(companyId, agentId, null, "test:" + turno.getId());
+        return turno.getId();
+    }
+
+    private List<ConversationTurn> thread(UUID companyId, UUID conversationId) {
+        return turns.findByConversationIdAndCompanyIdOrderByCreatedAtAsc(conversationId, companyId);
+    }
+
+    @Test
+    void handoffDoQuestionadorViraContinuacaoDoPlanejador_invisivelNaThread() {
+        UUID companyId = novaCompany();
+        UUID questionadorId = persona(companyId, "questionador", "CEO Questionador",
+                "printf '%s\\n' 'Dossiê carimbado.' '```handoff' "
+                        + "'{\"para\": \"planejador\", \"bastao\": \".orq/conversa/x/dossie.md\","
+                        + " \"resumo\": \"gerar estratégia\"}' '```'");
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' \"$ORQ_PROMPT\"");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        conversations.postMessage(companyId, negocio.getId(), "sim, pode seguir",
+                ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1); // o run do Questionador emite o handoff
+
+        // D6: UMA continuação do Planejador, com o bastão na sentinela — P e E nunca veem o dono.
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        assertThat(doConv).hasSize(2);
+        ConversationTurn continuacao = doConv.get(1);
+        assertThat(continuacao.getAgentId()).isEqualTo(planejadorId);
+        assertThat(continuacao.getStatus()).isEqualTo(TurnStatus.PENDING);
+        assertThat(continuacao.getOwnerMessage())
+                .startsWith("[continuação — bastão de questionador para planejador")
+                .contains(".orq/conversa/x/dossie.md");
+
+        // D4: invisível na thread do board (uma voz, uma conversa)…
+        assertThat(conversations.thread(companyId, negocio.getId()))
+                .noneMatch(turno -> turno.getId().equals(continuacao.getId()));
+
+        // …e o run do Planejador atende a continuação SEM o dono no meio (bastão autônomo).
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+        ConversationTurn atendido = turns.findById(continuacao.getId()).orElseThrow();
+        assertThat(atendido.getStatus()).isEqualTo(TurnStatus.ANSWERED);
+        assertThat(atendido.getCeoReply()).contains(".orq/conversa/x/dossie.md"); // o bastão chegou no prompt
+        assertThat(atendido.getAgentId()).isNotEqualTo(questionadorId);
+    }
+
+    @Test
+    void needsGrillingDoPlanejadorViraKickbackVisivelDoQuestionador() {
+        UUID companyId = novaCompany();
+        UUID questionadorId = persona(companyId, "questionador", "CEO Questionador",
+                "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' 'Não dá para chutar.' '```needs-grilling' "
+                        + "'{\"lacuna\": \"qual o orçamento mensal aceitável?\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        turnoPara(companyId, negocio.getId(), planejadorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.QUESTIONADOR, CeoPersona.PLANEJADOR,
+                        ".orq/conversa/x/dossie.md", "gerar estratégia"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1); // o run do Planejador trava na lacuna
+
+        // D7: kickback cirúrgico — turno do QUESTIONADOR, VISÍVEL (a re-grelha é para o dono ler),
+        // carregando origem + lacuna (o run fresco do Q não tem outra memória do desvio).
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        assertThat(doConv).hasSize(2);
+        ConversationTurn kickback = doConv.get(1);
+        assertThat(kickback.getAgentId()).isEqualTo(questionadorId);
+        assertThat(kickback.getOwnerMessage())
+                .startsWith("Re-grelha")
+                .contains("planejador")
+                .contains("qual o orçamento mensal aceitável?");
+        assertThat(conversations.thread(companyId, negocio.getId()))
+                .anyMatch(turno -> turno.getId().equals(kickback.getId()));
+    }
+
+    /** M9: kickbacks seguidos SEM o dono no meio batem o teto → a ORIGEM prossegue-e-sinaliza. */
+    @Test
+    void tetoDeKickbacksViraProssigaComAMelhorPremissa() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' 'Ainda não dá.' '```needs-grilling' "
+                        + "'{\"lacuna\": \"segue sem resposta\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        // o tail já tem MAX kickbacks seguidos (ping-pong autônomo, o dono nunca respondeu)
+        for (int i = 0; i < PersonaContinuationPoster.MAX_KICKBACKS_SEGUIDOS; i++) {
+            ConversationTurn kickback = new ConversationTurn(UUID.randomUUID(), negocio.getId(),
+                    companyId, planejadorId, KickbackTurn.ownerMessage(CeoPersona.PLANEJADOR, "lacuna " + i));
+            kickback.answer("re-grelha " + i);
+            turns.save(kickback);
+        }
+        turnoPara(companyId, negocio.getId(), planejadorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.QUESTIONADOR, CeoPersona.PLANEJADOR,
+                        ".orq/conversa/x/dossie.md", "tentar de novo"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        ConversationTurn ultimo = doConv.get(doConv.size() - 1);
+        assertThat(ultimo.getAgentId()).isEqualTo(planejadorId); // volta pra ORIGEM, não pro Q
+        assertThat(ultimo.getStatus()).isEqualTo(TurnStatus.PENDING);
+        assertThat(ultimo.getOwnerMessage()).startsWith("[continuação — prossiga");
+        // e NÃO nasceu um novo kickback
+        long kickbacks = doConv.stream()
+                .filter(turno -> KickbackTurn.isKickback(turno.getOwnerMessage())).count();
+        assertThat(kickbacks).isEqualTo(PersonaContinuationPoster.MAX_KICKBACKS_SEGUIDOS);
+    }
+
+    /** M9, reincidência: kickback DEPOIS do prossiga vira CORTE (turno visível, sem novo Run). */
+    @Test
+    void kickbackAposProssigaViraCorteSemNovoRun() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' 'Ainda não dá.' '```needs-grilling' "
+                        + "'{\"lacuna\": \"segue sem resposta\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        for (int i = 0; i < PersonaContinuationPoster.MAX_KICKBACKS_SEGUIDOS; i++) {
+            ConversationTurn kickback = new ConversationTurn(UUID.randomUUID(), negocio.getId(),
+                    companyId, planejadorId, KickbackTurn.ownerMessage(CeoPersona.PLANEJADOR, "lacuna " + i));
+            kickback.answer("re-grelha " + i);
+            turns.save(kickback);
+        }
+        // o prossiga JÁ aconteceu e o Planejador travou DE NOVO na mesma lacuna
+        ConversationTurn prossiga = new ConversationTurn(UUID.randomUUID(), negocio.getId(), companyId,
+                planejadorId, PersonaContinuationSentinel.prossiga("segue sem resposta"));
+        prossiga.answer("tentei — travei de novo");
+        turns.save(prossiga);
+        turnoPara(companyId, negocio.getId(), planejadorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.QUESTIONADOR, CeoPersona.PLANEJADOR,
+                        ".orq/conversa/x/dossie.md", "de novo"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        ConversationTurn corte = doConv.get(doConv.size() - 1);
+        assertThat(corte.getStatus()).isEqualTo(TurnStatus.ANSWERED); // ANSWERED direto: sem Run novo
+        assertThat(corte.getOwnerMessage()).startsWith("Bastão parado");
+        assertThat(corte.getCeoReply()).contains("segue sem resposta");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(0); // o ping-pong morreu aqui
+    }
+
+    /** D3/A2: o ```proposta``` do Executor segue INTOCADO pro gate T3 — nada de virada. */
+    @Test
+    void propostaDoExecutorSegueProGateT3() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID executorId = persona(companyId, "executor", "CEO Executor",
+                "printf '%s\\n' 'Protocolado 1:1.' '```proposta' "
+                        + "'{\"acao\": \"HIRE_AGENT\", \"alvo\": {\"name\": \"Dev Backend\","
+                        + " \"role\": \"executor\", \"racional\": \"skills tdd; motor claude-code;"
+                        + " time de produto\"}, \"resumo\": \"contratar dev backend\","
+                        + " \"area\": \"engenharia\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        turnoPara(companyId, negocio.getId(), executorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.PLANEJADOR, CeoPersona.EXECUTOR,
+                        ".orq/conversa/x/estrategia.md", "protocolar"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        List<Approval> pendentes = approvals.findByCompanyIdAndStatusOrderByRequestedAt(
+                companyId, ApprovalStatus.PENDING);
+        assertThat(pendentes).hasSize(1);
+        assertThat(pendentes.get(0).getTargetDetail()).contains("Dev Backend").contains("racional");
+        assertThat(pendentes.get(0).getRequestedByAgentId()).isEqualTo(executorId);
+        // nenhum turno novo além do atendido: proposta NÃO é virada de persona
+        assertThat(thread(companyId, negocio.getId())).hasSize(1);
+    }
+
+    /** D5: o confirma-antes fica IDLE — resposta sem bloco (a pergunta ao dono) não vira nada. */
+    @Test
+    void respostaSemBlocoNaoViraContinuacao_confirmaAntesIdle() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        persona(companyId, "planejador", "CEO Planejador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        conversations.postMessage(companyId, negocio.getId(), "quero abrir uma cafeteria",
+                ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        // o prompt ecoado carrega os EXEMPLOS INDENTADOS dos blocos — e mesmo assim nada roteia
+        // (cerca só vale em coluna 0): o backend nunca interpreta a prosa; a persona decide.
+        assertThat(thread(companyId, negocio.getId())).hasSize(1);
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(0);
+    }
+}

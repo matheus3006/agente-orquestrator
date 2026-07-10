@@ -4,6 +4,7 @@ import {
   acaoLegivel,
   chavesDaThread,
   entrandoNaThread,
+  hireDaProposta,
   issueDaApproval,
   pendentesPorConversa,
   projetarThread,
@@ -72,6 +73,57 @@ describe("splitReply (prosa da bolha vs bloco ```proposta)", () => {
 
     expect(parte.prosa).toBe("");
     expect(parte.temProposta).toBe(true);
+  });
+
+  it("remove os blocos de bastão (```handoff/```needs-grilling) da prosa — mecanismo, não conversa", () => {
+    const comHandoff = splitReply(
+      "Dossiê carimbado — seguindo para a estratégia.\n```handoff\n" +
+        '{"para": "planejador", "bastao": ".orq/conversa/x/dossie.md", "resumo": "gerar estratégia"}\n' +
+        "```",
+    );
+    const comKickback = splitReply(
+      '```needs-grilling\n{"lacuna": "qual o orçamento?"}\n```\nPreciso do dono aqui.',
+    );
+
+    expect(comHandoff.prosa).toBe("Dossiê carimbado — seguindo para a estratégia.");
+    expect(comHandoff.temProposta).toBe(false);
+    expect(comKickback.prosa).toBe("Preciso do dono aqui.");
+  });
+});
+
+describe("hireDaProposta (A3/A4 — o menu do gate lê o pedido protocolado)", () => {
+  it("expõe o motor sugerido e o racional estruturado do alvo (skills seguem somente-leitura)", () => {
+    const hire = hireDaProposta(
+      approval({
+        actionType: "HIRE_AGENT",
+        targetDetail:
+          '{"name":"Vega","role":"executor","adapterType":"claude-code","model":"opus",' +
+          '"effort":"high","racional":"skills tdd; motor claude-code; time de produto"}',
+      }),
+    );
+
+    expect(hire).toEqual({
+      motor: { adapterType: "claude-code", model: "opus", effort: "high" },
+      racional: "skills tdd; motor claude-code; time de produto",
+    });
+  });
+
+  it("hire sem motor/racional no alvo vem com campos nulos (o dono preenche se quiser)", () => {
+    const hire = hireDaProposta(
+      approval({ actionType: "HIRE_AGENT", targetDetail: '{"name":"Nix","role":"executor"}' }),
+    );
+
+    expect(hire).toEqual({
+      motor: { adapterType: null, model: null, effort: null },
+      racional: null,
+    });
+  });
+
+  it("não-hire ou alvo quebrado → null (fail-soft, nunca derruba a tela)", () => {
+    expect(hireDaProposta(approval())).toBeNull(); // CREATE_ISSUE
+    expect(
+      hireDaProposta(approval({ actionType: "HIRE_AGENT", targetDetail: "não é json" })),
+    ).toBeNull();
   });
 });
 

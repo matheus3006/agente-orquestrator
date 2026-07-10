@@ -61,8 +61,7 @@ public class LiveStateProjector {
         List<Agent> roster = agents.findByCompanyId(companyId).stream()
                 .sorted(Comparator.comparing(Agent::getCreatedAt).thenComparing(Agent::getId))
                 .toList();
-        Map<UUID, Team> teamById = teams.findByCompanyIdOrderByDominioAscFocoAsc(companyId).stream()
-                .collect(Collectors.toMap(Team::getId, Function.identity()));
+        List<Team> areas = teams.findByCompanyIdOrderByDominioAscFocoAsc(companyId);
         Map<UUID, HeartbeatRun> activeRunByAgent = runs
                 .findByCompanyIdAndStatusIn(companyId, ACTIVE_RUN_STATUSES).stream()
                 .collect(Collectors.toMap(HeartbeatRun::getAgentId, Function.identity(),
@@ -72,16 +71,25 @@ public class LiveStateProjector {
 
         StringBuilder out = new StringBuilder("## Estado vivo da empresa\n");
 
+        // M8 (ADR-0031): funcionários-POR-ÁREA — o recorte que o Planejador lê para propor times.
+        // Determinístico (ordem do catálogo de times + createdAt dentro da área), zero LLM (ADR-0019).
         out.append("### Equipe (").append(roster.size()).append(")\n");
-        for (Agent agent : roster) {
-            out.append("- ").append(agent.getName()).append(" (").append(agent.getRole()).append(")");
-            Team team = agent.getTeamId() != null ? teamById.get(agent.getTeamId()) : null;
-            if (team != null) {
-                out.append(" [time ").append(team.getDominio()).append("/").append(team.getFoco()).append("]");
+        Map<UUID, List<Agent>> porTime = roster.stream()
+                .filter(agent -> agent.getTeamId() != null)
+                .collect(Collectors.groupingBy(Agent::getTeamId));
+        for (Team area : areas) {
+            List<Agent> membros = porTime.getOrDefault(area.getId(), List.of());
+            if (membros.isEmpty()) {
+                continue; // área sem gente não vira seção (o catálogo de times fica na UI)
             }
-            HeartbeatRun active = activeRunByAgent.get(agent.getId());
-            out.append(" — ").append(active == null ? "ocioso" : "run " + active.getStatus().name().toLowerCase());
-            out.append("\n");
+            out.append("#### ").append(area.getDominio()).append("/").append(area.getFoco())
+                    .append(" (").append(membros.size()).append(")\n");
+            appendMembros(out, membros, activeRunByAgent);
+        }
+        List<Agent> semTime = roster.stream().filter(agent -> agent.getTeamId() == null).toList();
+        if (!semTime.isEmpty()) {
+            out.append("#### (sem time) (").append(semTime.size()).append(")\n");
+            appendMembros(out, semTime, activeRunByAgent);
         }
 
         // seq desc, não createdAt desc: com o #N visível, empate exato de timestamp (rajada na
@@ -119,5 +127,15 @@ public class LiveStateProjector {
             out.append("\n");
         }
         return out.toString();
+    }
+
+    private static void appendMembros(StringBuilder out, List<Agent> membros,
+                                      Map<UUID, HeartbeatRun> activeRunByAgent) {
+        for (Agent agent : membros) {
+            out.append("- ").append(agent.getName()).append(" (").append(agent.getRole()).append(")");
+            HeartbeatRun active = activeRunByAgent.get(agent.getId());
+            out.append(" — ").append(active == null ? "ocioso" : "run " + active.getStatus().name().toLowerCase());
+            out.append("\n");
+        }
     }
 }

@@ -66,6 +66,13 @@ class CeoTurnExecutionTest {
         return agents.save(ceo).getId();
     }
 
+    private UUID contrataCeoEchoComPersona(UUID companyId, String persona, String nome) {
+        Agent ceo = new Agent(UUID.randomUUID(), companyId, nome, "ceo", null);
+        ceo.configureRuntime("process", "printf '%s\\n' \"$ORQ_PROMPT\"", "LOCAL");
+        ceo.definePersona(persona);
+        return agents.save(ceo).getId();
+    }
+
     private ConversationTurn turno(UUID turnId) {
         return turns.findById(turnId).orElseThrow();
     }
@@ -147,6 +154,91 @@ class CeoTurnExecutionTest {
         // CEO delegar até uma frase sai do prompt.
         assertThat(promptEcoado).contains("ENTREGÁVEIS");
         assertThat(promptEcoado).doesNotContain("nunca produza o conteúdo");
+    }
+
+    /**
+     * M7 (ADR-0031): o QUESTIONADOR estende o prompt pós-G1/G2 — mantém a conversa em voz própria
+     * E ganha os deveres da persona: dossiê APENDADO a cada turno (A1), confirma-antes (D5), o
+     * contrato dos blocos tipados inline e o dever de re-grelha no kickback (D7).
+     */
+    @Test
+    void promptDoQuestionadorEstendeG1G2ComDossieConfirmaAntesEBlocos() {
+        UUID companyId = novaCompany();
+        contrataCeoEchoComPersona(companyId, "questionador", "CEO Questionador");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, negocio.getId(), "quero abrir uma cafeteria", ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        String prompt = turno(receipt.turnId()).getCeoReply();
+        // G1/G2 preservados (o adendo ESTENDE, não contradiz)
+        assertThat(prompt).contains("MANTENHA UMA CONVERSA");
+        assertThat(prompt).contains("Regra de ouro do handoff");
+        // A1: dossiê apendado A CADA turno, no workspace de conversa compartilhado
+        assertThat(prompt).contains("QUESTIONADOR");
+        assertThat(prompt).contains(".orq/conversa/" + negocio.getId() + "/dossie.md");
+        assertThat(prompt).contains("APENDE");
+        // D5: confirma-antes — o "sim" do dono precede a virada
+        assertThat(prompt).contains("posso seguir");
+        // D6/D7: contrato dos blocos tipados inline + dever de re-grelha
+        assertThat(prompt).contains("```handoff");
+        assertThat(prompt).contains("Re-grelha");
+    }
+
+    /** M7: o PLANEJADOR é back-office — bastão como insumo, estratégia de ORQUESTRAÇÃO como saída. */
+    @Test
+    void promptDoPlanejadorEBackOfficeComEstrategiaECalibracao() {
+        UUID companyId = novaCompany();
+        // só o planejador na company → o fallback do resolvedor endereça o turno a ele (o truque
+        // deixa o prompt back-office testável pelo MESMO seam público do post).
+        contrataCeoEchoComPersona(companyId, "planejador", "CEO Planejador");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, negocio.getId(), "[continuação — bastão]", ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        String prompt = turno(receipt.turnId()).getCeoReply();
+        assertThat(prompt).contains("PLANEJADOR");
+        assertThat(prompt).contains("back-office");
+        assertThat(prompt).contains(".orq/conversa/" + negocio.getId() + "/estrategia.md");
+        // D10: MAX 30/10 é teto de PROMPT; D12: estratégia é orquestração, não execução
+        assertThat(prompt).contains("30");
+        assertThat(prompt).contains("arquiteto");
+        // D7: calibração — lacuna pequena vira Premissas; grande vira needs-grilling
+        assertThat(prompt).contains("Premissas");
+        assertThat(prompt).contains("```needs-grilling");
+        assertThat(prompt).contains("```handoff");
+        // back-office não conversa com o dono (D2)
+        assertThat(prompt).doesNotContain("MANTENHA UMA CONVERSA");
+        // a regra de ouro do bilhete vale POR PERSONA (D8: reset e virada são gatilhos ortogonais)
+        assertThat(prompt).contains("Regra de ouro do handoff");
+    }
+
+    /** M7 + A2/A3: o EXECUTOR protocola SEM MEXER e emite ```proposta``` com racional por-agente. */
+    @Test
+    void promptDoExecutorProtocolaSemMexerComPropostaERacional() {
+        UUID companyId = novaCompany();
+        contrataCeoEchoComPersona(companyId, "executor", "CEO Executor");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, negocio.getId(), "[continuação — bastão]", ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        String prompt = turno(receipt.turnId()).getCeoReply();
+        assertThat(prompt).contains("EXECUTOR");
+        assertThat(prompt).contains("back-office");
+        // A2: protocola 1:1 com a estratégia; buraco = kickback, nunca conserto silencioso
+        assertThat(prompt).contains("SEM MEXER");
+        assertThat(prompt).contains("```needs-grilling");
+        // E→time é o gate T3: um ```proposta``` por agente, com racional estruturado (A3)
+        assertThat(prompt).contains("```proposta");
+        assertThat(prompt).contains("racional");
+        // A2: autonomia começa PÓS-approve
+        assertThat(prompt).contains("PÓS-approve");
+        assertThat(prompt).doesNotContain("MANTENHA UMA CONVERSA");
     }
 
     @Test

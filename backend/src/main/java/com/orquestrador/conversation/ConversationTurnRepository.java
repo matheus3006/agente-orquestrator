@@ -31,5 +31,8 @@ public interface ConversationTurnRepository extends JpaRepository<ConversationTu
 
     Optional<ConversationTurn> findFirstByRunIdAndStatusOrderByCreatedAtAsc(UUID runId, TurnStatus status);
 
+    /** O PRÓXIMO turno na fila do agente (o mesmo critério do claim) — o peek nunca claima. */
+    Optional<ConversationTurn> findFirstByAgentIdAndStatusOrderByCreatedAtAsc(UUID agentId, TurnStatus status);
+
     boolean existsByAgentIdAndStatus(UUID agentId, TurnStatus status);
 }

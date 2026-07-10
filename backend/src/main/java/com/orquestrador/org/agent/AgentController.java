@@ -109,12 +109,12 @@ public class AgentController {
     public record AssignTeamRequest(UUID teamId) {
     }
 
-    public record AgentResponse(UUID id, UUID companyId, String name, String role, UUID reportsToId,
-                                String adapterType, String executionTarget, String model, String effort,
-                                UUID pinnedTemplateVersionId, UUID teamId, Instant createdAt) {
+    public record AgentResponse(UUID id, UUID companyId, String name, String role, String persona,
+                                UUID reportsToId, String adapterType, String executionTarget, String model,
+                                String effort, UUID pinnedTemplateVersionId, UUID teamId, Instant createdAt) {
         static AgentResponse from(Agent agent) {
             return new AgentResponse(agent.getId(), agent.getCompanyId(), agent.getName(),
-                    agent.getRole(), agent.getReportsToId(), agent.getAdapterType(),
+                    agent.getRole(), agent.getPersona(), agent.getReportsToId(), agent.getAdapterType(),
                     agent.getExecutionTarget(), agent.getModel(), agent.getEffort(),
                     agent.getPinnedTemplateVersionId(), agent.getTeamId(), agent.getCreatedAt());
         }

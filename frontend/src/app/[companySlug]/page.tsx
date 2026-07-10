@@ -109,10 +109,11 @@ export default function MissionControlPage() {
     [agents, rosterQuery.data, teamsQuery.data],
   );
 
-  // O CEO endereçado pela conversa (role='ceo' — ConversationService resolve o
-  // mais antigo). null = composer avisa que falta contratar.
-  const ceoNome =
-    rosterQuery.data?.find((agente) => agente.role.toLowerCase() === "ceo")?.name ?? null;
+  // O CEO endereçado pela conversa: o balcão único é o QUESTIONADOR (ADR-0031/D2);
+  // sem personas (company legada pré-backfill) cai no role='ceo' mais antigo, como o
+  // ConversationService. null = composer avisa que falta contratar.
+  const ceos = rosterQuery.data?.filter((agente) => agente.role.toLowerCase() === "ceo") ?? [];
+  const ceoNome = (ceos.find((agente) => agente.persona === "questionador") ?? ceos[0])?.name ?? null;
 
   // #12 (P2-C): com o board parado a identidade fósforo apaga — a tela guia o
   // próximo passo canônico ("fale com o CEO"). Detecção PURA (estadoOcioso) +

@@ -24,6 +24,11 @@ public class Agent {
     @Column(nullable = false)
     private String role;
 
+    // Persona do CEO (ADR-0031, V24): discriminador das 3 instituições role='ceo'
+    // (questionador/planejador/executor). NULL = agente comum ou CEO legado pré-backfill.
+    @Column(name = "persona")
+    private String persona;
+
     @Column(name = "reports_to_id")
     private UUID reportsToId;
 
@@ -84,6 +89,15 @@ public class Agent {
 
     public String getRole() {
         return role;
+    }
+
+    public String getPersona() {
+        return persona;
+    }
+
+    /** Marca a persona de CEO (ADR-0031); usada só pelo seed/backfill — persona não troca em vida. */
+    public void definePersona(String persona) {
+        this.persona = persona;
     }
 
     public UUID getReportsToId() {
