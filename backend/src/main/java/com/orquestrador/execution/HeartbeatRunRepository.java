@@ -72,6 +72,16 @@ public interface HeartbeatRunRepository extends JpaRepository<HeartbeatRun, UUID
     int claim(@Param("id") UUID id, @Param("queued") RunStatus queued, @Param("running") RunStatus running,
               @Param("owner") String owner, @Param("exp") Instant exp, @Param("now") Instant now);
 
+    /** Pulso do worker (ADR-0005): estende o lease so se o dono AINDA possui o Run (CAS por dono). */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update HeartbeatRun r
+               set r.leaseExpiresAt = :exp
+             where r.id = :id and r.status = :running and r.leaseOwner = :owner
+            """)
+    int renewLease(@Param("id") UUID id, @Param("running") RunStatus running,
+                   @Param("owner") String owner, @Param("exp") Instant exp);
+
     /** Finaliza so o detentor do lease (success: error=null; failure: error preenchido). */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""

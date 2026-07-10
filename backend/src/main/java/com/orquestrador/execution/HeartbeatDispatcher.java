@@ -25,6 +25,7 @@ public class HeartbeatDispatcher {
     private final AgentRepository agents;
     private final SpawnLineageGuard lineageGuard;
     private final TeamFanOutGate fanOutGate;
+    private final LeaseRenewer leaseRenewer;
 
     private final String nodeId = "node-" + UUID.randomUUID();
     private final Duration leaseDuration = Duration.ofMinutes(2);
@@ -32,7 +33,8 @@ public class HeartbeatDispatcher {
     public HeartbeatDispatcher(HeartbeatRunRepository runs, HeartbeatRunStore store,
                                RunExecutor executor, BudgetService budgets,
                                TeamService teamService, AgentRepository agents,
-                               SpawnLineageGuard lineageGuard, TeamFanOutGate fanOutGate) {
+                               SpawnLineageGuard lineageGuard, TeamFanOutGate fanOutGate,
+                               LeaseRenewer leaseRenewer) {
         this.runs = runs;
         this.store = store;
         this.executor = executor;
@@ -41,6 +43,7 @@ public class HeartbeatDispatcher {
         this.agents = agents;
         this.lineageGuard = lineageGuard;
         this.fanOutGate = fanOutGate;
+        this.leaseRenewer = leaseRenewer;
     }
 
     /** Processa todos os Runs QUEUED visiveis nesta passada. Retorna quantos foram executados. */
@@ -82,19 +85,23 @@ public class HeartbeatDispatcher {
                 continue; // outro worker pegou
             }
 
-            RunOutcome outcome;
-            try {
-                RunContext runContext = store.contextFor(runId)
-                        .orElseThrow(() -> new IllegalStateException("Run sumiu apos claim: " + runId));
-                outcome = executor.execute(runContext);
-            } catch (Exception exception) {
-                outcome = RunOutcome.failure(exception.getMessage());
-            }
+            // Pulso de vida (ADR-0005): nasce no claim, morre AQUI — o close cobre executar E
+            // finalizar, para o timer nao vazar nem quando o proprio finalize lanca.
+            try (LeaseRenewer.Pulse pulse = leaseRenewer.start(runId, nodeId, leaseDuration)) {
+                RunOutcome outcome;
+                try {
+                    RunContext runContext = store.contextFor(runId)
+                            .orElseThrow(() -> new IllegalStateException("Run sumiu apos claim: " + runId));
+                    outcome = executor.execute(runContext);
+                } catch (Exception exception) {
+                    outcome = RunOutcome.failure(exception.getMessage());
+                }
 
-            if (outcome.succeeded()) {
-                store.finishSuccess(runId, nodeId);
-            } else {
-                store.finishFailure(runId, nodeId, outcome.error());
+                if (outcome.succeeded()) {
+                    store.finishSuccess(runId, nodeId);
+                } else {
+                    store.finishFailure(runId, nodeId, outcome.error());
+                }
             }
             dispatched++;
         }
