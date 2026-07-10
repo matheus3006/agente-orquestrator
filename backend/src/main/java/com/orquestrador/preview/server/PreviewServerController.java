@@ -89,24 +89,32 @@ public class PreviewServerController {
         for (PreviewServerManifest manifest : manifests.findByCompanyIdOrderByCreatedAtDesc(companyId)) {
             vigentePorIssue.putIfAbsent(manifest.getIssueId(), manifest); // mais novo primeiro
         }
-        Map<UUID, String> tituloPorIssue = new HashMap<>();
+        Map<UUID, Issue> issuePorId = new HashMap<>();
         Map<UUID, String> agentePorId = new HashMap<>();
 
-        List<LiveEntry> live = vivos.stream().map(vivo -> new LiveEntry(
-                vivo.serverName(), vivo.issueId(),
-                issueTitle(companyId, vivo.issueId(), tituloPorIssue),
-                vivo.agentId(), agentName(vivo.agentId(), agentePorId),
-                vigentePorIssue.containsKey(vivo.issueId())
-                        ? vigentePorIssue.get(vivo.issueId()).getCommand() : null,
-                vivo.hostPort(), vivo.url(), vivo.ttlRemainingSeconds())).toList();
+        List<LiveEntry> live = vivos.stream().map(vivo -> {
+            Issue issue = issueFor(companyId, vivo.issueId(), issuePorId);
+            return new LiveEntry(
+                    vivo.serverName(), vivo.issueId(),
+                    issue != null ? issue.getSeq() : null,
+                    issue != null ? issue.getTitle() : null,
+                    vivo.agentId(), agentName(vivo.agentId(), agentePorId),
+                    vigentePorIssue.containsKey(vivo.issueId())
+                            ? vigentePorIssue.get(vivo.issueId()).getCommand() : null,
+                    vivo.hostPort(), vivo.url(), vivo.ttlRemainingSeconds());
+        }).toList();
 
         List<CandidateEntry> candidates = vigentePorIssue.values().stream()
-                .map(manifest -> new CandidateEntry(
-                        manifest.getIssueId(),
-                        issueTitle(companyId, manifest.getIssueId(), tituloPorIssue),
-                        manifest.getCommand(), manifest.getPort(), manifest.getRunId(),
-                        manifest.getCreatedAt(),
-                        vivos.stream().anyMatch(vivo -> manifest.getIssueId().equals(vivo.issueId()))))
+                .map(manifest -> {
+                    Issue issue = issueFor(companyId, manifest.getIssueId(), issuePorId);
+                    return new CandidateEntry(
+                            manifest.getIssueId(),
+                            issue != null ? issue.getSeq() : null,
+                            issue != null ? issue.getTitle() : null,
+                            manifest.getCommand(), manifest.getPort(), manifest.getRunId(),
+                            manifest.getCreatedAt(),
+                            vivos.stream().anyMatch(vivo -> manifest.getIssueId().equals(vivo.issueId())));
+                })
                 .toList();
         return new ServersResponse(live, candidates);
     }
@@ -118,9 +126,10 @@ public class PreviewServerController {
                 .orElseThrow(() -> new NotFoundException("Issue nao encontrada nesta company"));
     }
 
-    private String issueTitle(UUID companyId, UUID issueId, Map<UUID, String> cache) {
+    /** A identidade humana inteira (#N + titulo, ADR-0033) sai do MESMO lookup por issue. */
+    private Issue issueFor(UUID companyId, UUID issueId, Map<UUID, Issue> cache) {
         return cache.computeIfAbsent(issueId, id ->
-                issues.findByIdAndCompanyId(id, companyId).map(Issue::getTitle).orElse(null));
+                issues.findByIdAndCompanyId(id, companyId).orElse(null));
     }
 
     private String agentName(UUID agentId, Map<UUID, String> cache) {
@@ -155,13 +164,13 @@ public class PreviewServerController {
         }
     }
 
-    public record LiveEntry(String serverName, UUID issueId, String issueTitle, UUID agentId,
-                            String agentName, String command, int hostPort, String url,
+    public record LiveEntry(String serverName, UUID issueId, Integer issueSeq, String issueTitle,
+                            UUID agentId, String agentName, String command, int hostPort, String url,
                             long ttlRemainingSeconds) {
     }
 
-    public record CandidateEntry(UUID issueId, String issueTitle, String command, int port,
-                                 UUID runId, Instant createdAt, boolean live) {
+    public record CandidateEntry(UUID issueId, Integer issueSeq, String issueTitle, String command,
+                                 int port, UUID runId, Instant createdAt, boolean live) {
     }
 
     public record ServersResponse(List<LiveEntry> live, List<CandidateEntry> candidates) {

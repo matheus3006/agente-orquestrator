@@ -60,12 +60,14 @@ export interface StationIssueLine {
   /** Nota em itálico quando não há issue a mostrar (idle-note do protótipo). */
   note: string | null;
   verb: string | null;
+  /** O #N humano da issue (ADR-0033): "executando #12 Título". null junto com title null. */
+  seq: number | null;
   title: string | null;
 }
 
 /**
- * A linha de issue do card. RUNNING/QUEUED têm o título no próprio agregado
- * (activeRun.issueTitle); BLOCKED/IDLE resolvem pela lista de issues que a
+ * A linha de issue do card. RUNNING/QUEUED têm o #N e o título no próprio agregado
+ * (activeRun.issueSeq/issueTitle); BLOCKED/IDLE resolvem pela lista de issues que a
  * tela já tem (a issue BLOCKED designada / a designada mais recente).
  */
 export function stationIssueLine(
@@ -76,23 +78,23 @@ export function stationIssueLine(
   if (station.status === "RUNNING" || station.status === "QUEUED") {
     const title = station.activeRun?.issueTitle ?? null;
     return title
-      ? { note: null, verb: issueLineVerb(station.status), title }
-      : { note: "rotina interna", verb: null, title: null };
+      ? { note: null, verb: issueLineVerb(station.status), seq: station.activeRun?.issueSeq ?? null, title }
+      : { note: "rotina interna", verb: null, seq: null, title: null };
   }
   if (station.status === "BLOCKED") {
     const blocked = issues.find(
       (issue) => issue.assigneeAgentId === agentId && issue.status === "BLOCKED",
     );
     return blocked
-      ? { note: null, verb: issueLineVerb("BLOCKED"), title: blocked.title }
-      : { note: "rotina interna", verb: null, title: null };
+      ? { note: null, verb: issueLineVerb("BLOCKED"), seq: blocked.seq, title: blocked.title }
+      : { note: "rotina interna", verb: null, seq: null, title: null };
   }
   const assigned = issues.filter((issue) => issue.assigneeAgentId === agentId);
   if (assigned.length === 0) {
-    return { note: "disponível — sem issue designada", verb: null, title: null };
+    return { note: "disponível — sem issue designada", verb: null, seq: null, title: null };
   }
   const latest = assigned.reduce((a, b) => (a.createdAt >= b.createdAt ? a : b));
-  return { note: null, verb: issueLineVerb("IDLE"), title: latest.title };
+  return { note: null, verb: issueLineVerb("IDLE"), seq: latest.seq, title: latest.title };
 }
 
 /**

@@ -56,7 +56,8 @@ export function AgentCard({
         <div className="agent-issue-line">
           <Target size={12} strokeWidth={2} />
           <span className="issue-title">
-            <span className="text-faint">{line.verb}</span> {line.title}
+            <span className="text-faint">{line.verb}</span>{" "}
+            {line.seq !== null && <span className="mono text-faint">#{line.seq}</span>} {line.title}
           </span>
         </div>
       )}

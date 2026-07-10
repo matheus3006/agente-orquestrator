@@ -13,6 +13,8 @@ export interface ReviewCard {
   issueId: string;
   runId: string;
   status: string;
+  /** O #N humano da issue (ADR-0033); null enquanto a issue não resolve. */
+  seq: number | null;
   title: string;
   riskLevel: number | null;
   assigneeName: string | null | undefined;
@@ -32,6 +34,7 @@ export function resolveReviewCard(
     issueId: review.issueId,
     runId: review.runId,
     status: review.status,
+    seq: issue?.seq ?? null,
     title: issue?.title ?? `issue ${shortId(review.issueId)}`,
     riskLevel: issue?.riskLevel ?? null,
     assigneeName: resolveAssigneeName(issue, agents),

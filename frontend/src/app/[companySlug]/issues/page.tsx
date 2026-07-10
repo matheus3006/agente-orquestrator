@@ -7,14 +7,13 @@ import { NewIssueDialog } from "@/components/new-issue-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { View, ViewHead } from "@/components/view";
 import { listAgents, listIssues } from "@/lib/api";
-import { shortId } from "@/lib/format";
 import { groupIssuesByStatus } from "@/lib/issues";
 import { queryKeys } from "@/lib/query-keys";
 import { useActiveCompany } from "@/lib/use-active-company";
 
 // Issues (F.4): lista agrupada por status na ordem do protótipo, com LED,
-// risk badge, assignee e id curto. Linhas com hover-intent prefetch
-// (prefetch={false} + onMouseEnter → nav.prefetch).
+// risk badge, assignee e #N (a identidade humana da Issue, ADR-0033). Linhas
+// com hover-intent prefetch (prefetch={false} + onMouseEnter → nav.prefetch).
 
 export default function IssuesPage() {
   const { company } = useActiveCompany();
@@ -89,7 +88,7 @@ export default function IssuesPage() {
                 <AssigneeChip
                   name={issue.assigneeAgentId ? agentName(issue.assigneeAgentId) : null}
                 />
-                <span className="row-meta">{shortId(issue.id)}</span>
+                <span className="row-meta">#{issue.seq}</span>
               </CompanyLink>
             ))}
           </div>

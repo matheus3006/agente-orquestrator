@@ -22,6 +22,7 @@ const station = (o: Partial<MissionControlAgent> = {}): MissionControlAgent => (
 const issue = (o: Partial<IssueSummary> = {}): IssueSummary => ({
   id: "iss-1",
   companyId: "c1",
+  seq: 1,
   title: "Refatorar pagamentos",
   description: null,
   status: "OPEN",
@@ -37,7 +38,7 @@ describe("rosterDoing (a linha 'doing' do roster — reusa stationIssueLine, IDL
     const doing = rosterDoing(
       station({
         status: "RUNNING",
-        activeRun: { id: "r", issueId: "iss-1", issueTitle: "Refatorar pagamentos", startedAt: null, attempt: 1 },
+        activeRun: { id: "r", issueId: "iss-1", issueSeq: 1, issueTitle: "Refatorar pagamentos", startedAt: null, attempt: 1 },
       }),
       [],
     );
@@ -49,7 +50,7 @@ describe("rosterDoing (a linha 'doing' do roster — reusa stationIssueLine, IDL
     const doing = rosterDoing(
       station({
         status: "QUEUED",
-        activeRun: { id: "r", issueId: "iss-1", issueTitle: "Refatorar pagamentos", startedAt: null, attempt: 1 },
+        activeRun: { id: "r", issueId: "iss-1", issueSeq: 1, issueTitle: "Refatorar pagamentos", startedAt: null, attempt: 1 },
       }),
       [],
     );

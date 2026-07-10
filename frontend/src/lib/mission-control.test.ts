@@ -67,6 +67,7 @@ describe("stationIssueLine (a linha de issue do card — BLOCKED/IDLE resolvem p
   const issue = (overrides: Partial<IssueSummary>): IssueSummary => ({
     id: "i1",
     companyId: "c1",
+    seq: 3,
     title: "Deploy do servico de billing",
     description: null,
     status: "BLOCKED",
@@ -77,42 +78,49 @@ describe("stationIssueLine (a linha de issue do card — BLOCKED/IDLE resolvem p
     ...overrides,
   });
 
-  it("RUNNING usa o issueTitle do run ativo (verb executando)", () => {
+  it("RUNNING usa o #N e o issueTitle do run ativo (verb executando)", () => {
     const line = stationIssueLine(
       station({
         status: "RUNNING",
-        activeRun: { id: "r", issueId: "i", issueTitle: "Refatorar pagamentos", startedAt: "x", attempt: 1 },
+        activeRun: {
+          id: "r",
+          issueId: "i",
+          issueSeq: 12,
+          issueTitle: "Refatorar pagamentos",
+          startedAt: "x",
+          attempt: 1,
+        },
       }),
       [],
     );
-    expect(line).toEqual({ note: null, verb: "executando", title: "Refatorar pagamentos" });
+    expect(line).toEqual({ note: null, verb: "executando", seq: 12, title: "Refatorar pagamentos" });
   });
 
   it("RUNNING sem issue (run de rotina) vira nota 'rotina interna'", () => {
     const line = stationIssueLine(
       station({
         status: "RUNNING",
-        activeRun: { id: "r", issueId: null, issueTitle: null, startedAt: "x", attempt: 1 },
+        activeRun: { id: "r", issueId: null, issueSeq: null, issueTitle: null, startedAt: "x", attempt: 1 },
       }),
       [],
     );
     expect(line.note).toBe("rotina interna");
   });
 
-  it("BLOCKED acha a issue BLOCKED designada ao agente", () => {
+  it("BLOCKED acha a issue BLOCKED designada ao agente (com o #N dela)", () => {
     const line = stationIssueLine(station({ status: "BLOCKED" }), [
       issue({ assigneeAgentId: "outro" }),
-      issue({ id: "i2", title: "Deploy do servico de billing" }),
+      issue({ id: "i2", seq: 5, title: "Deploy do servico de billing" }),
     ]);
-    expect(line).toEqual({ note: null, verb: "travado em", title: "Deploy do servico de billing" });
+    expect(line).toEqual({ note: null, verb: "travado em", seq: 5, title: "Deploy do servico de billing" });
   });
 
   it("IDLE mostra a issue designada mais recente como 'última issue:'", () => {
     const line = stationIssueLine(station({}), [
-      issue({ id: "velha", title: "Antiga", status: "DONE", createdAt: "2026-07-01T10:00:00Z" }),
-      issue({ id: "nova", title: "Recente", status: "DONE", createdAt: "2026-07-02T10:00:00Z" }),
+      issue({ id: "velha", seq: 1, title: "Antiga", status: "DONE", createdAt: "2026-07-01T10:00:00Z" }),
+      issue({ id: "nova", seq: 2, title: "Recente", status: "DONE", createdAt: "2026-07-02T10:00:00Z" }),
     ]);
-    expect(line).toEqual({ note: null, verb: "última issue:", title: "Recente" });
+    expect(line).toEqual({ note: null, verb: "última issue:", seq: 2, title: "Recente" });
   });
 
   it("IDLE sem issue nenhuma vira a nota de disponível", () => {
@@ -128,6 +136,7 @@ describe("issuesListBehindAggregate (agregado diz BLOCKED, lista ainda não)", (
   const blockedIssue = (agentId: string): IssueSummary => ({
     id: "i1",
     companyId: "c1",
+    seq: 1,
     title: "t",
     description: null,
     status: "BLOCKED",
@@ -163,7 +172,7 @@ describe("cardRunId (qual run o drawer do card abre)", () => {
   it("run ativo vence", () => {
     const agent = station({
       status: "RUNNING",
-      activeRun: { id: "run-ativo", issueId: "i", issueTitle: "t", startedAt: "x", attempt: 1 },
+      activeRun: { id: "run-ativo", issueId: "i", issueSeq: 1, issueTitle: "t", startedAt: "x", attempt: 1 },
       lastSteps: [{ runId: "run-antigo", type: "STDOUT", detail: "a", createdAt: "" }],
     });
     expect(cardRunId(agent)).toBe("run-ativo");
@@ -193,6 +202,7 @@ describe("estadoOcioso (o board parado guia o próximo passo — ou null)", () =
   const issue = (status: string): IssueSummary => ({
     id: "i1",
     companyId: "c1",
+    seq: 1,
     title: "t",
     description: null,
     status,
@@ -242,6 +252,7 @@ describe("issuesListBehindIdleSettle (board parou, lista de issues ainda IN_PROG
   const issue = (status: string): IssueSummary => ({
     id: "i1",
     companyId: "c1",
+    seq: 1,
     title: "t",
     description: null,
     status,

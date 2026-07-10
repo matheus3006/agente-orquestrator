@@ -120,6 +120,8 @@ export interface MissionControlAgent {
   activeRun: {
     id: string;
     issueId: string | null;
+    /** O #N da issue do run (ADR-0033) — o card mostra "executando #12 Título". */
+    issueSeq: number | null;
     issueTitle: string | null;
     startedAt: string | null;
     attempt: number;
@@ -188,6 +190,8 @@ export function getActivity(companyId: string, limit = 50): Promise<ActivityEven
 export interface IssueSummary {
   id: string;
   companyId: string;
+  /** O #N humano da Issue (ADR-0033): por company, denso, começa em 1. UUID = máquina. */
+  seq: number;
   title: string;
   description: string | null;
   status: string;
@@ -444,6 +448,8 @@ export interface PreviewServerStartResult {
 export interface PreviewServerLiveEntry {
   serverName: string;
   issueId: string;
+  /** O #N humano da issue (ADR-0033); null se a issue não resolver. */
+  issueSeq: number | null;
   issueTitle: string | null;
   agentId: string;
   agentName: string | null;
@@ -455,6 +461,8 @@ export interface PreviewServerLiveEntry {
 
 export interface PreviewServerCandidateEntry {
   issueId: string;
+  /** O #N humano da issue (ADR-0033); null se a issue não resolver. */
+  issueSeq: number | null;
   issueTitle: string | null;
   command: string;
   port: number;

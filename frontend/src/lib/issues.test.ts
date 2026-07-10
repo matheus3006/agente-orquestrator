@@ -13,6 +13,7 @@ import {
 const issue = (overrides: Partial<IssueSummary>): IssueSummary => ({
   id: "i1",
   companyId: "c1",
+  seq: 1,
   title: "t",
   description: null,
   status: "OPEN",
@@ -48,10 +49,12 @@ describe("groupIssuesByStatus (a ordem do protótipo, grupos vazios somem)", () 
     expect(issueStatusLed("OPEN")).toBe("");
   });
 
-  it("dentro do grupo a mais recente vem primeiro", () => {
+  it("dentro do grupo o maior #N vem primeiro (com números visíveis, ordem aleatória leria como bug)", () => {
+    // createdAt IDÊNTICO de propósito: prova que a chave de ordenação é o seq, não a data
+    // (seq desc ≡ createdAt desc por construção — ADR-0033, alocação monotônica).
     const groups = groupIssuesByStatus([
-      issue({ id: "velha", createdAt: "2026-07-01T10:00:00Z" }),
-      issue({ id: "nova", createdAt: "2026-07-02T10:00:00Z" }),
+      issue({ id: "velha", seq: 1, createdAt: "2026-07-01T10:00:00Z" }),
+      issue({ id: "nova", seq: 2, createdAt: "2026-07-01T10:00:00Z" }),
     ]);
     expect(groups[0].issues.map((i) => i.id)).toEqual(["nova", "velha"]);
   });
@@ -130,6 +133,7 @@ describe("issueBehindLedger (ledger diz 'liquidado', issue ainda diz IN_PROGRESS
   const issue = (status: string): IssueSummary => ({
     id: "i",
     companyId: "c",
+    seq: 1,
     title: "t",
     description: null,
     status,

@@ -75,7 +75,10 @@ export default function ServersPage() {
               />
               <div className="server-row-main">
                 <CompanyLink href={`/issues/${vivo.issueId}`} className="server-issue">
-                  {vivo.issueTitle ?? shortId(vivo.issueId)}
+                  {vivo.issueSeq !== null && (
+                    <span className="mono text-faint">#{vivo.issueSeq}</span>
+                  )}{" "}
+                  {vivo.issueTitle ?? (vivo.issueSeq === null ? shortId(vivo.issueId) : "")}
                 </CompanyLink>
                 <span className="server-row-meta mono">
                   {vivo.agentName ?? "—"} · $ {vivo.command ?? "?"} · {vivo.url.replace("http://", "")}
@@ -123,7 +126,10 @@ export default function ServersPage() {
               />
               <div className="server-row-main">
                 <CompanyLink href={`/issues/${candidata.issueId}`} className="server-issue">
-                  {candidata.issueTitle ?? shortId(candidata.issueId)}
+                  {candidata.issueSeq !== null && (
+                    <span className="mono text-faint">#{candidata.issueSeq}</span>
+                  )}{" "}
+                  {candidata.issueTitle ?? (candidata.issueSeq === null ? shortId(candidata.issueId) : "")}
                 </CompanyLink>
                 <span className="server-row-meta mono">
                   $ {candidata.command} :{candidata.port} · declarado{" "}

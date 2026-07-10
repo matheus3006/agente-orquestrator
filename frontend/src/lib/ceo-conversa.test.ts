@@ -217,6 +217,7 @@ describe("issueDaApproval (CREATE_ISSUE aprovada → a issue criada, pro report 
   const issue = (id: string, title: string, createdAt: string) => ({
     id,
     companyId: "c1",
+    seq: 1,
     title,
     description: null,
     status: "OPEN",
