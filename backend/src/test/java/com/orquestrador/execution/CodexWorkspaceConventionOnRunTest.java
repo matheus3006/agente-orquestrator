@@ -134,9 +134,9 @@ class CodexWorkspaceConventionOnRunTest {
                 .contains("BANANA-AZUL-42");
         // D8: a distillation entra pelo pipe único — existe nos 2 motores, zero caso especial.
         assertThat(Files.exists(workDir.resolve(".codex/skills/distillation/SKILL.md"))).isTrue();
-        // D6: faxina permanente — o espelho claude (inativo) some do chão.
-        assertThat(Files.exists(workDir.resolve(".claude/skills"))).isFalse();
-        assertThat(Files.exists(workDir.resolve(".claude/CLAUDE.md"))).isFalse();
+        // D6: faxina permanente — o espelho claude (inativo) some do chão INTEIRO, inclusive o
+        // diretório pai vazio (critério literal do §VENDO: ".claude/ NÃO existe").
+        assertThat(Files.exists(workDir.resolve(".claude"))).isFalse();
     }
 
     @Test
@@ -215,7 +215,7 @@ class CodexWorkspaceConventionOnRunTest {
         assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
 
         assertThat(Files.readString(workDir.resolve(".claude/CLAUDE.md"))).isEqualTo("# Carta");
-        assertThat(Files.exists(workDir.resolve(".codex/skills"))).isFalse();
+        assertThat(Files.exists(workDir.resolve(".codex"))).isFalse();
         assertThat(Files.exists(workDir.resolve("AGENTS.md"))).isFalse();
     }
 

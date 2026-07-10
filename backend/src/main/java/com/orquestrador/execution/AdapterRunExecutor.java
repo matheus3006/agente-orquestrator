@@ -144,7 +144,7 @@ public class AdapterRunExecutor implements RunExecutor {
             // leu mas exploraria por busca). No DOCKER a remoção atravessa pela união dos subtrees.
             for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
                 if (!inactive.equals(convention)) {
-                    deleteRecursively(workDir.resolve(inactive.skillsSubdir()));
+                    faxinaConvencaoInativa(workDir, inactive.skillsSubdir());
                 }
             }
         } catch (RuntimeException exception) {
@@ -186,7 +186,7 @@ public class AdapterRunExecutor implements RunExecutor {
                 // CLAUDE.md que o agente escreveu no próprio workspace nunca é tocado).
                 for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
                     if (!inactive.equals(convention)) {
-                        deleteRecursively(workDir.resolve(inactive.memoryFile()));
+                        faxinaConvencaoInativa(workDir, inactive.memoryFile());
                     }
                 }
             } catch (RuntimeException exception) {
@@ -291,10 +291,29 @@ public class AdapterRunExecutor implements RunExecutor {
 
     /**
      * O braço da faxina (ADR-0032/D6) no HOST: remove arquivo OU árvore de uma convenção inativa
-     * (no LOCAL o workDir É o workspace; no DOCKER a ausência atravessa pelo replace da união).
+     * (no LOCAL o workDir É o workspace; no DOCKER a ausência atravessa pelo replace da união) e
+     * PODA os pais esvaziados até a raiz do workspace — o critério do §VENDO é literal: o
+     * diretório da convenção inativa NÃO existe (um `.claude/` vazio no chão ainda é chão sujo).
+     * Pai não-vazio fica (estado legítimo do agente, ex.: CLAUDE.md dele em workspace de Issue).
      * Falha vira UncheckedIOException — cai nos mesmos catches dos materializers (falha LEGÍVEL
      * do run, nunca meia-faxina silenciosa).
      */
+    private static void faxinaConvencaoInativa(Path workDir, String relativePath) {
+        Path alvo = workDir.resolve(relativePath);
+        deleteRecursively(alvo);
+        Path parent = alvo.getParent();
+        while (parent != null && !parent.equals(workDir)) {
+            try {
+                if (!Files.deleteIfExists(parent)) {
+                    break; // já não existia — nada a podar acima
+                }
+            } catch (IOException naoVazio) {
+                break; // conteúdo legítimo do agente: a poda para aqui
+            }
+            parent = parent.getParent();
+        }
+    }
+
     private static void deleteRecursively(Path root) {
         if (!Files.exists(root)) {
             return;
