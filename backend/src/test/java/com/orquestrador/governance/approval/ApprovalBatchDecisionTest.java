@@ -41,6 +41,10 @@ class ApprovalBatchDecisionTest {
     private ConversationService conversations;
     @Autowired
     private ConversationTurnRepository turns;
+    @Autowired
+    private com.orquestrador.org.team.TeamRepository teams;
+    @Autowired
+    private com.orquestrador.org.agent.AgentRepository agents;
 
     private UUID idFrom(String json) throws Exception {
         return UUID.fromString(om.readTree(json).get("id").asText());
@@ -48,11 +52,20 @@ class ApprovalBatchDecisionTest {
 
     private UUID novaCompany(UUID board) throws Exception {
         String slug = "co-" + UUID.randomUUID().toString().substring(0, 8);
-        return idFrom(mvc.perform(post("/api/companies")
+        UUID companyId = idFrom(mvc.perform(post("/api/companies")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        // ADR-0037 (D2): CREATE_ISSUE aprovada resolve time→arquiteto — o cenário precisa da corrente.
+        com.orquestrador.org.team.Team time = teams.save(new com.orquestrador.org.team.Team(
+                UUID.randomUUID(), companyId, "Dev", "Backlog"));
+        com.orquestrador.org.agent.Agent ana = new com.orquestrador.org.agent.Agent(
+                UUID.randomUUID(), companyId, "Ana Arquiteta", "arquiteto", null);
+        ana.assignTeam(time.getId());
+        time.designarArquiteto(agents.save(ana).getId());
+        teams.save(time);
+        return companyId;
     }
 
     private UUID novoCeo(UUID board, UUID companyId) throws Exception {
@@ -66,7 +79,8 @@ class ApprovalBatchDecisionTest {
     private UUID propoeIssue(UUID companyId, UUID ceoId, UUID conversationId, String titulo) {
         return approvals.propose(companyId, ceoId, conversationId, null,
                 new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
-                        "{\"title\":\"" + titulo + "\"}", titulo, "backlog")).getId();
+                        "{\"dominio\":\"Dev\",\"foco\":\"Backlog\",\"title\":\"" + titulo + "\"}",
+                        titulo, "backlog")).getId();
     }
 
     @Test

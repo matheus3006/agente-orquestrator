@@ -3,6 +3,7 @@ package com.orquestrador.conversation.persona;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
+import com.orquestrador.work.issue.AbsorcaoDeIssueRouter;
 import com.orquestrador.work.issue.CorrecaoDeEntregaRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,13 +28,16 @@ public class PersonaBatonRouter {
     private final PersonaHandoffScanner scanner;
     private final PersonaContinuationPoster poster;
     private final CorrecaoDeEntregaRouter correcoes;
+    private final AbsorcaoDeIssueRouter absorcoes;
 
     public PersonaBatonRouter(AgentRepository agents, PersonaHandoffScanner scanner,
-                              PersonaContinuationPoster poster, CorrecaoDeEntregaRouter correcoes) {
+                              PersonaContinuationPoster poster, CorrecaoDeEntregaRouter correcoes,
+                              AbsorcaoDeIssueRouter absorcoes) {
         this.agents = agents;
         this.scanner = scanner;
         this.poster = poster;
         this.correcoes = correcoes;
+        this.absorcoes = absorcoes;
     }
 
     public void afterCeoTurnAnswered(ConversationTurn turno, String reply) {
@@ -61,6 +65,17 @@ public class PersonaBatonRouter {
                         yield false;
                     }
                     yield correcoes.rotear(turno, correcao.issue());
+                }
+                // Absorção (ADR-0037/D3): triagem é estratégia de orquestração — só o PLANEJADOR
+                // roteia ```absorcao```; Q/E emitindo é log + descarte, espelho byte a byte da
+                // restrição do caso B acima.
+                case PersonaHandoffScanner.Absorcao absorcao -> {
+                    if (origem != CeoPersona.PLANEJADOR) {
+                        log.warn("absorcao: persona '{}' emitiu ```absorcao``` — só o Planejador"
+                                + " tria o board (descartado, fail-soft)", origem.dbValue());
+                        yield false;
+                    }
+                    yield absorcoes.rotear(turno, absorcao);
                 }
             };
             if (posted) {

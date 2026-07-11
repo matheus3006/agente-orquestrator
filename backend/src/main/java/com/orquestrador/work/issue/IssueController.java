@@ -31,18 +31,29 @@ public class IssueController {
 
     private final IssueService issues;
     private final CompanyAccessGuard guard;
+    private final AbsorcaoDeIssueRouter absorcoes;
 
-    public IssueController(IssueService issues, CompanyAccessGuard guard) {
+    public IssueController(IssueService issues, CompanyAccessGuard guard,
+                           AbsorcaoDeIssueRouter absorcoes) {
         this.issues = issues;
         this.guard = guard;
+        this.absorcoes = absorcoes;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public IssueResponse create(@PathVariable UUID companyId, @RequestBody @Valid CreateIssueRequest request) {
         guard.assertMember(companyId);
-        return respond(issues.create(companyId, request.title(), request.description(),
-                request.riskLevel()));
+        // Absorção (ADR-0037/D1): SÓ a issue do DONO (ator BOARD) dispara a triagem do CEO —
+        // conversa ancorada + gatilho ao Planejador na MESMA tx da criação. Agente criando por
+        // API segue o caminho clássico (as portas do CEO nascem com dono pelo gate, D2).
+        Actor actor = guard.currentActor();
+        Issue issue = actor != null && actor.type() == ActorType.BOARD
+                ? absorcoes.aoNascerDoDono(companyId, request.title(), request.description(),
+                        request.riskLevel())
+                : issues.create(companyId, request.title(), request.description(),
+                        request.riskLevel());
+        return respond(issue);
     }
 
     @GetMapping
@@ -140,15 +151,17 @@ public class IssueController {
 
     // seq = o #N humano da Issue (ADR-0033); o id UUID segue como identidade de maquina.
     // corrigeIssueId/corrigeSeq (caso B, ADR-0034): aditivos — preenchidos so na corretiva.
+    // conversationId (absorção, ADR-0037/D4): a conversa DIRECIONADA da issue — o detalhe do
+    // card abre a thread por ele; nulo em issue não-absorvida (gate/corretiva/legado).
     public record IssueResponse(UUID id, UUID companyId, int seq, String title, String description,
                                 String status, int riskLevel, UUID assigneeAgentId,
                                 UUID executionLockRunId, Instant createdAt,
-                                UUID corrigeIssueId, Integer corrigeSeq) {
+                                UUID corrigeIssueId, Integer corrigeSeq, UUID conversationId) {
         static IssueResponse from(Issue issue, Integer corrigeSeq) {
             return new IssueResponse(issue.getId(), issue.getCompanyId(), issue.getSeq(), issue.getTitle(),
                     issue.getDescription(), issue.getStatus().name(), issue.getRiskLevel(),
                     issue.getAssigneeAgentId(), issue.getExecutionLockRunId(), issue.getCreatedAt(),
-                    issue.getCorrigeIssueId(), corrigeSeq);
+                    issue.getCorrigeIssueId(), corrigeSeq, issue.getConversationId());
         }
     }
 }

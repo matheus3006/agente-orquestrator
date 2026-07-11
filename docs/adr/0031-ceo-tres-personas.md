@@ -124,3 +124,8 @@ silêncio): NUNCA emitir ` ```proposta ` (papel do Executor, A2); dossiê + `han
 `planejador` NO MESMO turno — o pedido explícito JÁ É o "sim" do D5. Cinto de emissor no canal de
 proposta (irmão do §9/ADR-0034) + coluna 0 simétrica + aviso visível de descarte (a régua M9 do §8
 pula o aviso). Racional completo na ADR-0036.
+
+## Forward-ref (2026-07-11 — ADR-0037, absorção de issues)
+O Planejador ganhou a triagem das issues órfãs do dono: 4º bloco tipado ` ```absorcao ` (emissor
+restrito a ele, espelho da restrição do caso B), decidindo time-alvo contra o `### Equipe` (M8);
+kickback `needs-grilling` e régua M9 reusados como estão. Racional completo na ADR-0037.

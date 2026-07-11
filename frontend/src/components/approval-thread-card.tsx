@@ -11,7 +11,13 @@ import {
   type Approval,
   type IssueSummary,
 } from "@/lib/api";
-import { acaoLegivel, hireDaProposta, issueDaApproval } from "@/lib/ceo-conversa";
+import {
+  acaoLegivel,
+  destinoDaIssueProposta,
+  hireDaProposta,
+  issueDaApproval,
+  racionalDoTimeProposto,
+} from "@/lib/ceo-conversa";
 import { fmtClock, shortId } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 import { pushToast } from "@/lib/toaster";
@@ -126,6 +132,10 @@ export function ApprovalThreadCard({
   const acao = acaoLegivel(approval);
   const pendente = approval.status === "PENDING";
   const issueCriada = issueDaApproval(approval, issues);
+  // ADR-0037: CREATE_ISSUE mostra o destino (a issue nasce com dono, D2); CREATE_TEAM mostra
+  // o racional do time proposto (leitura, como o do hire — A3).
+  const destinoDaIssue = destinoDaIssueProposta(approval);
+  const racionalDoTime = racionalDoTimeProposto(approval);
 
   return (
     <article className="aprovacao" data-status={approval.status} aria-label="Aprovação">
@@ -151,6 +161,18 @@ export function ApprovalThreadCard({
           {approval.racionalTipo === "INTUICAO" && " · área criativa (intuição commita)"}
         </div>
       </div>
+
+      {destinoDaIssue && (
+        <div className="aprovacao-meta">
+          <b>destino</b> → time {destinoDaIssue} (a issue nasce na mesa do arquiteto)
+        </div>
+      )}
+
+      {racionalDoTime && (
+        <div className="aprovacao-meta">
+          <b>racional do time</b> {racionalDoTime}
+        </div>
+      )}
 
       {hire?.racional && (
         <div className="aprovacao-meta">

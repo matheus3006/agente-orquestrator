@@ -8,6 +8,7 @@ import { ActivityFeed } from "@/components/activity-feed";
 import { AgentDot } from "@/components/agent-dot";
 import { CompanyLink } from "@/components/company-link";
 import { AssigneeChip, CorrigeSelo, RiskBadge } from "@/components/issue-bits";
+import { IssueConversaSection } from "@/components/issue-conversa-section";
 import { IssuePreviewSection } from "@/components/preview-section";
 import { IssueServerSection } from "@/components/preview-server-section";
 import { StepTraceDrawer, type TranscriptRequest } from "@/components/step-trace-drawer";
@@ -196,6 +197,15 @@ export default function IssueDetailPage() {
                 <ShieldCheck size={13} strokeWidth={2} /> Decidir na fila de review
               </CompanyLink>
             </div>
+          )}
+
+          {/* ADR-0037 (D4): issue = conversa direcionada — a thread mora no detalhe do card. */}
+          {issue.conversationId !== null && (
+            <IssueConversaSection
+              companyId={companyId}
+              conversationId={issue.conversationId}
+              issueSeq={issue.seq}
+            />
           )}
 
           <IssuePreviewSection companyId={companyId} issueId={issue.id} nowMs={nowMs} />

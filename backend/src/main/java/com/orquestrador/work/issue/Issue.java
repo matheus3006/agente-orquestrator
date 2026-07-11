@@ -54,6 +54,11 @@ public class Issue {
     @Column(name = "corrige_issue_id")
     private UUID corrigeIssueId;
 
+    // Absorção (ADR-0037, V27): a conversa DIRECIONADA da issue (1:1, assunto "#N — <título>").
+    // Nula em issue não-absorvida (gate/corretiva/legado) — o trilho da generalização futura.
+    @Column(name = "conversation_id")
+    private UUID conversationId;
+
     // Escala 1-5 do review gate (ADR-0012): 1 = sem risco; risco >= limiar → PENDING_REVIEW no settle.
     @Column(name = "risk_level", nullable = false)
     private int riskLevel = 1;
@@ -115,6 +120,19 @@ public class Issue {
         return corrigeIssueId;
     }
 
+    public UUID getConversationId() {
+        return conversationId;
+    }
+
+    /**
+     * A ancoragem da absorção (ADR-0037, D4): liga a issue à SUA conversa direcionada. Chamada
+     * uma vez, na criação pelo dono (mesma tx) — quem garante o 1:1 é o assunto único da
+     * conversa ("#N — <título>") + o disparo único do gatilho (D9.1).
+     */
+    void ancorarConversa(UUID conversationId) {
+        this.conversationId = conversationId;
+    }
+
     /**
      * O nascimento da CORRETIVA (caso B, ADR-0034): ligada a task que corrige e JA COM DONO —
      * o assignee pre-setado entrega a task na mesa do arquiteto; o guard do
@@ -123,6 +141,15 @@ public class Issue {
      */
     void nascerCorrigindo(UUID corrigeIssueId, UUID assigneeAgentId) {
         this.corrigeIssueId = corrigeIssueId;
+        this.assigneeAgentId = assigneeAgentId;
+    }
+
+    /**
+     * O nascimento-com-dono da 2ª porta (ADR-0037, D2): a issue aprovada no gate já sai com o
+     * arquiteto do time-alvo — "nada que o CEO cria nasce sem dono". Como o da corretiva, só
+     * faz sentido antes do primeiro save.
+     */
+    void nascerAtribuida(UUID assigneeAgentId) {
         this.assigneeAgentId = assigneeAgentId;
     }
 

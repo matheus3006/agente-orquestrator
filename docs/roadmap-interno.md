@@ -137,6 +137,18 @@ bloco ```` ```correcao ```` do Questionador → corrente #N→time→arquiteto d
 `corrige_issue_id` (V26) com verbatim do dono copiado do banco → 1ª Decision origem-AGENTE;
 **ADR-0034 + V26 = reservas consumidas**; divergência assumida da letra do B2 registrada e
 declarada na ADR; novo piso proposto: backend **489** · front **248**).
+**Grill da ABSORÇÃO DE ISSUES DO BOARD FECHADO em 2026-07-11 (faixa R4-B)** → **EXECUTADA
+(2026-07-11, branch `feat/absorcao-issues-adr0037`)**:
+`handoff-grilling-absorcao-issues.md` (D1–D10/M1–M13 + §RESULTADO; issue do dono dispara turno ao
+Planejador → ```` ```absorcao ```` aponta o TIME → sistema resolve time→arquiteto e seta assignee;
+issue = conversa DIRECIONADA ancorada 1:1 (**V27 consumida**); o gate ganhou `CREATE_TEAM`
+(time+arquiteto atômico — alargamento deliberado do enum, com retoma automática pós-approve) e
+`CREATE_ISSUE` passou a carregar time e nascer com dono — invariante "nada que o CEO cria nasce sem
+dono" fechado nas DUAS origens; **ADR-0037 consumida** + forward-refs aplicadas nas
+0017/0018/0031/0033/0034; contrato de intenção do ARQUITETO (todo time nasce com arquiteto ·
+possível divisão em 2 personas · clone por ociosidade >30min) registrado VERBATIM no §G.1 do
+handoff = SEMENTE de grill próprio, faixa nova a criar; novo piso proposto: backend **523** ·
+front **269**).
 
 | Item | Verdict · Estágio | Evidência de ausência-limpa / fundação | Ponteiro · Próxima ação (dono) |
 |------|-------------------|----------------------------------------|--------------------------------|

@@ -41,6 +41,14 @@ public interface IssueRepository extends JpaRepository<Issue, UUID> {
     Optional<Issue> findByCompanyIdAndSeq(UUID companyId, int seq);
 
     /**
+     * A issue ancorada na conversa (ADR-0037, D4/M8 — a direção INVERSA da ancoragem): o APPROVE
+     * do {@code CREATE_TEAM} chega com {@code approval.conversationId} e a retoma precisa saber
+     * QUAL issue retriar. 1:1 por construção (assunto "#N — <título>" único); o findFirst é
+     * cinto contra dados anômalos.
+     */
+    Optional<Issue> findFirstByCompanyIdAndConversationId(UUID companyId, UUID conversationId);
+
+    /**
      * F.12 (ADR-0026): as Issues que JÁ rodaram (assignee fixado no checkout ⇒ têm workspace) — a
      * base da DERIVAÇÃO do {@code WorkspaceReaper}. Deriva o ref esperado de cada uma e intersecta
      * com o mundo listado pelo alvo; um ref no mundo fora deste conjunto é órfão (só WARN). Inclui
@@ -78,6 +86,27 @@ public interface IssueRepository extends JpaRepository<Issue, UUID> {
                     @Param("companyId") UUID companyId,
                     @Param("agentId") UUID agentId,
                     @Param("runId") UUID runId);
+
+    /**
+     * A ATRIBUIÇÃO da absorção (ADR-0037, M5): entrega a issue ÓRFÃ à mesa do arquiteto num
+     * UPDATE guardado — só {@code assignee is null} e {@code OPEN} casam (0 linhas → a guarda
+     * D9.3: já tem dona/saiu de OPEN, o roteador AVISA em vez de re-atribuir; cobre settle
+     * reexecutado E corrida com checkout). NÃO mexe em status/lock: a issue segue OPEN, e o
+     * {@link #tryCheckout} ({@code assignee is null or = :agentId}) passa a aceitar SÓ o arquiteto.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            update issue
+               set assignee_agent_id = :arquitetoId,
+                   updated_at = now()
+             where id = :issueId
+               and company_id = :companyId
+               and status = 'OPEN'
+               and assignee_agent_id is null
+            """, nativeQuery = true)
+    int tryAbsorver(@Param("issueId") UUID issueId,
+                    @Param("companyId") UUID companyId,
+                    @Param("arquitetoId") UUID arquitetoId);
 
     /**
      * Conclusao: so o run que detem a trava conclui (libera a trava, status DONE).

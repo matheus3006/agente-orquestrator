@@ -203,6 +203,8 @@ export interface IssueSummary {
   corrigeIssueId: string | null;
   /** O #N humano do alvo (o selo "corrige #N"); null se o alvo foi colhido. */
   corrigeSeq: number | null;
+  /** Absorção (ADR-0037/D4): a conversa DIRECIONADA da issue — null em não-absorvida. */
+  conversationId: string | null;
 }
 
 export function listIssues(companyId: string): Promise<IssueSummary[]> {
@@ -872,7 +874,8 @@ export function listTurns(companyId: string, conversationId: string): Promise<Co
 
 /* ---------- approvals: o gate pré-hoc (Teams T.3, ADR-0018/0020) ---------- */
 
-export type ApprovalActionType = "HIRE_AGENT" | "CREATE_ISSUE" | "WAKEUP_AGENT";
+// CREATE_TEAM (ADR-0037/D7): time + arquiteto atômico — o time do gate nasce com arquiteto.
+export type ApprovalActionType = "HIRE_AGENT" | "CREATE_ISSUE" | "WAKEUP_AGENT" | "CREATE_TEAM";
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
 

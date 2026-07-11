@@ -102,3 +102,7 @@ dono feriria a mão soberana.
   parar-e-avisar até designarem (comportamento desejado, espelho do dispatch).
 - Pendências de veto do dono (sinalizadas no PR): nome/formato do bloco `correcao`, textos das
   mensagens determinísticas (M6) e título padrão da corretiva.
+
+**Forward-ref (2026-07-11):** o padrão bloco-tipado→corrente determinística→para-e-avisa ganhou o
+irmão INVERSO na ADR-0037 (absorção: board→conversa; aqui foi conversa→board), incluindo a 2ª
+Decision de origem AGENTE e o reuso do molde de protocolo/idempotência `[gatilho <id>]`.

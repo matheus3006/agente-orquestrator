@@ -52,5 +52,9 @@ public enum ActivityAction {
     // WorkspaceReaper); RESUMO por ciclo-de-sweep-por-company (nao 1 por row — seria diluvio);
     // detail so-contagens {thumbnail, artifact, run_events} (numeros nao sao PII, ADR-0009). O
     // vigente por-Issue + o fixado por review NAO graduam (B3); gravado APOS a remocao REAL.
-    ROWS_COLLECTED
+    ROWS_COLLECTED,
+    // Absorcao de issue do board (ADR-0037): o Planejador triou a issue orfa do dono e o sistema
+    // resolveu time→arquiteto e atribuiu. Ator = AGENTE (o Planejador do turno); detail so-IDs
+    // {teamId, arquitetoAgentId} — o racional (texto de LLM) vive na Decision, NUNCA aqui (ADR-0009).
+    ISSUE_ABSORVIDA
 }

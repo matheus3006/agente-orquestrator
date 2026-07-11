@@ -275,6 +275,64 @@ class CeoTurnExecutionTest {
         assertThat(prompt).contains("Regra de ouro do handoff");
     }
 
+    /**
+     * ADR-0037 (M10): o PLANEJADOR ganha a triagem da absorção — ACRÉSCIMO ao cabeçalho
+     * por-persona: o critério do D6 (atribui × recomenda × re-grelha; nunca "no menos pior") e
+     * o formato do bloco INDENTADO (coluna-0 é emissão, indentado é citação — um motor que ecoa
+     * o exemplo nunca dispara a virada).
+     */
+    @Test
+    void promptDoPlanejadorInstruiAAbsorcaoComCriterioDeTriagem() {
+        UUID companyId = novaCompany();
+        contrataCeoEchoComPersona(companyId, "planejador", "CEO Planejador");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, negocio.getId(), "[continuação — absorção da issue #7 — o dono criou"
+                        + " \"Landing\" no board, sem dono]", ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        String prompt = turno(receipt.turnId()).getCeoReply();
+        // o critério D6: time existente atribui; nenhum cobre → recomenda; nunca "no menos pior"
+        assertThat(prompt).contains("Absorção de issue do board");
+        assertThat(prompt).contains("aponte o TIME");
+        assertThat(prompt).contains("RECOMENDA criar");
+        assertThat(prompt).contains("no menos pior");
+        assertThat(prompt).contains("```needs-grilling");
+        // o formato do bloco, INDENTADO (disciplina coluna-0 dos irmãos)
+        assertThat(prompt).contains("  ```absorcao");
+        assertThat(prompt).contains("\"dominio\"").contains("\"foco\"").contains("\"racional\"");
+        // os deveres da 0031 seguem intactos — acréscimo, não reescrita
+        assertThat(prompt).contains("PLANEJADOR");
+        assertThat(prompt).contains("Premissas");
+        assertThat(prompt).doesNotContain("MANTENHA UMA CONVERSA");
+    }
+
+    /**
+     * ADR-0037 (D7): o EXECUTOR aprende o protocolo do time NOVO — CREATE_TEAM leva time +
+     * arquiteto JUNTOS (todo time nasce com arquiteto); executores vêm depois, individuais.
+     */
+    @Test
+    void promptDoExecutorInstruiOCreateTeam() {
+        UUID companyId = novaCompany();
+        contrataCeoEchoComPersona(companyId, "executor", "CEO Executor");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, negocio.getId(), "[continuação — bastão]", ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        String prompt = turno(receipt.turnId()).getCeoReply();
+        assertThat(prompt).contains("CREATE_TEAM");
+        assertThat(prompt).contains("o time E o arquiteto JUNTOS");
+        assertThat(prompt).contains("HIRE_AGENT individuais");
+        // o exemplo viaja INDENTADO, como os irmãos
+        assertThat(prompt).contains("  ```proposta\n  {\"acao\": \"CREATE_TEAM\"");
+        // o protocolo clássico do hire segue intacto — acréscimo, não reescrita
+        assertThat(prompt).contains("SEM MEXER");
+        assertThat(prompt).contains("PÓS-approve");
+    }
+
     /** M7 + A2/A3: o EXECUTOR protocola SEM MEXER e emite ```proposta``` com racional por-agente. */
     @Test
     void promptDoExecutorProtocolaSemMexerComPropostaERacional() {

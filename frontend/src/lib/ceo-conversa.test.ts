@@ -3,11 +3,13 @@ import type { Approval, ConversationTurn } from "./api";
 import {
   acaoLegivel,
   chavesDaThread,
+  destinoDaIssueProposta,
   entrandoNaThread,
   hireDaProposta,
   issueDaApproval,
   pendentesPorConversa,
   projetarThread,
+  racionalDoTimeProposto,
   splitReply,
   type ThreadItem,
 } from "./ceo-conversa";
@@ -263,6 +265,85 @@ describe("acaoLegivel (o corpo do card é legível — o targetDetail nunca apar
 
     expect(acao).toEqual({ verbo: "Abrir issue", alvo: null });
   });
+
+  it("CREATE_TEAM vira 'Criar time' com dominio / foco e o arquiteto que nasce junto (ADR-0037)", () => {
+    const acao = acaoLegivel(
+      approval({
+        actionType: "CREATE_TEAM",
+        targetDetail:
+          '{"dominio": "Marketing", "foco": "Tráfego", "arquiteto": {"name": "Aqua", "role": "arquiteto"}}',
+      }),
+    );
+
+    expect(acao).toEqual({ verbo: "Criar time", alvo: "Marketing / Tráfego · arquiteto Aqua" });
+  });
+
+  it("CREATE_TEAM sem dominio/foco degrada para alvo null", () => {
+    const acao = acaoLegivel(
+      approval({ actionType: "CREATE_TEAM", targetDetail: '{"arquiteto": {"name": "Aqua"}}' }),
+    );
+
+    expect(acao).toEqual({ verbo: "Criar time", alvo: null });
+  });
+});
+
+describe("destinoDaIssueProposta (ADR-0037/D2: o card do CREATE_ISSUE mostra o time-destino)", () => {
+  it("carrega dominio / foco quando o alvo tem o time", () => {
+    const destino = destinoDaIssueProposta(
+      approval({
+        actionType: "CREATE_ISSUE",
+        targetDetail: '{"title": "Landing nova", "dominio": "Dev", "foco": "Landing"}',
+      }),
+    );
+
+    expect(destino).toBe("Dev / Landing");
+  });
+
+  it("sem time no alvo (proposta pré-0037) ou ação diferente → null", () => {
+    expect(
+      destinoDaIssueProposta(
+        approval({ actionType: "CREATE_ISSUE", targetDetail: '{"title": "Órfã"}' }),
+      ),
+    ).toBeNull();
+    expect(
+      destinoDaIssueProposta(
+        approval({ actionType: "HIRE_AGENT", targetDetail: '{"name": "Nina"}' }),
+      ),
+    ).toBeNull();
+  });
+
+  it("NÃO contamina o alvo do acaoLegivel — o issueDaApproval segue casando pelo título exato", () => {
+    const aprovada = approval({
+      actionType: "CREATE_ISSUE",
+      targetDetail: '{"title": "Landing nova", "dominio": "Dev", "foco": "Landing"}',
+    });
+
+    expect(acaoLegivel(aprovada).alvo).toBe("Landing nova");
+  });
+});
+
+describe("racionalDoTimeProposto (CREATE_TEAM: o racional do Planejador é leitura no card)", () => {
+  it("carrega o racional do alvo; vazio/ausente/outra ação → null", () => {
+    expect(
+      racionalDoTimeProposto(
+        approval({
+          actionType: "CREATE_TEAM",
+          targetDetail:
+            '{"dominio": "Mkt", "foco": "Ads", "racional": "aquisição paga precisa de time próprio"}',
+        }),
+      ),
+    ).toBe("aquisição paga precisa de time próprio");
+    expect(
+      racionalDoTimeProposto(
+        approval({ actionType: "CREATE_TEAM", targetDetail: '{"dominio": "Mkt", "foco": "Ads"}' }),
+      ),
+    ).toBeNull();
+    expect(
+      racionalDoTimeProposto(
+        approval({ actionType: "HIRE_AGENT", targetDetail: '{"racional": "não sou time"}' }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("issueDaApproval (CREATE_ISSUE aprovada → a issue criada, pro report do Ledger)", () => {
@@ -279,6 +360,7 @@ describe("issueDaApproval (CREATE_ISSUE aprovada → a issue criada, pro report 
     createdAt,
     corrigeIssueId: null,
     corrigeSeq: null,
+    conversationId: null,
   });
 
   it("acha a issue pelo título exato do alvo; empate fica com a mais recente", () => {

@@ -256,6 +256,22 @@ public class ConversationTurnCoordinator {
                 + " confirmadas)` e conclua a estratégia.\n"
                 + "- Estratégia concluída → emita o bloco `handoff` para o `executor`, com o bastão ="
                 + " o caminho da estratégia.\n"
+                // ADR-0037 (M10): a triagem da absorção — o critério do D6 no prompt. O exemplo
+                // viaja INDENTADO de propósito: coluna-0 é emissão, indentado é citação.
+                + "- Absorção de issue do board: se a mensagem do turno é um gatilho \"[continuação"
+                + " — absorção da issue #N …]\", trie a issue contra o \"### Equipe\" do estado"
+                + " vivo e aponte o TIME num bloco `absorcao` (nunca uma pessoa — o sistema"
+                + " resolve time→arquiteto e atribui): atribua quando um time EXISTENTE cobre o"
+                + " domínio da issue; quando NENHUM cobre, emita o bloco com o time que você"
+                + " RECOMENDA criar (dominio/foco novos) e, no racional, os cargos que ele precisa"
+                + " (ex.: \"um arquiteto de aquisição + um executor de mídia paga\") — NUNCA"
+                + " atribua \"no menos pior\"; na dúvida entre dois times plausíveis, emita"
+                + " `needs-grilling` e PARE o turno.\n"
+                + "  ```absorcao\n"
+                + "  {\"issue\": <o número da issue, ex.: 7>, \"dominio\": \"<domínio do time>\","
+                + " \"foco\": \"<foco do time>\", \"racional\": \"<por que esse time (ou os cargos"
+                + " recomendados) — 1 linha>\"}\n"
+                + "  ```\n"
                 + blocoBlocosTipados();
     }
 
@@ -276,6 +292,18 @@ public class ConversationTurnCoordinator {
                 + "  ```\n"
                 + "- Buraco na estratégia → emita `needs-grilling` (nunca conserto silencioso): quem"
                 + " re-grelha o dono é o Questionador.\n"
+                // ADR-0037 (D7): o protocolo do time NOVO — time + arquiteto atômicos no gate.
+                + "- Time NOVO autorizado pelo dono (ex.: absorção de issue sem time que cubra):"
+                + " emita um bloco `proposta` de CREATE_TEAM carregando o time E o arquiteto JUNTOS"
+                + " (todo time nasce com arquiteto); os executores vêm DEPOIS, como HIRE_AGENT"
+                + " individuais.\n"
+                + "  ```proposta\n"
+                + "  {\"acao\": \"CREATE_TEAM\", \"alvo\": {\"dominio\": \"<domínio>\", \"foco\":"
+                + " \"<foco>\", \"arquiteto\": {\"name\": \"<nome>\", \"role\": \"<role>\","
+                + " \"adapterType\": \"<motor>\", \"model\": \"<model>\", \"effort\":"
+                + " \"<effort>\"}, \"racional\": \"<por que esse time + arquiteto>\"}, \"resumo\":"
+                + " \"<uma linha>\", \"area\": \"estrutura-org\"}\n"
+                + "  ```\n"
                 + "- Sua autonomia começa PÓS-approve: contratar, atribuir as skills a cada agente e"
                 + " entregar os briefs aos times. Nada é contratado sem APPROVE do dono (gate T3).\n"
                 + "- Pesquisa e apoio: use as ferramentas do PRÓPRIO run (web, sub-agentes) dentro do"

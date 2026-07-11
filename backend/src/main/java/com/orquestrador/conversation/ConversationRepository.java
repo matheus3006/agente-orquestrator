@@ -13,4 +13,10 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
     List<Conversation> findByCompanyIdOrderByCreatedAtAsc(UUID companyId);
 
     boolean existsByCompanyIdAndSubject(UUID companyId, String subject);
+
+    /**
+     * Resolve a conversa pelo assunto — o get-or-create da absorção (ADR-0037, M2): o assunto
+     * determinístico "#N — <título>" é único por company (o unique da entidade é o backstop).
+     */
+    Optional<Conversation> findByCompanyIdAndSubject(UUID companyId, String subject);
 }

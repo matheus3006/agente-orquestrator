@@ -24,6 +24,7 @@ const issue = (overrides: Partial<IssueSummary>): IssueSummary => ({
   createdAt: "2026-07-02T10:00:00Z",
   corrigeIssueId: null,
   corrigeSeq: null,
+  conversationId: null,
   ...overrides,
 });
 
@@ -157,6 +158,7 @@ describe("issueBehindLedger (ledger diz 'liquidado', issue ainda diz IN_PROGRESS
     createdAt: "",
     corrigeIssueId: null,
     corrigeSeq: null,
+    conversationId: null,
   });
 
   it("IN_PROGRESS com todos os runs terminais → lista está atrás", () => {
