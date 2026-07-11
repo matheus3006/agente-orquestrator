@@ -122,7 +122,40 @@ lança — não pode abortar o settle de um turno legítimo. **Rejeitada:** fail
 - **Aviso de corte (D9) aparece como um turno com `owner_message` de sistema:** visível e honesto, mas a
   apresentação "CEO-iniciado" refinada é follow-up de frontend.
 - **Continuação sem bilhete = sem continuação:** se as 3 camadas falharem, o loop não nasce (fail-open);
-  o trabalho não se perde (segue na resposta do turno original).
+  o trabalho não se perde (segue na resposta do turno original). *(O "best-effort" do codex foi
+  provado errado e corrigido — ver a nota de implementação abaixo.)*
+
+## Nota de implementação (2026-07-11 — SÓ a gramática do resume do codex; achado R6 do laudo motor-nativo)
+
+**Escopo desta nota: apenas o bullet "Resume cirúrgico do codex é best-effort" das Consequências.**
+O best-effort foi verificado contra o source do CLI pinado e estava **errado**: o `CodexArgv`
+emitia `--resume <id>` como flag, mas o codex 0.142.5 **não tem essa flag** — resume é
+**SUBCOMANDO** com `SESSION_ID` e `PROMPT` posicionais. Verificado no source do tag
+`rust-v0.142.5` (`codex-rs/exec/src/cli.rs`): `Command::Resume` (linha 168), posicionais
+`SESSION_ID`/`PROMPT` do `ResumeArgsRaw` (linhas 180-181 e 202-203). A gramática adotada:
+
+```
+codex exec --json [--model <m>] [-c model_reasoning_effort=<e>] --skip-git-repo-check \
+  (-s workspace-write | --dangerously-bypass-approvals-and-sandbox) resume <SESSION_ID> <PROMPT>
+```
+
+- **Flags SEMPRE antes do subcomando:** `-s/--sandbox` NÃO é global (`shared_options.rs:39`; o
+  `mark_exec_global_args` de `cli.rs:157-163` só globaliza `model`, `dangerously_bypass…` e
+  `bypass_hook_trust`) — depois do `resume` ele seria rejeitado. É a forma que o próprio source
+  crava no `override_usage` (`cli.rs:12`): `codex exec [OPTIONS] <COMMAND> [ARGS]`.
+- **Anti-silêncio (mesma fatia):** o adapter traduz exit≠0 em `Result.fail` (não exceção), e o
+  `surgicalDistill` descartava o retorno — a falha do resume não deixava rastro além do "bilhete
+  ausente" genérico. Agora o motivo vira WARN (`handoff: resume-cirúrgico falhou…`), precedente
+  `RUN_LEASE_LOST`. A semântica fail-open (D8) segue INTOCADA: sem bilhete ⟹ sem continuação.
+- **Prova permanente:** `CodexArgvTest.resumeCirurgicoUsaOSubcomandoResumeComSessionIdEPromptPosicionais`
+  (pina a argv exata) + `HandoffLoopTest.redeResumeCirurgicoQueFalhaLogaOMotivoESegueFailOpen`.
+  O lado claude (`--resume` é flag REAL lá) segue intocado e provado no `ClaudeArgvTest`.
+- **Prova live da GRAMÁTICA (host, codex-cli 0.142.5 exato):** a forma antiga é rejeitada pelo
+  clap (`error: unexpected argument '--resume' found`) e a forma nova atravessa o parser com
+  todos os flags e morre só no lookup de um id falso (`thread/resume failed: no rollout found`)
+  — subcomando, posicionais e posição dos flags confirmados contra o binário real, sem token.
+- **Residual:** a prova ponta-a-ponta do LOOP (CEO codex real cruzando o dial de 55% com a rede
+  gravando o bilhete) fica de carona para quando acontecer em uso real.
 
 ## Fora do escopo
 - Interrupção mid-run (streaming + kill) — ADIADO (D1, Frente D).

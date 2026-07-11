@@ -1,5 +1,8 @@
 package com.orquestrador.handoff;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.conversation.Conversation;
 import com.orquestrador.conversation.ConversationService;
@@ -12,6 +15,7 @@ import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.engine.EngineCatalog;
 import com.orquestrador.org.engine.EngineCatalogRepository;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -108,6 +112,40 @@ class HandoffLoopTest {
     }
 
     @Test
+    void redeResumeCirurgicoQueFalhaLogaOMotivoESegueFailOpen() {
+        UUID companyId = novaCompany();
+        engines.save(new EngineCatalog(UUID.randomUUID(), "handoff-fail", "fail-m", "fail-e",
+                100, "loop-fail", true));
+        Agent ceo = new Agent(UUID.randomUUID(), companyId, "Atlas", "ceo", null);
+        ceo.configureRuntime("handoff-fail", null, "LOCAL");
+        ceo.configureEngine(null, "fail-m", "fail-e");
+        agents.save(ceo);
+        Conversation conv = conversations.open(companyId, "RedeFalha");
+        conversations.postMessage(companyId, conv.getId(), "vai fundo", ActorType.BOARD, UUID.randomUUID());
+
+        ListAppender<ILoggingEvent> warns = new ListAppender<>();
+        warns.start();
+        ch.qos.logback.classic.Logger loopLogger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(ContextHandoffLoop.class);
+        loopLogger.addAppender(warns);
+        try {
+            drena();
+        } finally {
+            loopLogger.detachAppender(warns);
+        }
+
+        // Anti-silêncio (laudo motor-nativo R6): o adapter devolve Result.fail (não lança) — o motivo
+        // da falha do resume TEM que chegar ao log, senão o único rastro é "bilhete ausente" genérico.
+        assertThat(warns.list)
+                .filteredOn(evento -> evento.getLevel() == Level.WARN)
+                .anySatisfy(evento -> assertThat(evento.getFormattedMessage())
+                        .contains("resume-cirúrgico falhou")
+                        .contains("exit 2"));
+        // Fail-open intacto (D8/D9): sem bilhete ⟹ sem continuação; o turno liquidado não reabre.
+        assertThat(continuacoes(companyId, conv.getId())).isZero();
+    }
+
+    @Test
     void semBilheteARedeResumeCirurgicoOGravaEEntaoContinua() {
         UUID companyId = novaCompany();
         engines.save(new EngineCatalog(UUID.randomUUID(), "handoff-net", "net-m", "net-e",
@@ -163,6 +201,35 @@ class HandoffLoopTest {
                     boolean continuacao = prompt.contains("[continuação");
                     int tokensInput = continuacao ? 0 : 1000;
                     return Result.ok("sess-probe", List.of(new CostEmission("anthropic", "m", tokensInput, 0)));
+                }
+            };
+        }
+
+        /** Cruza sem bilhete E a rede FALHA como o codex real falharia (Result.fail, não exceção). */
+        @Bean
+        AgentAdapter handoffFailAdapter() {
+            return new AgentAdapter() {
+                @Override
+                public String type() {
+                    return "handoff-fail";
+                }
+
+                @Override
+                public EngineContainer engineContainer() {
+                    return EngineContainer.plainShell();
+                }
+
+                @Override
+                public Result execute(Context context, StepSink steps) {
+                    if (context.priorSession() != null) {
+                        // O shape REAL da falha: o adapter traduz exit≠0 em Result.fail (CodexAdapter:65-67).
+                        return Result.fail("codex terminou com exit 2: error: unexpected argument"
+                                + " '--resume' found");
+                    }
+                    steps.emit("RESULT", "ok");
+                    String prompt = context.env().getOrDefault("ORQ_PROMPT", "");
+                    int tokensInput = prompt.contains("[continuação") ? 0 : 1000;
+                    return Result.ok("sess-fail-x", List.of(new CostEmission("openai", "m", tokensInput, 0)));
                 }
             };
         }

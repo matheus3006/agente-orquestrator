@@ -53,6 +53,27 @@ class CodexArgvTest {
     }
 
     @Test
+    void resumeCirurgicoUsaOSubcomandoResumeComSessionIdEPromptPosicionais() {
+        // M9 (ADR-0030): a rede resume-cirúrgico religa a MESMA sessão. No codex 0.142.5 resume NÃO é
+        // flag — é SUBCOMANDO com SESSION_ID e PROMPT posicionais (codex-rs/exec/src/cli.rs @
+        // rust-v0.142.5: Command::Resume linha 168, posicionais 180-181/202-203). `-s` não é global
+        // (fora do mark_exec_global_args, cli.rs:157-163) ⟹ TODO flag antes do subcomando, na forma
+        // que o próprio source crava no override_usage (cli.rs:12): `codex exec [OPTIONS] <COMMAND> [ARGS]`.
+        assertThat(CodexArgv.build("grave o bilhete", "gpt-5.5", "high", IsolationPosture.HOST, "sess-abc"))
+                .containsExactly("codex", "exec", "--json",
+                        "--model", "gpt-5.5", "-c", "model_reasoning_effort=high",
+                        "--skip-git-repo-check", "-s", "workspace-write",
+                        "resume", "sess-abc", "grave o bilhete");
+    }
+
+    @Test
+    void runNormalNaoGanhaOSubcomandoResume() {
+        // Todo run normal (D4): priorSession=null ⟹ sessão fresca, sem religar.
+        assertThat(CodexArgv.build("t", "gpt-5.5", "high", IsolationPosture.HOST, null))
+                .doesNotContain("resume", "--resume");
+    }
+
+    @Test
     void externamenteSandboxadoGanhaSkipGitEBypassComPromptNoFim() {
         // F.11 (ADR-0025): o container E o sandbox externo — o codex roda sem self-sandbox.
         // Flags empiricamente confirmados contra o codex 0.142.5; prompt segue o ULTIMO.
