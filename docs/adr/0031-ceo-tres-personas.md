@@ -116,3 +116,11 @@ intocado) · ADR-0030 (transporte de continuação; sentinela; travas-espelho) �
 das personas chegam ao codex por aquele seam) · ADR-0033 (o #N que o dono usa no caso B futuro) ·
 **ADR-0035** (a recusa no gate volta ao proponente pelo MESMO poster de continuação — o 2º
 consumidor do transporte M6, fora do settle; a divisão de personas segue intocada).
+
+## Forward-ref (2026-07-11 — ADR-0036, caso C direto)
+O caso "(C) contratação pedida explicitamente" ganhou o TRILHO que faltava no blocoQuestionador
+(a Prova R3-A expôs o furo: sem trilho, o Q inventou um shape de proposta e o gate ficou vazio em
+silêncio): NUNCA emitir ` ```proposta ` (papel do Executor, A2); dossiê + `handoff` ao
+`planejador` NO MESMO turno — o pedido explícito JÁ É o "sim" do D5. Cinto de emissor no canal de
+proposta (irmão do §9/ADR-0034) + coluna 0 simétrica + aviso visível de descarte (a régua M9 do §8
+pula o aviso). Racional completo na ADR-0036.

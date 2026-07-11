@@ -213,6 +213,38 @@ class CeoTurnExecutionTest {
         assertThat(prompt).contains("```handoff");
     }
 
+    /**
+     * Caso C (ADR-0036): contratação pedida DIRETO ao balcão — o furo da Prova R3-A. O trilho
+     * que faltava: NUNCA emitir ```proposta``` (papel do Executor, pós-estratégia); dossiê +
+     * handoff ao planejador NO MESMO turno (o pedido explícito JÁ É o "sim" — sem re-perguntar);
+     * lacuna grande é a única razão para segurar. E a carona do caso B: a prosa não nomeia
+     * destinatário — quem roteia é o sistema.
+     */
+    @Test
+    void promptDoQuestionadorTrilhaOCasoCDeContratacaoDireta() {
+        UUID companyId = novaCompany();
+        contrataCeoEchoComPersona(companyId, "questionador", "CEO Questionador");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, negocio.getId(), "contrata um dev backend e um designer",
+                ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        String prompt = turno(receipt.turnId()).getCeoReply();
+        // o trilho do caso C: quem protocola é o Executor; o Q roteia, não inventa proposta
+        assertThat(prompt).contains("contratação EXPLÍCITO");
+        assertThat(prompt).contains("NUNCA emita bloco `proposta`");
+        assertThat(prompt).contains("NO MESMO turno");
+        assertThat(prompt).contains("JÁ É o \"sim\"");
+        // carona (achado do caso B): a prosa não chuta destinatário — o registro roteia
+        assertThat(prompt).contains("quem roteia é o sistema");
+        // G1/G2 e os deveres da 0031 seguem intactos — acréscimo, não reescrita
+        assertThat(prompt).contains("MANTENHA UMA CONVERSA");
+        assertThat(prompt).contains("APENDE");
+        assertThat(prompt).contains("posso seguir");
+    }
+
     /** M7: o PLANEJADOR é back-office — bastão como insumo, estratégia de ORQUESTRAÇÃO como saída. */
     @Test
     void promptDoPlanejadorEBackOfficeComEstrategiaECalibracao() {
@@ -263,6 +295,8 @@ class CeoTurnExecutionTest {
         // E→time é o gate T3: um ```proposta``` por agente, com racional estruturado (A3)
         assertThat(prompt).contains("```proposta");
         assertThat(prompt).contains("racional");
+        // ADR-0036: a cerca do ```proposta``` agora segue a regra dos irmãos — coluna 0
+        assertThat(prompt).contains("indentado é citação");
         // A2: autonomia começa PÓS-approve
         assertThat(prompt).contains("PÓS-approve");
         assertThat(prompt).doesNotContain("MANTENHA UMA CONVERSA");

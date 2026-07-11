@@ -5,6 +5,7 @@ import com.orquestrador.conversation.Conversation;
 import com.orquestrador.conversation.ConversationService;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.conversation.ConversationTurnRepository;
+import com.orquestrador.conversation.ProposalDescarteNotice;
 import com.orquestrador.conversation.TurnStatus;
 import com.orquestrador.execution.HeartbeatDispatcher;
 import com.orquestrador.execution.WakeupService;
@@ -63,6 +64,8 @@ class PersonaBatonFlowTest {
     private IssueRepository issueRepo;
     @Autowired
     private TeamRepository teams;
+    @Autowired
+    private ProposalDescarteNotice descarteNotice;
 
     /** A fila do dispatcher é GLOBAL no H2 compartilhado: drenar antes/depois isola as ondas. */
     @BeforeEach
@@ -328,6 +331,113 @@ class PersonaBatonFlowTest {
         assertThat(pendentes.get(0).getRequestedByAgentId()).isEqualTo(executorId);
         // nenhum turno novo além do atendido: proposta NÃO é virada de persona
         assertThat(thread(companyId, negocio.getId())).hasSize(1);
+    }
+
+    /**
+     * ADR-0036 (caso C, cinto de emissor): o protocolo do gate é do EXECUTOR — o Questionador
+     * emitindo ```proposta``` (mesmo canônica, shape perfeito) NÃO enche o gate: seria proposta
+     * sem estratégia do Planejador, racional improvisado no menu (A2/A3 furados por dentro).
+     */
+    @Test
+    void propostaDoQuestionadorNaoEncheOGate() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador",
+                "printf '%s\\n' 'Contrato eu mesmo.' '```proposta' "
+                        + "'{\"acao\": \"HIRE_AGENT\", \"alvo\": {\"name\": \"Dev Backend\","
+                        + " \"role\": \"executor\"}, \"resumo\": \"contratar dev backend\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        conversations.postMessage(companyId, negocio.getId(), "contrata um dev backend",
+                ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(approvals.findByCompanyIdAndStatusOrderByRequestedAt(companyId, ApprovalStatus.PENDING))
+                .as("proposta fora do Executor não vira Approval — o caminho é Q→P→E")
+                .isEmpty();
+    }
+
+    /**
+     * ADR-0036 (anti-silêncio): o REPLAY da Prova R3-A — o dono pede contratação direto, o
+     * Questionador inventa o shape (`{"tipo":"contratacao",…}`), o gate fica vazio (fail-soft
+     * intacto)… mas o SILÊNCIO morreu: aviso ANSWERED visível na thread, sem nenhum Run novo.
+     */
+    @Test
+    void shapeInventadoNaoEncheOGateMasAvisaVisivelNaThread() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador",
+                "printf '%s\\n' 'Protocolo a contratação.' '```proposta' "
+                        + "'{\"tipo\": \"contratacao\", \"papel\": \"dev backend\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Prova R3-A");
+        conversations.postMessage(companyId, negocio.getId(), "contrata um dev backend",
+                ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(approvals.findByCompanyIdAndStatusOrderByRequestedAt(companyId, ApprovalStatus.PENDING))
+                .as("deny-by-default intacto: shape fora do contrato não vira Approval")
+                .isEmpty();
+        // O aviso é VISÍVEL (o dono precisa ver o que aconteceu) e já nasce ANSWERED (zero Run).
+        List<ConversationTurn> visiveis = conversations.thread(companyId, negocio.getId());
+        ConversationTurn aviso = visiveis.get(visiveis.size() - 1);
+        assertThat(aviso.getStatus()).isEqualTo(TurnStatus.ANSWERED);
+        assertThat(aviso.getOwnerMessage()).startsWith("Proposta descartada");
+        assertThat(aviso.getCeoReply()).contains("gate");
+        assertThat(dispatcher.dispatchOnce()).as("nenhum run nasce do aviso").isEqualTo(0);
+    }
+
+    /** ADR-0036: o settle reexecutado pelo reaper não duplica o aviso (padrão [gatilho] do caso B). */
+    @Test
+    void avisoDeDescarteEIdempotenteSobSettleReexecutado() {
+        UUID companyId = novaCompany();
+        UUID questionadorId = persona(companyId, "questionador", "CEO Questionador",
+                "printf '%s\\n' \"$ORQ_PROMPT\"");
+        Conversation negocio = conversations.open(companyId, "Negócio");
+        ConversationTurn gatilho = turns.save(new ConversationTurn(UUID.randomUUID(),
+                negocio.getId(), companyId, questionadorId, "contrata um dev backend"));
+
+        descarteNotice.post(gatilho, 1, false, CeoPersona.QUESTIONADOR);
+        descarteNotice.post(gatilho, 1, false, CeoPersona.QUESTIONADOR);
+
+        long avisos = thread(companyId, negocio.getId()).stream()
+                .filter(turno -> ProposalDescarteNotice.isAviso(turno.getOwnerMessage())).count();
+        assertThat(avisos).isEqualTo(1);
+    }
+
+    /**
+     * ADR-0036 × M9: o aviso de descarte NO MEIO do ping-pong não zera a régua de kickbacks —
+     * senão um needs-grilling + proposta quebrada na MESMA resposta giraria para sempre
+     * (cada rodada planta um aviso que "parece o dono de volta").
+     */
+    @Test
+    void avisoDeDescarteNaoZeraAReguaDeKickbacks() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' 'Ainda não dá.' '```needs-grilling' "
+                        + "'{\"lacuna\": \"segue sem resposta\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        for (int i = 0; i < PersonaContinuationPoster.MAX_KICKBACKS_SEGUIDOS; i++) {
+            ConversationTurn kickback = new ConversationTurn(UUID.randomUUID(), negocio.getId(),
+                    companyId, planejadorId, KickbackTurn.ownerMessage(CeoPersona.PLANEJADOR, "lacuna " + i));
+            kickback.answer("re-grelha " + i);
+            turns.save(kickback);
+        }
+        // o aviso plantado no tail (uma rodada descartou proposta) — NÃO é o dono de volta
+        ConversationTurn aviso = new ConversationTurn(UUID.randomUUID(), negocio.getId(), companyId,
+                planejadorId, "Proposta descartada — nada chegou ao gate [gatilho " + UUID.randomUUID() + "]");
+        aviso.answer("1 bloco `proposta` foi descartado");
+        turns.save(aviso);
+        turnoPara(companyId, negocio.getId(), planejadorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.QUESTIONADOR, CeoPersona.PLANEJADOR,
+                        ".orq/conversa/x/dossie.md", "tentar de novo"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        ConversationTurn ultimo = thread(companyId, negocio.getId())
+                .get(thread(companyId, negocio.getId()).size() - 1);
+        assertThat(ultimo.getOwnerMessage())
+                .as("a régua continuou valendo: teto → prossiga, não um novo kickback")
+                .startsWith("[continuação — prossiga");
     }
 
     /** D5: o confirma-antes fica IDLE — resposta sem bloco (a pergunta ao dono) não vira nada. */

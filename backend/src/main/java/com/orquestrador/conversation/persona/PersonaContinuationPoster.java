@@ -2,6 +2,7 @@ package com.orquestrador.conversation.persona;
 
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.conversation.ConversationTurnRepository;
+import com.orquestrador.conversation.ProposalDescarteNotice;
 import com.orquestrador.conversation.TurnStatus;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.handoff.ContinuationSentinel;
@@ -152,7 +153,8 @@ public class PersonaContinuationPoster {
 
     /**
      * Kickbacks seguidos SEM o dono no meio (M9): anda do fim para trás CONTANDO kickbacks e
-     * PULANDO turnos internos (sentinelas de bastão/prossiga/reset); a primeira mensagem que não é
+     * PULANDO turnos internos (sentinelas de bastão/prossiga/reset e o aviso de descarte da
+     * ADR-0036 — plantado pelo sistema, não é o dono de volta); a primeira mensagem que não é
      * do fluxo — o dono de volta na conversa — ZERA a régua. O ping-pong autônomo
      * (P→Q→P→… sem resposta do dono) é exatamente o que acumula.
      */
@@ -162,7 +164,8 @@ public class PersonaContinuationPoster {
             String message = doConv.get(i).getOwnerMessage();
             if (KickbackTurn.isKickback(message)) {
                 count++;
-            } else if (!ContinuationSentinel.isContinuation(message)) {
+            } else if (!ContinuationSentinel.isContinuation(message)
+                    && !ProposalDescarteNotice.isAviso(message)) {
                 break;
             }
         }
@@ -176,7 +179,8 @@ public class PersonaContinuationPoster {
             if (PersonaContinuationSentinel.isProssiga(message)) {
                 return true;
             }
-            if (!ContinuationSentinel.isContinuation(message) && !KickbackTurn.isKickback(message)) {
+            if (!ContinuationSentinel.isContinuation(message) && !KickbackTurn.isKickback(message)
+                    && !ProposalDescarteNotice.isAviso(message)) {
                 return false; // o dono voltou à conversa — régua nova
             }
         }

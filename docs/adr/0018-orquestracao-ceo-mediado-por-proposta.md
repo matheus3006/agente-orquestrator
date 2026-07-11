@@ -92,3 +92,11 @@ O CEO virou **3 personas duráveis** (`agent.persona`, V24): o balcão único re
 escopada do núcleo "o CEO não produz conteúdo" (orquestração sim, execução não; o racional vive na
 ADR-0031 §10). "Delegador puro" segue escopado a ENTREGÁVEIS (hotfix G1). O canal `` ```proposta ``
 e o gate T3 seguem intocados; o menu do hire ganhou a mão soberana no MOTOR (A4).
+
+## Forward-ref (2026-07-11 — ADR-0036, caso C direto)
+O contrato do descarte foi EMENDADO: *"malformado é descartado (o texto segue visível na thread
+para o dono cobrar)"* provou-se insuficiente na Prova R3-A (gate vazio silencioso). O descarte
+segue fail-soft (deny-by-default intacto), mas deixa de ser silencioso: WARN no log + aviso
+VISÍVEL na thread (`ProposalDescarteNotice`). A cerca do ` ```proposta ` agora só vale em
+**coluna 0** (simetria com o scanner de personas) e ganhou **cinto de emissor** (só Executor/CEO
+legado protocolam o gate). Racional completo na ADR-0036.

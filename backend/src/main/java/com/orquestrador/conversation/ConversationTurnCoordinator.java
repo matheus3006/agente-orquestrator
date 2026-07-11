@@ -8,6 +8,8 @@ import com.orquestrador.governance.approval.ProposalScanner;
 import com.orquestrador.handoff.HandoffNote;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,8 @@ import java.util.UUID;
 @Service
 public class ConversationTurnCoordinator {
 
+    private static final Logger log = LoggerFactory.getLogger(ConversationTurnCoordinator.class);
+
     private final ConversationTurnRepository turns;
     private final ConversationRepository conversations;
     private final LiveStateProjector liveState;
@@ -33,11 +37,13 @@ public class ConversationTurnCoordinator {
     private final ApprovalService approvals;
     private final AgentRepository agents;
     private final PersonaBatonRouter personaRouter;
+    private final ProposalDescarteNotice descarteNotice;
 
     public ConversationTurnCoordinator(ConversationTurnRepository turns, ConversationRepository conversations,
                                        LiveStateProjector liveState, WakeupService wakeups,
                                        ProposalScanner proposalScanner, ApprovalService approvals,
-                                       AgentRepository agents, PersonaBatonRouter personaRouter) {
+                                       AgentRepository agents, PersonaBatonRouter personaRouter,
+                                       ProposalDescarteNotice descarteNotice) {
         this.turns = turns;
         this.conversations = conversations;
         this.liveState = liveState;
@@ -46,6 +52,7 @@ public class ConversationTurnCoordinator {
         this.approvals = approvals;
         this.agents = agents;
         this.personaRouter = personaRouter;
+        this.descarteNotice = descarteNotice;
     }
 
     /**
@@ -92,17 +99,42 @@ public class ConversationTurnCoordinator {
         ConversationTurn turno = turns.findById(turnId).orElseThrow();
         turno.answer(reply);
         turns.save(turno);
-        // O canal de PROPOSTA é a SAÍDA do CEO (ADR-0018): os blocos ```proposta da resposta
-        // viram Approval PENDING ancorada nesta conversa/run. Parse determinístico; malformado
-        // é descartado (segue legível na thread para o dono cobrar).
-        for (ProposalScanner.Proposal proposal : proposalScanner.scan(reply)) {
-            approvals.propose(turno.getCompanyId(), turno.getAgentId(), turno.getConversationId(),
-                    turno.getRunId(), proposal);
-        }
+        entregarPropostasAoGate(turno, reply);
         // ADR-0031 (M5/D6): a virada de persona é DETECÇÃO DE ENTREGÁVEL na mesma saída — o
         // scanner-irmão roteia ```handoff/```needs-grilling; o ```proposta acima segue pro T3.
         personaRouter.afterCeoTurnAnswered(turno, reply);
         drainQueue(turno);
+    }
+
+    /**
+     * O canal de PROPOSTA é a SAÍDA do CEO (ADR-0018, emendada pela ADR-0036): blocos ```proposta
+     * viram Approval PENDING ancorada na conversa/run. Cinto de emissor (espelho do ```correcao```):
+     * só o EXECUTOR (protocolo 1:1 com a estratégia, A2) e o CEO legado (persona nula, caminho
+     * pré-Fatia 2) propõem — Questionador/Planejador emitindo é proposta SEM estratégia. Todo
+     * descarte (cinto ou shape fora do contrato) AVISA o dono na thread — anti-silêncio.
+     */
+    private void entregarPropostasAoGate(ConversationTurn turno, String reply) {
+        CeoPersona emissor = agents.findById(turno.getAgentId())
+                .flatMap(agent -> CeoPersona.fromDbValue(agent.getPersona()))
+                .orElse(null);
+        boolean emissorAutorizado = emissor == null || emissor == CeoPersona.EXECUTOR;
+        ProposalScanner.Scan colheita = proposalScanner.scan(reply);
+        if (emissorAutorizado) {
+            for (ProposalScanner.Proposal proposal : colheita.propostas()) {
+                approvals.propose(turno.getCompanyId(), turno.getAgentId(), turno.getConversationId(),
+                        turno.getRunId(), proposal);
+            }
+        } else if (!colheita.propostas().isEmpty()) {
+            log.warn("proposta: persona '{}' emitiu {} bloco(s) ```proposta``` — só o Executor"
+                    + " protocola o gate (descartado, fail-soft)", emissor.dbValue(),
+                    colheita.propostas().size());
+        }
+        boolean emissorBarrado = !emissorAutorizado && !colheita.propostas().isEmpty();
+        int descartadas = colheita.descartadas()
+                + (emissorAutorizado ? 0 : colheita.propostas().size());
+        if (descartadas > 0) {
+            descarteNotice.post(turno, descartadas, emissorBarrado, emissor);
+        }
     }
 
     @Transactional
@@ -181,8 +213,11 @@ public class ConversationTurnCoordinator {
                 + " da proposta (por que essas áreas/agentes, citando o dossiê).\n"
                 // Caso B (ADR-0034): correção de task ENTREGUE — payload mínimo deliberado (D1/D3):
                 // as palavras do dono NUNCA viajam no bloco; o backend copia o turno byte a byte.
+                // A prosa não nomeia destinatário (ADR-0036, achado do caso B: o opus chutou
+                // "encaminho pro Feynman" enquanto o registro roteou, correto, à arquiteta).
                 + "- Correção de task ENTREGUE (ex.: \"a task #12 ficou ruim — ...\"): responda"
-                + " confirmando o encaminhamento e emita o bloco `correcao` com SÓ o número da task"
+                + " confirmando o encaminhamento — SEM nomear time/agente destinatário, quem roteia"
+                + " é o sistema; cite só a #N — e emita o bloco `correcao` com SÓ o número da task"
                 + " — NUNCA transcreva as palavras do dono (o sistema copia a mensagem do turno"
                 + " byte a byte para a task corretiva). Emita o bloco no turno em que a reclamação"
                 + " está COMPLETA; se veio espalhada em vários turnos, peça ao dono: \"me resume"
@@ -190,6 +225,15 @@ public class ConversationTurnCoordinator {
                 + "  ```correcao\n"
                 + "  {\"issue\": <o número da task, ex.: 12>}\n"
                 + "  ```\n"
+                // Caso C (ADR-0036): contratação pedida DIRETO ao balcão — o furo da Prova R3-A:
+                // sem trilho, o motor inventou um shape de proposta que o gate descartou em silêncio.
+                + "- Pedido de contratação EXPLÍCITO do dono (ex.: \"contrata um dev backend e um"
+                + " designer\"): NUNCA emita bloco `proposta` — o protocolo do gate é papel do"
+                + " Executor, depois da estratégia do Planejador. Registre o pedido no dossiê"
+                + " (palavras EXATAS do dono) e emita o `handoff` para o `planejador` NO MESMO"
+                + " turno: o pedido explícito JÁ É o \"sim\" — não re-pergunte \"posso seguir?\"."
+                + " Só pergunte antes (UMA vez) se houver lacuna GRANDE: sem ela você chutaria o"
+                + " negócio errado.\n"
                 + blocoBlocosTipados();
     }
 
@@ -222,7 +266,8 @@ public class ConversationTurnCoordinator {
                 + "- PROTOCOLE o pedido de contratação SEM MEXER (1:1 com a estratégia do Planejador):"
                 + " para CADA agente proposto, emita um bloco `proposta` de HIRE_AGENT carregando"
                 + " name, role, o motor sugerido (adapterType/model/effort) e o campo `racional`"
-                + " estruturado (skills + motor + porquê) — é o que o dono lê no menu do gate.\n"
+                + " estruturado (skills + motor + porquê) — é o que o dono lê no menu do gate."
+                + " A cerca do bloco vai em COLUNA 0 (indentado é citação, não emissão).\n"
                 + "  ```proposta\n"
                 + "  {\"acao\": \"HIRE_AGENT\", \"alvo\": {\"name\": \"<nome>\", \"role\": \"<role>\","
                 + " \"adapterType\": \"<motor>\", \"model\": \"<model>\", \"effort\": \"<effort>\","
