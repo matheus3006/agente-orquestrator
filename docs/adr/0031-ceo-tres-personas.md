@@ -113,4 +113,6 @@ LLM — ADR-0019): é o que o Planejador lê para propor times.
 ADR-0017 (arquiteto-de-domínio sobrevive; forward-ref) · ADR-0018 (balcão único; "delegador puro"
 escopado a entregáveis; forward-ref) · ADR-0019 (M8 determinístico) · ADR-0020 (grill do gate
 intocado) · ADR-0030 (transporte de continuação; sentinela; travas-espelho) · ADR-0032 (as skills
-das personas chegam ao codex por aquele seam) · ADR-0033 (o #N que o dono usa no caso B futuro).
+das personas chegam ao codex por aquele seam) · ADR-0033 (o #N que o dono usa no caso B futuro) ·
+**ADR-0035** (a recusa no gate volta ao proponente pelo MESMO poster de continuação — o 2º
+consumidor do transporte M6, fora do settle; a divisão de personas segue intocada).

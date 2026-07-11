@@ -39,6 +39,8 @@ const SURFACES: ReadonlyArray<{
   { id: "mission-control", label: "Mission Control", href: "/", Icon: Radar },
   { id: "issues", label: "Issues", href: "/issues", Icon: Target },
   { id: "reviews", label: "Review", href: "/reviews", Icon: ShieldCheck },
+  // ADR-0035: a fila do gate agregada por company — o lote vive aqui, não na thread.
+  { id: "approvals", label: "Aprovações", href: "/approvals", Icon: Stamp },
   { id: "agents", label: "Agents", href: "/agents", Icon: Bot },
   // F.10 (ADR-0023 §7): a superfície de supervisão dos servidores de preview.
   { id: "servers", label: "Servidores", href: "/servers", Icon: ServerCog },

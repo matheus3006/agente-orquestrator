@@ -111,6 +111,27 @@ public class PersonaContinuationPoster {
         return true;
     }
 
+    /**
+     * O SEGUNDO gatilho do transporte (ADR-0035, D6): a recusa no gate volta à conversa de ORIGEM,
+     * endereçada ao agente que PROPÔS (por id — vale para persona e CEO legado). Diferente do
+     * needs-grilling, o gatilho é a MÃO DO DONO na API (não um settle reexecutável): sem guard de
+     * idempotência e sem entrar na régua M9 — o dono na conversa é exatamente o que ZERA a régua.
+     */
+    @Transactional
+    public boolean postRecusaDoGate(UUID companyId, UUID conversationId, UUID proponenteAgentId,
+                                    String mensagem) {
+        Agent proponente = agents.findById(proponenteAgentId)
+                .filter(agent -> companyId.equals(agent.getCompanyId()))
+                .orElse(null);
+        if (proponente == null) {
+            log.warn("recusa-gate: proponente {} não existe mais na company {} — kickback descartado"
+                    + " (fail-soft)", proponenteAgentId, companyId);
+            return false;
+        }
+        postTurno(companyId, conversationId, proponente, mensagem, "recusa-gate");
+        return true;
+    }
+
     private void postTurno(UUID companyId, UUID conversationId, Agent alvo, String ownerMessage,
                            String reasonPrefix) {
         ConversationTurn turno = turns.save(new ConversationTurn(

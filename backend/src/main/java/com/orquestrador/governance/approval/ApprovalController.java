@@ -1,9 +1,12 @@
 package com.orquestrador.governance.approval;
 
+import com.orquestrador.common.error.BadRequestException;
 import com.orquestrador.common.security.Actor;
 import com.orquestrador.common.security.CompanyAccessGuard;
+import com.orquestrador.governance.approval.ApprovalController.BatchDecisionResponse.SkippedItem;
 import com.orquestrador.governance.approval.ApprovalService.DecideOutcome;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -31,11 +34,16 @@ import java.util.UUID;
 public class ApprovalController {
 
     private final ApprovalService approvals;
+    private final ApprovalBatchService batch;
     private final CompanyAccessGuard guard;
+    private final RecusaKickback recusaKickback;
 
-    public ApprovalController(ApprovalService approvals, CompanyAccessGuard guard) {
+    public ApprovalController(ApprovalService approvals, ApprovalBatchService batch,
+                              CompanyAccessGuard guard, RecusaKickback recusaKickback) {
         this.approvals = approvals;
+        this.batch = batch;
         this.guard = guard;
+        this.recusaKickback = recusaKickback;
     }
 
     @GetMapping
@@ -60,12 +68,47 @@ public class ApprovalController {
                 request.adapterType(), request.model(), request.effort());
         DecideOutcome outcome = approvals.decide(companyId, approvalId, request.decision(),
                 request.racional(), request.reason(), actor.type(), actor.id(), engine);
+        // D15 (ADR-0035): recusa commitada VOLTA ao proponente na conversa de origem. O gancho
+        // fica no CALLER (não no decide) de propósito: o lote agrega por conversa antes de
+        // postar (D7) — decide() por item postando quebraria a agregação.
+        if (outcome instanceof DecideOutcome.Committed committed
+                && request.decision() == ApprovalDecision.REJECT) {
+            recusaKickback.notificarRecusaIndividual(committed.approval());
+        }
         return switch (outcome) {
             case DecideOutcome.Grilled grilled -> ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                     .body(new GrilledResponse(true, grilled.probe(), grilled.rounds()));
             case DecideOutcome.Committed committed ->
                     ResponseEntity.ok(ApprovalResponse.from(committed.approval()));
         };
+    }
+
+    /**
+     * O lote (ADR-0035, D10): decisão + racional + motivo compartilhados, observação opcional
+     * por item (D8). SEM trio de motor de propósito (D12) — motor errado num HIRE_AGENT tem
+     * consequência cara; o escape é decidir aquele item na tela individual, onde A4 já vale.
+     */
+    @PostMapping("/batch-decision")
+    public BatchDecisionResponse decideBatch(@PathVariable UUID companyId,
+                                             @RequestBody @Valid BatchDecisionRequest request) {
+        guard.assertBoardMember(companyId);
+        if (request.decision() == ApprovalDecision.REJECT
+                && (request.motivo() == null || request.motivo().isBlank())) {
+            throw new BadRequestException(
+                    "Recusa em lote exige o motivo comum — e o kickback ao CEO que o carrega (D8)");
+        }
+        Actor actor = guard.currentActor();
+        ApprovalBatchService.BatchOutcome outcome = batch.decideBatch(companyId, request.decision(),
+                request.racional(), request.motivo(),
+                request.items().stream()
+                        .map(item -> new ApprovalBatchService.Item(item.approvalId(), item.observacao()))
+                        .toList(),
+                actor.type(), actor.id());
+        return new BatchDecisionResponse(outcome.decididas().size(),
+                outcome.puladas().stream()
+                        .map(pulada -> new SkippedItem(pulada.approvalId(), pulada.motivo()))
+                        .toList(),
+                outcome.decididas().stream().map(ApprovalResponse::from).toList());
     }
 
     /** O trio adapterType/model/effort é o motor editado pelo dono no menu do hire (A4). */
@@ -79,6 +122,21 @@ public class ApprovalController {
 
     /** O 422 do grill: o commit NÃO aconteceu; o probe é a pergunta do escriba-que-insiste. */
     public record GrilledResponse(boolean grilled, String probe, int rounds) {
+    }
+
+    public record BatchDecisionRequest(@NotNull ApprovalDecision decision,
+                                       @Size(max = 4000) String racional,
+                                       @Size(max = 2000) String motivo,
+                                       @NotEmpty List<@Valid BatchItem> items) {
+        public record BatchItem(@NotNull UUID approvalId, @Size(max = 2000) String observacao) {
+        }
+    }
+
+    /** A contagem do lote sai do loop de graça (D9): decididas + puladas com o porquê de cada uma. */
+    public record BatchDecisionResponse(int decided, List<SkippedItem> skipped,
+                                        List<ApprovalResponse> results) {
+        public record SkippedItem(UUID approvalId, String motivo) {
+        }
     }
 
     public record ApprovalResponse(UUID id, UUID requestedByAgentId, UUID conversationId, UUID runId,

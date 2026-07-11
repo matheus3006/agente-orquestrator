@@ -947,6 +947,41 @@ export async function decideApproval(
   return { kind: "committed", approval: body };
 }
 
+/* ---------- approvals em lote (ADR-0035, D8/D9/D10) ---------- */
+
+export interface BatchDecisionItem {
+  approvalId: string;
+  /** D8: detalhe opcional do dono sobre ESTE item — aparece distinto no kickback agregado. */
+  observacao?: string;
+}
+
+export interface BatchDecisionInput {
+  decision: "APPROVE" | "REJECT";
+  /** O porquê compartilhado do lote — o grill barra item a item quando ausente/confabulado. */
+  racional?: string;
+  /** O motivo comum (D8) — obrigatório no REJECT; é o que o kickback leva ao CEO. */
+  motivo?: string;
+  items: BatchDecisionItem[];
+}
+
+// A contagem sai do loop de graça (D9): pulada NÃO é erro — item já decidido,
+// grelhado pelo probe ou com alvo quebrado fica na fila, resolvível depois.
+export interface BatchDecisionOutcome {
+  decided: number;
+  skipped: Array<{ approvalId: string; motivo: string }>;
+  results: Approval[];
+}
+
+export function batchDecideApprovals(
+  companyId: string,
+  input: BatchDecisionInput,
+): Promise<BatchDecisionOutcome> {
+  return apiFetch<BatchDecisionOutcome>(`/api/companies/${companyId}/approvals/batch-decision`, {
+    method: "POST",
+    body: input,
+  });
+}
+
 /* ---------- memória: carta + report por-Issue (Teams T.3, ADR-0019) ---------- */
 
 /** A carta corrente — a MESMA projeção que o CEO carrega como CLAUDE.md. 404 = sem direção ainda. */

@@ -50,3 +50,21 @@ pkill -f "orquestrador-0.0.1-SNAPSHOT.jar --server.port=18081"; docker stop <fat
   vivo, NÃO use `--spring.profiles.active=test`; use o default + Postgres efêmero.
 - Simular "outro nó levou o run": `update heartbeat_run set lease_owner='node-intruso' where id=…`
   no pg efêmero, com o run RUNNING.
+
+## Dirigir CONVERSA determinística (validado 2026-07-10, fatia do lote)
+
+- Company nova auto-semeia as 3 personas CEO (V25) e o balcão resolve para o **Questionador**
+  com motor claude REAL — mensagem de conversa vira run de LLM de verdade. Para dirigir
+  determinístico: no pg efêmero, `update agent set adapter_type='process',
+  runtime_command='cat <arquivo-reply>', execution_target='LOCAL', model=null, effort=null
+  where id='<questionador>'` — a resposta do turno vira o CONTEÚDO do arquivo (reescreva-o
+  entre turnos para variar; blocos ```proposta``` em coluna 0 viram approvals PENDING).
+- O PATCH /agents/{id} só troca o trio do motor, NÃO o runtime_command — daí o update direto.
+
+## UI ao vivo contra a instância descartável
+
+O checkout compartilhado pode estar em OUTRA branch (sessões paralelas): rode o front de um
+`git worktree add <scratchpad>/wt <branch>` + `cp -Rc frontend/node_modules` (clonefile APFS;
+symlink quebra o Turbopack) + `.env.local` do worktree com
+`BACKEND_ORIGIN=http://localhost:18081` e o board-user de dev. `next dev -p 13000` para não
+colidir com o :3000.

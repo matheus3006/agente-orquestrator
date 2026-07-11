@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch, decideApproval } from "./api";
+import { ApiError, apiFetch, batchDecideApprovals, decideApproval } from "./api";
 
 // O fetcher é o ÚNICO ponto de auth e de tradução de erro do app (ADR-0013):
 // X-Board-User entra aqui (trocar por cookie = tocar 1 arquivo) e o formato
@@ -141,5 +141,50 @@ describe("decideApproval (o 422 do grill é RETORNO, não exceção — ADR-0020
 
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).status).toBe(409);
+  });
+});
+
+describe("batchDecideApprovals (o lote do gate — ADR-0035/D10)", () => {
+  it("POSTa decisão + racional + motivo + itens e devolve a contagem do loop", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        decided: 2,
+        skipped: [{ approvalId: "ap3", motivo: "Approval ja decidida (APPROVED): ap3" }],
+        results: [{ id: "ap1", status: "REJECTED" }, { id: "ap2", status: "REJECTED" }],
+      }),
+    );
+
+    const outcome = await batchDecideApprovals("c1", {
+      decision: "REJECT",
+      racional: "time acima do caixa",
+      motivo: "sem orcamento neste trimestre",
+      items: [{ approvalId: "ap1" }, { approvalId: "ap2", observacao: "esse menos ainda" }],
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("http://backend-teste:8080/api/companies/c1/approvals/batch-decision");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      decision: "REJECT",
+      racional: "time acima do caixa",
+      motivo: "sem orcamento neste trimestre",
+      items: [{ approvalId: "ap1" }, { approvalId: "ap2", observacao: "esse menos ainda" }],
+    });
+    expect(outcome.decided).toBe(2);
+    expect(outcome.skipped).toHaveLength(1);
+  });
+
+  it("400 (REJECT sem motivo) segue o contrato de erro da casa: ApiError", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(400, { error: "bad_request", message: "Recusa em lote exige o motivo comum" }),
+    );
+
+    const failure = await batchDecideApprovals("c1", {
+      decision: "REJECT",
+      items: [{ approvalId: "ap1" }],
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as ApiError).status).toBe(400);
   });
 });

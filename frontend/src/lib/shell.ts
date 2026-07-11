@@ -1,9 +1,22 @@
 // Helpers puros do shell (F.2): a sidebar deriva TUDO daqui — nenhuma
 // lógica de rota ou de avatar vive em componente.
 
-export type SurfaceId = "mission-control" | "issues" | "reviews" | "agents" | "servers" | "moldes";
+export type SurfaceId =
+  | "mission-control"
+  | "issues"
+  | "reviews"
+  | "approvals"
+  | "agents"
+  | "servers"
+  | "moldes";
 
-const SURFACE_SEGMENTS: ReadonlySet<string> = new Set(["issues", "reviews", "agents", "servers"]);
+const SURFACE_SEGMENTS: ReadonlySet<string> = new Set([
+  "issues",
+  "reviews",
+  "approvals",
+  "agents",
+  "servers",
+]);
 
 /**
  * Superfície ativa a partir do pathname: o 2º segmento (pós companySlug)
