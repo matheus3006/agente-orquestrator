@@ -33,6 +33,10 @@ class ApprovalHttpTest {
     private ObjectMapper om;
     @Autowired
     private ApprovalService approvals;
+    @Autowired
+    private com.orquestrador.org.team.TeamRepository teams;
+    @Autowired
+    private com.orquestrador.org.agent.AgentRepository agents;
 
     private UUID idFrom(String json) throws Exception {
         return UUID.fromString(om.readTree(json).get("id").asText());
@@ -53,10 +57,20 @@ class ApprovalHttpTest {
                         .content("{\"name\":\"Atlas\",\"role\":\"ceo\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
 
+        // ADR-0037 (D2): o alvo carrega o time — o APPROVE resolve time→arquiteto (nasce com dono).
+        com.orquestrador.org.team.Team time = teams.save(new com.orquestrador.org.team.Team(
+                UUID.randomUUID(), companyId, "Produto", "Nicho"));
+        com.orquestrador.org.agent.Agent ana = new com.orquestrador.org.agent.Agent(
+                UUID.randomUUID(), companyId, "Ana Arquiteta", "arquiteto", null);
+        ana.assignTeam(time.getId());
+        time.designarArquiteto(agents.save(ana).getId());
+        teams.save(time);
+
         // Semeia uma proposta de DIREÇÃO pelo serviço (o caminho por-Run já é coberto no gate test).
         UUID approvalId = approvals.propose(companyId, ceoId, null, null,
                 new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
-                        "{\"title\":\"Focar no nicho dental\"}", "Focar no nicho dental",
+                        "{\"dominio\":\"Produto\",\"foco\":\"Nicho\","
+                                + "\"title\":\"Focar no nicho dental\"}", "Focar no nicho dental",
                         "direcao-roadmap")).getId();
 
         String base = "/api/companies/" + companyId + "/approvals";

@@ -88,6 +88,24 @@ public class IssueService {
     }
 
     /**
+     * A issue da 2ª porta (ADR-0037, D2/M9): o CREATE_ISSUE aprovado no gate nasce pelo MESMO
+     * chokepoint (lock da company + MAX+1) e JÁ COM DONO — o assignee pré-setado é o arquiteto
+     * do time-alvo, resolvido pelo caller ({@code ApprovalService}). Espelho do
+     * {@link #createCorretiva}, sem a ligação de correção.
+     */
+    @Transactional
+    public Issue createAtribuida(UUID companyId, String title, String description,
+                                 Integer riskLevel, UUID assigneeAgentId) {
+        companies.findByIdForUpdate(companyId)
+                .orElseThrow(() -> new NotFoundException("Company nao encontrada: " + companyId));
+        int seq = issues.maxSeqByCompany(companyId) + 1;
+        Issue issue = new Issue(UUID.randomUUID(), companyId, seq, title, description,
+                riskLevel != null ? riskLevel : 1);
+        issue.nascerAtribuida(assigneeAgentId);
+        return issues.save(issue);
+    }
+
+    /**
      * Checkout atomico. Gera um runId se nao vier (na fatia 1 nao ha heartbeat ainda;
      * a partir da fatia 2 o run vem do motor de heartbeat).
      */

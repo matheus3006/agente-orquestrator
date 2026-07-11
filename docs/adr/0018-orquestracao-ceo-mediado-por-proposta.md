@@ -100,3 +100,10 @@ segue fail-soft (deny-by-default intacto), mas deixa de ser silencioso: WARN no 
 VISÍVEL na thread (`ProposalDescarteNotice`). A cerca do ` ```proposta ` agora só vale em
 **coluna 0** (simetria com o scanner de personas) e ganhou **cinto de emissor** (só Executor/CEO
 legado protocolam o gate). Racional completo na ADR-0036.
+
+## Forward-ref (2026-07-11 — ADR-0037, absorção de issues)
+O enum FECHADO `ApprovalActionType` foi alargado DELIBERADAMENTE com a 4ª ação `CREATE_TEAM`
+(time + arquiteto atômico, retoma da absorção pós-approve). `CREATE_ISSUE` passou a carregar o
+time no alvo e a nascer com assignee = arquiteto (invariante do dono: nada que o CEO cria nasce
+sem dono). A issue criada pelo dono no board dispara a ABSORÇÃO (board→conversa — o transporte
+inverso da 0034); issue = conversa direcionada (ancoragem 1:1). Racional completo na ADR-0037.

@@ -17,6 +17,11 @@ import com.orquestrador.memory.DecisionTipo;
 import com.orquestrador.memory.RacionalTipo;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentHireService;
+import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.team.Team;
+import com.orquestrador.org.team.TeamRepository;
+import com.orquestrador.org.team.TeamService;
+import com.orquestrador.work.issue.AbsorcaoDeIssueRouter;
 import com.orquestrador.work.issue.Issue;
 import com.orquestrador.work.issue.IssueService;
 import org.springframework.stereotype.Service;
@@ -55,12 +60,18 @@ public class ApprovalService {
     private final IssueService issues;
     private final WakeupService wakeups;
     private final SpawnLineageGuard lineageGuard;
+    private final TeamRepository teams;
+    private final AgentRepository agents;
+    private final TeamService teamService;
+    private final AbsorcaoDeIssueRouter absorcoes;
 
     public ApprovalService(ApprovalRepository approvals, RacionalPolicy racionalPolicy,
                            DecisionLog decisionLog, CompanyMemoryConsolidator consolidator,
                            ActivityLogService activityLog, AgentHireService hires,
                            IssueService issues, WakeupService wakeups,
-                           SpawnLineageGuard lineageGuard) {
+                           SpawnLineageGuard lineageGuard, TeamRepository teams,
+                           AgentRepository agents, TeamService teamService,
+                           AbsorcaoDeIssueRouter absorcoes) {
         this.approvals = approvals;
         this.racionalPolicy = racionalPolicy;
         this.decisionLog = decisionLog;
@@ -70,6 +81,10 @@ public class ApprovalService {
         this.issues = issues;
         this.wakeups = wakeups;
         this.lineageGuard = lineageGuard;
+        this.teams = teams;
+        this.agents = agents;
+        this.teamService = teamService;
+        this.absorcoes = absorcoes;
     }
 
     /**
@@ -209,10 +224,17 @@ public class ApprovalService {
                 if (title == null) {
                     throw new ConflictException("Proposta de issue sem title: " + approval.getId());
                 }
-                Issue issue = issues.create(approval.getCompanyId(), title,
+                // ADR-0037 (D2): a lacuna histórica fechada — o alvo carrega o TIME e a issue
+                // nasce com assignee = arquiteto ("nada que o CEO cria nasce sem dono").
+                // Corrente quebrada → 409 acionável; conserto = reject + nova proposta, ou o
+                // dono cria a issue no board (cai na absorção, D1).
+                Agent arquiteto = arquitetoDoTimeAlvo(approval, alvo);
+                Issue issue = issues.createAtribuida(approval.getCompanyId(), title,
                         textOrNull(alvo, "description"),
-                        alvo.path("riskLevel").isInt() ? alvo.path("riskLevel").asInt() : null);
+                        alvo.path("riskLevel").isInt() ? alvo.path("riskLevel").asInt() : null,
+                        arquiteto.getId());
                 detail.put("issueId", issue.getId());
+                detail.put("assigneeAgentId", arquiteto.getId());
             }
             case WAKEUP_AGENT -> {
                 UUID agentId = uuidOrNull(alvo, "agentId");
@@ -228,7 +250,70 @@ public class ApprovalService {
                         lineageGuard.spawnLineageOf(approval.getRunId(), approval.getRequestedByAgentId()));
                 detail.put("runId", outcome.runId());
             }
+            case CREATE_TEAM -> {
+                // ADR-0037 (D7): time + ARQUITETO atomicamente — o time do gate nasce com
+                // arquiteto por construção (o invariante do dono, §G.1, honrado no caminho NOVO).
+                String dominio = textOrNull(alvo, "dominio");
+                String foco = textOrNull(alvo, "foco");
+                JsonNode arquitetoAlvo = alvo.path("arquiteto");
+                String nomeArquiteto = textOrNull(arquitetoAlvo, "name");
+                String roleArquiteto = textOrNull(arquitetoAlvo, "role");
+                if (dominio == null || foco == null || nomeArquiteto == null || roleArquiteto == null) {
+                    throw new ConflictException("Proposta de time sem dominio/foco ou sem o"
+                            + " arquiteto (name/role) — todo time nasce com arquiteto (ADR-0037): "
+                            + approval.getId());
+                }
+                Team time = teamService.create(approval.getCompanyId(), dominio, foco);
+                // O trio de motor do arquiteto respeita a mão soberana do dono no menu (A4).
+                EngineOverride doDono = engineOverride == null ? EngineOverride.none() : engineOverride;
+                Agent arquiteto = hires.hire(approval.getCompanyId(), new AgentHireService.HireCommand(
+                                nomeArquiteto, roleArquiteto, null,
+                                preferNonBlank(doDono.adapterType(), textOrNull(arquitetoAlvo, "adapterType")),
+                                null, null,
+                                preferNonBlank(doDono.model(), textOrNull(arquitetoAlvo, "model")),
+                                preferNonBlank(doDono.effort(), textOrNull(arquitetoAlvo, "effort")),
+                                uuidOrNull(arquitetoAlvo, "roleTemplateVersionId"),
+                                approval.getRequestedByAgentId()),
+                        actorType, actorId);
+                teamService.assignAgent(approval.getCompanyId(), arquiteto.getId(), time.getId());
+                teamService.setArquiteto(approval.getCompanyId(), time.getId(), arquiteto.getId());
+                detail.put("teamId", time.getId());
+                detail.put("hiredAgentId", arquiteto.getId());
+                // Retoma automática (D7): o card nasceu ancorado na conversa da issue → o
+                // Planejador recebe o bastão "o time existe; retome a #N" na MESMA tx.
+                if (approval.getConversationId() != null) {
+                    absorcoes.retomarAposCreateTeam(approval.getCompanyId(),
+                            approval.getConversationId(), time);
+                }
+            }
         }
+    }
+
+    /**
+     * A corrente time→arquiteto do alvo (ADR-0037, D2/M9): {@code dominio}/{@code foco} apontam
+     * o time; o arquiteto designado é o dono do que nasce. Cada elo vazio é um 409 ACIONÁVEL —
+     * o dispatch roda na tx do decide, então a Approval segue PENDING intacta.
+     */
+    private Agent arquitetoDoTimeAlvo(Approval approval, JsonNode alvo) {
+        String dominio = textOrNull(alvo, "dominio");
+        String foco = textOrNull(alvo, "foco");
+        if (dominio == null || foco == null) {
+            throw new ConflictException("Proposta de issue sem time (dominio/foco) — nada que o"
+                    + " CEO cria nasce sem dono (ADR-0037): " + approval.getId());
+        }
+        Team time = teams.findByCompanyIdAndDominioAndFoco(approval.getCompanyId(), dominio, foco)
+                .orElseThrow(() -> new ConflictException("O time " + dominio + " / " + foco
+                        + " nao existe nesta company — rejeite e proponha de novo com um time"
+                        + " existente, ou crie o time antes: " + approval.getId()));
+        UUID arquitetoId = time.getArquitetoAgentId();
+        if (arquitetoId == null) {
+            throw new ConflictException("O time " + dominio + " / " + foco + " esta sem arquiteto"
+                    + " — designe um no board antes de aprovar: " + approval.getId());
+        }
+        return agents.findById(arquitetoId)
+                .orElseThrow(() -> new ConflictException("O arquiteto do time " + dominio + " / "
+                        + foco + " nao existe mais no quadro — designe outro antes de aprovar: "
+                        + approval.getId()));
     }
 
     private static JsonNode parseAlvo(Approval approval) {

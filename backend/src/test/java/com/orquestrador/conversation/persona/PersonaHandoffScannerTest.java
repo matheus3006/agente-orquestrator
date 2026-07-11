@@ -107,6 +107,47 @@ class PersonaHandoffScannerTest {
                 .as("o exemplo INDENTADO no prompt do Questionador nunca dispara").isEmpty();
     }
 
+    /**
+     * O 4º irmão (absorção, ADR-0037/M3 — formato proposto ao dono, veto pendente): o Planejador
+     * tria a issue órfã do board e aponta o TIME (nunca pessoa) por {@code dominio}/{@code foco}
+     * SEPARADOS — nunca "Dev / Landing" numa string (dominio/foco são texto livre e podem conter
+     * "/"). O {@code racional} é obrigatório: vira a evidência da Decision e a confirmação
+     * visível (G1/G6 — racional invisível nunca mais).
+     */
+    @Test
+    void absorcaoCanonicaCarregaIssueTimeERacional() {
+        String reply = "Triei a #7.\n\n```absorcao\n{\"issue\": 7, \"dominio\": \"Dev\","
+                + " \"foco\": \"Landing\", \"racional\": \"é trabalho de frontend\"}\n```\n";
+
+        List<PersonaHandoffScanner.Route> routes = scanner.scan(reply);
+
+        assertThat(routes).hasSize(1);
+        PersonaHandoffScanner.Absorcao absorcao = (PersonaHandoffScanner.Absorcao) routes.get(0);
+        assertThat(absorcao.issue()).isEqualTo(7);
+        assertThat(absorcao.dominio()).isEqualTo("Dev");
+        assertThat(absorcao.foco()).isEqualTo("Landing");
+        assertThat(absorcao.racional()).isEqualTo("é trabalho de frontend");
+    }
+
+    /** Fail-soft do absorcao: malformado, campo faltando, N inválido ou cerca indentada = nada. */
+    @Test
+    void absorcaoMalformadaCampoFaltandoOuIndentadaEDescartada() {
+        assertThat(scanner.scan("```absorcao\nisto não é json\n```")).isEmpty();
+        assertThat(scanner.scan("```absorcao\n{\"issue\": \"sete\", \"dominio\": \"Dev\","
+                + " \"foco\": \"Landing\", \"racional\": \"r\"}\n```")).isEmpty();
+        assertThat(scanner.scan("```absorcao\n{\"issue\": 0, \"dominio\": \"Dev\","
+                + " \"foco\": \"Landing\", \"racional\": \"r\"}\n```")).isEmpty();
+        assertThat(scanner.scan("```absorcao\n{\"issue\": 7, \"foco\": \"Landing\","
+                + " \"racional\": \"r\"}\n```")).as("sem dominio").isEmpty();
+        assertThat(scanner.scan("```absorcao\n{\"issue\": 7, \"dominio\": \"Dev\","
+                + " \"racional\": \"r\"}\n```")).as("sem foco").isEmpty();
+        assertThat(scanner.scan("```absorcao\n{\"issue\": 7, \"dominio\": \"Dev\","
+                + " \"foco\": \"Landing\"}\n```")).as("sem racional").isEmpty();
+        assertThat(scanner.scan("O formato é:\n  ```absorcao\n  {\"issue\": 7, \"dominio\": \"Dev\","
+                + " \"foco\": \"Landing\", \"racional\": \"r\"}\n  ```\n"))
+                .as("o exemplo INDENTADO no prompt do Planejador nunca dispara").isEmpty();
+    }
+
     @Test
     void blocosValidosSaemNaOrdemDoTexto() {
         String reply = "```needs-grilling\n{\"lacuna\": \"primeira\"}\n```\n"

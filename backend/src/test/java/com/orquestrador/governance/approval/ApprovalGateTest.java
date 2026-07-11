@@ -65,6 +65,8 @@ class ApprovalGateTest {
     private CompanyMemoryRepository memories;
     @Autowired
     private ActivityLogRepository activities;
+    @Autowired
+    private com.orquestrador.org.team.TeamRepository teams;
 
     /** O wakeup aprovado enfileira sem despachar; não deixar QUEUED pros vizinhos de contexto. */
     @AfterEach
@@ -88,6 +90,119 @@ class ApprovalGateTest {
     private ProposalScanner.Proposal hireNix() {
         return new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
                 "{\"name\":\"Nix\",\"role\":\"executor\"}", "Contratar Nix executor", null);
+    }
+
+    /** Um time (dominio/foco) com arquiteto designado — o alvo da corrente time→arquiteto. */
+    private UUID timeComArquiteto(UUID companyId, String dominio, String foco, String arquiteto) {
+        com.orquestrador.org.team.Team time = teams.save(
+                new com.orquestrador.org.team.Team(UUID.randomUUID(), companyId, dominio, foco));
+        Agent ana = new Agent(UUID.randomUUID(), companyId, arquiteto, "arquiteto", null);
+        ana.assignTeam(time.getId());
+        UUID arquitetoId = agents.save(ana).getId();
+        time.designarArquiteto(arquitetoId);
+        teams.save(time);
+        return arquitetoId;
+    }
+
+    /**
+     * ADR-0037/D7: a 4ª ação do gate — CREATE_TEAM cria o time E contrata o arquiteto na MESMA
+     * tx: o time do gate nasce com arquiteto POR CONSTRUÇÃO (executores vêm depois, como
+     * HIRE_AGENT individuais — aprovação incremental da ADR-0017 intocada).
+     */
+    @Test
+    void createTeamAprovadoCriaTimeComArquitetoAtomicamente() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_TEAM,
+                        "{\"dominio\":\"Marketing\",\"foco\":\"Tráfego\",\"arquiteto\":"
+                                + "{\"name\":\"Aqua\",\"role\":\"arquiteto\","
+                                + "\"adapterType\":\"claude-code\",\"model\":\"sonnet\"}}",
+                        "Criar time Marketing/Tráfego com arquiteta Aqua", null));
+
+        approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
+                "nenhum time cobre aquisição paga", null, ActorType.BOARD, UUID.randomUUID());
+
+        com.orquestrador.org.team.Team time = teams
+                .findByCompanyIdAndDominioAndFoco(companyId, "Marketing", "Tráfego").orElseThrow();
+        assertThat(time.getArquitetoAgentId()).as("nasce COM arquiteto").isNotNull();
+        Agent aqua = agents.findById(time.getArquitetoAgentId()).orElseThrow();
+        assertThat(aqua.getName()).isEqualTo("Aqua");
+        assertThat(aqua.getTeamId()).as("arquiteto é MEMBRO do time (ADR-0017)")
+                .isEqualTo(time.getId());
+    }
+
+    /** D7: alvo sem o arquiteto → 409 acionável, NADA criado (nem o time seco — atômico). */
+    @Test
+    void createTeamSemArquitetoE409SemMeioTermo() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_TEAM,
+                        "{\"dominio\":\"Marketing\",\"foco\":\"Tráfego\"}",
+                        "Criar time acéfalo", null));
+
+        assertThatThrownBy(() -> approvals.decide(companyId, proposta.getId(),
+                ApprovalDecision.APPROVE, "precisa existir", null, ActorType.BOARD, UUID.randomUUID()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("arquiteto");
+
+        assertThat(teams.findByCompanyIdAndDominioAndFoco(companyId, "Marketing", "Tráfego"))
+                .as("rollback total: o time acéfalo NÃO nasce").isEmpty();
+    }
+
+    /**
+     * ADR-0037/D2: a 2ª fábrica de órfãs fecha NA ORIGEM — a proposta CREATE_ISSUE carrega o
+     * TIME (dominio/foco) e o APPROVE resolve time→arquiteto: a issue NASCE com dono.
+     */
+    @Test
+    void createIssueComTimeNasceComDonoPeloGate() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        UUID arquitetoId = timeComArquiteto(companyId, "Dev", "Landing", "Ana Arquiteta");
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
+                        "{\"dominio\":\"Dev\",\"foco\":\"Landing\",\"title\":\"Landing nova\"}",
+                        "Landing nova", "backlog"));
+
+        approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
+                "a landing atual não converte", null, ActorType.BOARD, UUID.randomUUID());
+
+        assertThat(issues.findByCompanyId(companyId)).anySatisfy(issue -> {
+            assertThat(issue.getTitle()).isEqualTo("Landing nova");
+            assertThat(issue.getAssigneeAgentId())
+                    .as("nada que o CEO cria nasce sem dono (D2)").isEqualTo(arquitetoId);
+        });
+    }
+
+    /** D2: proposta sem time / corrente quebrada → 409 ACIONÁVEL no decide; segue PENDING. */
+    @Test
+    void createIssueSemTimeOuCorrenteQuebradaE409EPropostaSeguePending() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+
+        // sem dominio/foco no alvo (lacuna histórica da ADR-0018, agora fechada)
+        Approval semTime = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
+                        "{\"title\":\"Órfã\"}", "Órfã", "backlog"));
+        assertThatThrownBy(() -> approvals.decide(companyId, semTime.getId(),
+                ApprovalDecision.APPROVE, "precisa existir", null, ActorType.BOARD, UUID.randomUUID()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("dominio/foco");
+        assertThat(approvalRepo.findByIdAndCompanyId(semTime.getId(), companyId).orElseThrow()
+                .getStatus()).as("rollback total: segue PENDING").isEqualTo(ApprovalStatus.PENDING);
+
+        // time citado não existe
+        Approval timeFantasma = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
+                        "{\"dominio\":\"Mkt\",\"foco\":\"Ads\",\"title\":\"Campanha\"}",
+                        "Campanha", "backlog"));
+        assertThatThrownBy(() -> approvals.decide(companyId, timeFantasma.getId(),
+                ApprovalDecision.APPROVE, "precisa existir", null, ActorType.BOARD, UUID.randomUUID()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Mkt");
+
+        assertThat(issues.findByCompanyId(companyId)).as("nada foi criado").isEmpty();
     }
 
     @Test
@@ -265,8 +380,11 @@ class ApprovalGateTest {
     void direcaoAprovadaConsolidaACartaDeterministicamente() {
         UUID companyId = novaCompany();
         UUID ceoId = contrataCeu(companyId);
+        timeComArquiteto(companyId, "Produto", "Nicho", "Ana Arquiteta");
+        // ADR-0037 (D2): o alvo carrega o time — issue de direção também nasce com dono.
         ProposalScanner.Proposal direcao = new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
-                "{\"title\":\"Focar no nicho dental\"}", "Focar no nicho dental", "direcao-roadmap");
+                "{\"dominio\":\"Produto\",\"foco\":\"Nicho\",\"title\":\"Focar no nicho dental\"}",
+                "Focar no nicho dental", "direcao-roadmap");
         Approval proposta = approvals.propose(companyId, ceoId, null, null, direcao);
 
         approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
@@ -293,8 +411,10 @@ class ApprovalGateTest {
     void areaCriativaCommitaNaHoraComPreferencia() {
         UUID companyId = novaCompany();
         UUID ceoId = contrataCeu(companyId);
+        timeComArquiteto(companyId, "Design", "Home", "Bia Arquiteta");
         ProposalScanner.Proposal criativa = new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
-                "{\"title\":\"Refazer a home com tom leve\"}", "Refazer a home", "design-visual");
+                "{\"dominio\":\"Design\",\"foco\":\"Home\",\"title\":\"Refazer a home com tom leve\"}",
+                "Refazer a home", "design-visual");
         Approval proposta = approvals.propose(companyId, ceoId, null, null, criativa);
         assertThat(proposta.getRacionalTipo()).isEqualTo(RacionalTipo.INTUICAO); // D9
 

@@ -35,6 +35,8 @@ public class PersonaHandoffScanner {
             Pattern.compile("(?m)^```needs-grilling[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
     private static final Pattern CORRECAO_BLOCK =
             Pattern.compile("(?m)^```correcao[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
+    private static final Pattern ABSORCAO_BLOCK =
+            Pattern.compile("(?m)^```absorcao[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -62,6 +64,13 @@ public class PersonaHandoffScanner {
             Correcao correcao = parseCorrecao(correcoes.group(1));
             if (correcao != null) {
                 found.add(new PositionedRoute(correcoes.start(), correcao));
+            }
+        }
+        Matcher absorcoes = ABSORCAO_BLOCK.matcher(reply);
+        while (absorcoes.find()) {
+            Absorcao absorcao = parseAbsorcao(absorcoes.group(1));
+            if (absorcao != null) {
+                found.add(new PositionedRoute(absorcoes.start(), absorcao));
             }
         }
         return found.stream()
@@ -105,6 +114,26 @@ public class PersonaHandoffScanner {
         return new Correcao(issue.asInt());
     }
 
+    private static Absorcao parseAbsorcao(String block) {
+        JsonNode node = readObject(block);
+        if (node == null) {
+            return null;
+        }
+        JsonNode issue = node.path("issue");
+        if (!issue.isIntegralNumber() || !issue.canConvertToInt() || issue.asInt() < 1) {
+            return null; // #N e sempre um inteiro >= 1 (ADR-0033); o resto e ruido do motor
+        }
+        String dominio = textOrNull(node, "dominio");
+        String foco = textOrNull(node, "foco");
+        String racional = textOrNull(node, "racional");
+        if (dominio == null || foco == null || racional == null) {
+            // Sem o TIME completo nao ha corrente a resolver; sem racional nao ha evidencia de
+            // Decision nem confirmacao legivel (G1/G6) — contrato inteiro ou nada (fail-soft).
+            return null;
+        }
+        return new Absorcao(issue.asInt(), dominio, foco, racional);
+    }
+
     private static JsonNode readObject(String block) {
         try {
             JsonNode node = MAPPER.readTree(block.strip());
@@ -123,7 +152,7 @@ public class PersonaHandoffScanner {
     }
 
     /** Uma virada extraída da resposta, na ordem do texto. */
-    public sealed interface Route permits Handoff, NeedsGrilling, Correcao {
+    public sealed interface Route permits Handoff, NeedsGrilling, Correcao, Absorcao {
     }
 
     /** Bastão adiante (D6): a persona {@code para} reivindica o próximo turno com o entregável. */
@@ -140,5 +169,15 @@ public class PersonaHandoffScanner {
      * redigitando = paráfrase); o verbatim é cópia mecânica do turno no banco (D3).
      */
     public record Correcao(int issue) implements Route {
+    }
+
+    /**
+     * Absorção (ADR-0037/D5): o Planejador triou a issue órfã #{@code issue} do board e aponta o
+     * TIME por {@code dominio}/{@code foco} SEPARADOS (texto livre pode conter "/" — nunca parse
+     * de string única), NUNCA uma pessoa: o sistema resolve time→arquiteto por construção. O
+     * {@code racional} é a palavra do Planejador — vira a {@code evidencia} da Decision (D8) e a
+     * confirmação visível na thread (G1/G6).
+     */
+    public record Absorcao(int issue, String dominio, String foco, String racional) implements Route {
     }
 }

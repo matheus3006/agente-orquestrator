@@ -92,3 +92,11 @@ A cadeia PO→Arquiteto **de orquestração** virou personas do CEO (Planejador/
 **arquiteto-de-domínio SOBREVIVE como empregado** — por-time, fonte das Issues-task, com o
 `PLANEJAMENTO_ARQUITETO` valendo como sempre. A V25 soma 3 moldes de sistema `ceo-*` ao seed
 V14 e o hire ganhou um consumidor novo (o `CeoPersonaSeeder`, auto-seed na criação da company).
+
+## Forward-ref (2026-07-11 — ADR-0037, absorção de issues)
+A criação de time ganhou uma 2ª porta: o gate `CREATE_TEAM` (proposto pelo CEO na triagem de
+issue órfã), que nasce COM arquiteto atomicamente — o caminho novo já obedece o invariante "todo
+time nasce com arquiteto" declarado pelo dono (2026-07-11). A porta manual segue com a trava no
+dispatch; o supersede da regra "trava no dispatch, não na criação" está PENDENTE DE GRILL próprio
+(contrato de intenção verbatim em `handoff-grilling-absorcao-issues.md` §G.1 — inclui a possível
+divisão do arquiteto em 2 personas e o multi-arquiteto por ociosidade).

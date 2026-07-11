@@ -9,7 +9,9 @@ import { shortId } from "./format";
 const PROPOSTA_FENCE = /```proposta\s*\n[\s\S]*?```/g;
 // Os blocos de bastão das personas (ADR-0031): mecanismo do roteador, nunca conversa — a bolha
 // os limpa como limpa o ```proposta. Coluna 0, espelhando o scanner do backend.
-const BASTAO_FENCE = /^```(?:handoff|needs-grilling)[ \t]*\n[\s\S]*?^```/gm;
+// Os 4 irmãos do roteador de personas são MECANISMO, não conversa (correcao = ADR-0034;
+// absorcao = ADR-0037) — a bolha nunca despeja o JSON cru.
+const BASTAO_FENCE = /^```(?:handoff|needs-grilling|correcao|absorcao)[ \t]*\n[\s\S]*?^```/gm;
 
 export interface ReplySplit {
   prosa: string;
@@ -105,6 +107,7 @@ const VERBO_POR_ACAO: Record<Approval["actionType"], string> = {
   CREATE_ISSUE: "Abrir issue",
   HIRE_AGENT: "Contratar agente",
   WAKEUP_AGENT: "Acordar agente",
+  CREATE_TEAM: "Criar time",
 };
 
 /** Parse fail-soft do targetDetail — espelha o ProposalScanner: quebrado nunca derruba a tela. */
@@ -135,7 +138,50 @@ export function acaoLegivel(approval: Approval): AcaoLegivel {
     }
     case "WAKEUP_AGENT":
       return { verbo, alvo: typeof alvo.agentId === "string" ? shortId(alvo.agentId) : null };
+    case "CREATE_TEAM": {
+      // ADR-0037 (D7): o card mostra o destino E o arquiteto que nasce junto (atômico).
+      const dominio = typeof alvo.dominio === "string" ? alvo.dominio : null;
+      const foco = typeof alvo.foco === "string" ? alvo.foco : null;
+      const arquiteto =
+        typeof alvo.arquiteto === "object" && alvo.arquiteto !== null
+          ? (alvo.arquiteto as Record<string, unknown>)
+          : null;
+      const nome = arquiteto && typeof arquiteto.name === "string" ? arquiteto.name : null;
+      if (!dominio || !foco) {
+        return { verbo, alvo: null };
+      }
+      return { verbo, alvo: `${dominio} / ${foco}${nome ? ` · arquiteto ${nome}` : ""}` };
+    }
   }
+}
+
+/**
+ * O destino da issue proposta (ADR-0037/D2): "→ time Dev / Landing" no card do gate — a issue
+ * aprovada nasce na mesa do arquiteto desse time. Null sem time no alvo (proposta pré-0037; o
+ * decide devolve 409 acionável). Separado do `acaoLegivel` de propósito: o alvo do CREATE_ISSUE
+ * segue sendo o TÍTULO exato (o `issueDaApproval` resolve a issue criada por ele).
+ */
+export function destinoDaIssueProposta(approval: Approval): string | null {
+  if (approval.actionType !== "CREATE_ISSUE") {
+    return null;
+  }
+  const alvo = alvoDe(approval);
+  if (!alvo) {
+    return null;
+  }
+  const dominio = typeof alvo.dominio === "string" ? alvo.dominio : null;
+  const foco = typeof alvo.foco === "string" ? alvo.foco : null;
+  return dominio && foco ? `${dominio} / ${foco}` : null;
+}
+
+/** O racional do time proposto (CREATE_TEAM) — leitura no card, como o do hire (A3). */
+export function racionalDoTimeProposto(approval: Approval): string | null {
+  if (approval.actionType !== "CREATE_TEAM") {
+    return null;
+  }
+  const alvo = alvoDe(approval);
+  const racional = alvo && typeof alvo.racional === "string" ? alvo.racional.trim() : "";
+  return racional !== "" ? racional : null;
 }
 
 /** O pedido de hire protocolado, como o menu do gate o lê (A3/A4 do adendo ADR-0031). */

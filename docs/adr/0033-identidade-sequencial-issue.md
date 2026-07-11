@@ -73,3 +73,6 @@ ADR-0009 (activity_log só-IDs — o #N entra no render, nunca no log) · ADR-00
 — superfícies que passam a exibir #N) · ADR-0018 (estado vivo no prompt do CEO — onde o #N fecha o
 ciclo do chat) · ADR-0021 (V20 `preview_artifact.version` — o precedente de ordinal cuja precondição
 declarada inspirou o desenho) · caso B futuro (B1/B2 do adendo vinculante — o consumidor do #N).
+
+**Forward-ref (2026-07-11):** o lookup por `#N` ganhou o 2º consumidor previsto — a absorção de
+issues (ADR-0037) referencia a issue pelo seq no bloco ` ```absorcao ` e nas confirmações.

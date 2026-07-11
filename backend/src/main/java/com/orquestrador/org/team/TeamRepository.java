@@ -13,4 +13,11 @@ public interface TeamRepository extends JpaRepository<Team, UUID> {
     Optional<Team> findByIdAndCompanyId(UUID id, UUID companyId);
 
     boolean existsByCompanyIdAndDominioAndFoco(UUID companyId, String dominio, String foco);
+
+    /**
+     * Resolve o time pela identidade (company, dominio, foco) — o lookup da absorção (ADR-0037,
+     * M5): o bloco {@code ```absorcao```} aponta o TIME por dominio/foco e o sistema resolve
+     * time→arquiteto. O unique {@code uq_team_company_dominio_foco} garante no máximo um.
+     */
+    Optional<Team> findByCompanyIdAndDominioAndFoco(UUID companyId, String dominio, String foco);
 }

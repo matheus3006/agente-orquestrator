@@ -18,6 +18,7 @@ import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
 import com.orquestrador.org.team.Team;
 import com.orquestrador.org.team.TeamRepository;
+import com.orquestrador.work.issue.AbsorcaoDeIssueRouter;
 import com.orquestrador.work.issue.Issue;
 import com.orquestrador.work.issue.IssueRepository;
 import com.orquestrador.work.issue.IssueService;
@@ -66,6 +67,8 @@ class PersonaBatonFlowTest {
     private TeamRepository teams;
     @Autowired
     private ProposalDescarteNotice descarteNotice;
+    @Autowired
+    private AbsorcaoDeIssueRouter absorcoes;
 
     /** A fila do dispatcher é GLOBAL no H2 compartilhado: drenar antes/depois isola as ondas. */
     @BeforeEach
@@ -304,6 +307,56 @@ class PersonaBatonFlowTest {
                 .as("nenhuma corretiva nasce de bloco fora do balcão").isEmpty();
         assertThat(thread(companyId, negocio.getId()))
                 .as("nenhum turno de protocolo/aviso além do bastão atendido").hasSize(1);
+    }
+
+    /**
+     * Absorção ponta a ponta pelo seam REAL do motor (ADR-0037, M2/M4): a issue do dono nasce
+     * órfã COM conversa ancorada e gatilho sentinela; o run do Planejador emite ```absorcao```
+     * apontando o TIME; o settle resolve time→arquiteto, atribui e confirma VISÍVEL na thread —
+     * sem wakeup do arquiteto (a issue nasce na mesa dele; o disparo segue os caminhos normais).
+     */
+    @Test
+    void absorcaoDoPlanejadorAtribuiPontaAPonta() {
+        UUID companyId = novaCompany();
+        persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' 'Triei a #1.' '```absorcao' '{\"issue\": 1, \"dominio\": \"Dev\","
+                        + " \"foco\": \"Landing\", \"racional\": \"é trabalho de frontend\"}' '```'");
+        UUID arquitetoId = agenteEmTime(companyId, "Ana Arquiteta");
+
+        Issue orfa = absorcoes.aoNascerDoDono(companyId, "Landing page nova", "hero novo", null);
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1); // o run do Planejador emite o bloco
+
+        assertThat(issueRepo.findById(orfa.getId()).orElseThrow().getAssigneeAgentId())
+                .as("a issue nasce na mesa do arquiteto do time apontado").isEqualTo(arquitetoId);
+        // confirmação VISÍVEL na thread da issue, com o racional do Planejador; gatilho invisível
+        List<ConversationTurn> visiveis = conversations.thread(companyId, orfa.getConversationId());
+        assertThat(visiveis).hasSize(1);
+        assertThat(visiveis.get(0).getCeoReply())
+                .contains("Dev / Landing").contains("Ana Arquiteta").contains("é trabalho de frontend");
+        assertThat(dispatcher.dispatchOnce())
+                .as("SEM wakeup automático do arquiteto (D5)").isEqualTo(0);
+    }
+
+    /** M4: só o PLANEJADOR roteia ```absorcao``` — Q/E emitindo = log + descarte (fail-soft). */
+    @Test
+    void absorcaoDoQuestionadorEDescartadaSemNada() {
+        UUID companyId = novaCompany();
+        UUID questionadorId = persona(companyId, "questionador", "CEO Questionador",
+                "printf '%s\\n' 'Absorvo eu.' '```absorcao' '{\"issue\": 1, \"dominio\": \"Dev\","
+                        + " \"foco\": \"Landing\", \"racional\": \"eu decido\"}' '```'");
+        agenteEmTime(companyId, "Ana Arquiteta");
+        Issue orfa = issues.create(companyId, "Órfã do board", null);
+
+        Conversation negocio = conversations.open(companyId, "Negócio");
+        conversations.postMessage(companyId, negocio.getId(), "cuida da #1",
+                ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(issueRepo.findById(orfa.getId()).orElseThrow().getAssigneeAgentId())
+                .as("bloco fora do Planejador nunca atribui").isNull();
+        // nada além da pergunta atendida: nem protocolo, nem aviso — descarte com log
+        assertThat(thread(companyId, negocio.getId())).hasSize(1);
+        assertThat(questionadorId).isNotNull();
     }
 
     /** D3/A2: o ```proposta``` do Executor segue INTOCADO pro gate T3 — nada de virada. */
