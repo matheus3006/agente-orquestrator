@@ -24,6 +24,10 @@ describe("activeSurfaceId", () => {
     expect(activeSurfaceId("/demo-14262/servers")).toBe("servers");
   });
 
+  it("fila de aprovações (ADR-0035) ativa a própria superfície", () => {
+    expect(activeSurfaceId("/demo-14262/approvals")).toBe("approvals");
+  });
+
   it("tolera trailing slash", () => {
     expect(activeSurfaceId("/demo-14262/issues/")).toBe("issues");
   });

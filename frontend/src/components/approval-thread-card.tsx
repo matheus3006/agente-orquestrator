@@ -42,6 +42,9 @@ export function ApprovalThreadCard({
 }) {
   const [grelha, setGrelha] = useState<Grelha | null>(null);
   const [racional, setRacional] = useState("");
+  // D15 (ADR-0035): o motivo do reject volta ao CEO como kickback na conversa —
+  // sem ele, o racional (sempre presente no commit) é o que viaja.
+  const [motivo, setMotivo] = useState("");
   const [falha, setFalha] = useState<string | null>(null);
   const racionalRef = useRef<HTMLTextAreaElement>(null);
 
@@ -56,7 +59,7 @@ export function ApprovalThreadCard({
 
   const queryClient = useQueryClient();
   const decisao = useMutation({
-    mutationFn: (input: { decision: "APPROVE" | "REJECT"; racional?: string }) =>
+    mutationFn: (input: { decision: "APPROVE" | "REJECT"; racional?: string; reason?: string }) =>
       decideApproval(companyId, approval.id, input),
     onSuccess: (outcome, input) => {
       if (outcome.kind === "grilled") {
@@ -68,11 +71,12 @@ export function ApprovalThreadCard({
       }
       setGrelha(null);
       setRacional("");
+      setMotivo("");
       setFalha(null);
       pushToast(
         outcome.approval.status === "APPROVED"
           ? "Aprovada — a ação foi disparada (ator: você)."
-          : "Rejeitada — registrada como decisão do gate.",
+          : "Rejeitada — o CEO recebe o motivo na conversa.",
       );
       // Decidir mexe na fila (2 projeções), pode criar issue/agente/wakeup,
       // fabrica Decisão e pode consolidar a carta — invalida o que projeta.
@@ -110,7 +114,13 @@ export function ApprovalThreadCard({
             effort: motor.effort.trim() || undefined,
           }
         : {};
-    decisao.mutate({ decision, ...(texto ? { racional: texto } : {}), ...motorEditado });
+    const motivoTexto = motivo.trim();
+    decisao.mutate({
+      decision,
+      ...(texto ? { racional: texto } : {}),
+      ...(decision === "REJECT" && motivoTexto ? { reason: motivoTexto } : {}),
+      ...motorEditado,
+    });
   };
 
   const acao = acaoLegivel(approval);
@@ -241,6 +251,16 @@ export function ApprovalThreadCard({
             }
             aria-label="Racional da decisão"
           />
+          {grelha.decision === "REJECT" && (
+            <textarea
+              value={motivo}
+              onChange={(event) => setMotivo(event.target.value)}
+              maxLength={2000}
+              rows={2}
+              placeholder="motivo para o CEO (recomendado) — volta verbatim na conversa; sem ele, vai o racional"
+              aria-label="Motivo da recusa para o CEO"
+            />
+          )}
           {falha && <p className="m-0 text-[12px] text-coral">{falha}</p>}
           <div className="grill-acoes">
             <button
