@@ -77,6 +77,19 @@ describe("splitReply (prosa da bolha vs bloco ```proposta)", () => {
     expect(parte.temProposta).toBe(true);
   });
 
+  it("remove os blocos ```correcao/```absorcao da prosa — os 4 irmãos são mecanismo", () => {
+    const comCorrecao = splitReply(
+      'Encaminho a correção da #12.\n```correcao\n{"issue": 12}\n```',
+    );
+    const comAbsorcao = splitReply(
+      'Triei a #7.\n```absorcao\n{"issue": 7, "dominio": "Dev", "foco": "Landing",'
+        + ' "racional": "frontend"}\n```',
+    );
+
+    expect(comCorrecao.prosa).toBe("Encaminho a correção da #12.");
+    expect(comAbsorcao.prosa).toBe("Triei a #7.");
+  });
+
   it("remove os blocos de bastão (```handoff/```needs-grilling) da prosa — mecanismo, não conversa", () => {
     const comHandoff = splitReply(
       "Dossiê carimbado — seguindo para a estratégia.\n```handoff\n" +

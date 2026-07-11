@@ -5,6 +5,7 @@ import { MessageSquare } from "lucide-react";
 import { CompanyLink } from "@/components/company-link";
 import { EmptyState } from "@/components/ui/empty-state";
 import { listTurns } from "@/lib/api";
+import { splitReply } from "@/lib/ceo-conversa";
 import { fmtClock } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -44,7 +45,9 @@ export function IssueConversaSection({
                 </div>
                 {turno.ceoReply !== null && (
                   <div className="issue-conversa-msg">
-                    <span className="issue-conversa-quem">CEO</span> {turno.ceoReply}
+                    <span className="issue-conversa-quem">CEO</span>{" "}
+                    {/* só a prosa: bloco tipado é mecanismo, nunca JSON cru (mockup §4) */}
+                    {splitReply(turno.ceoReply).prosa || "— encaminhado ao fluxo interno —"}
                   </div>
                 )}
                 <span className="issue-conversa-hora mono">{fmtClock(turno.createdAt)}</span>

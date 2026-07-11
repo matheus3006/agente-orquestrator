@@ -299,3 +299,71 @@ direcionada"* → issue = conversa direcionada (D4).
 > Ver bloco de kickoff entregue na sessão de grill (R4-B) — replicado no ledger da sessão de
 > controle. Fonte da verdade desta fatia: **este arquivo** (D1–D10/M1–M13 FECHADOS; seguir, não
 > replanejar).
+
+---
+
+## §RESULTADO (execução 2026-07-11, branch `feat/absorcao-issues-adr0037`)
+
+**Gate de colisão:** PASS — caso C (PR #13) confirmado MERGED na main (`4b45a1a`) antes da
+branch; piso pós-merge re-medido rodando a suíte ANTES do 1º código: backend **503** (exato o
+esperado) · front 263. V27 e ADR-0037 revalidadas livres.
+
+**Executado como planejado (D1–D10, M1–M13, ordem §H).** TDD vertical: cada mecanismo nasceu de
+teste RED → GREEN. Código novo: `V27__issue_conversa.sql` · `AbsorcaoDeIssueRouter` (2 seams) ·
+`AbsorcaoSentinel` (gatilho + retoma) · 4º padrão `Absorcao` no scanner · case no
+`PersonaBatonRouter` (emissor só Planejador) · `tryAbsorver` + `findByCompanyIdAndDominioAndFoco`
++ `findFirstByCompanyIdAndConversationId` · `CREATE_TEAM` no enum/dispatch/retoma ·
+`CREATE_ISSUE` com time (`createAtribuida`/`nascerAtribuida`, 409 acionável) · prompt do
+Planejador (critério D6 + bloco INDENTADO; Questionador INTOCADO) · front (thread no detalhe do
+card via `IssueConversaSection`, destino no card de `CREATE_ISSUE`, card `CREATE_TEAM` com
+racional, `conversationId` no DTO/tipo).
+
+**VENDO §D na descartável (18081 + pg efêmero; :8080 INTOCADO) — 10/10 PASS:**
+1. **Feliz (run claude REAL do Planejador):** #2 absorvida — conversa "#2 — …" ancorada, bloco
+   emitido pelo opus, assignee = arquiteta, OPEN, confirmação com racional visível; `tryCheckout`
+   intruso=409 / arquiteta=200. *Aprendizado vivo:* na 1ª rodada o opus leu `#### Dev/Landing`
+   do `### Equipe` como UM campo (`dominio:"Dev/Landing"` + foco inventado) → o prompt ganhou o
+   mapeamento explícito (`#### <dominio>/<foco>` → dois campos EXATOS) e a 2ª rodada absorveu.
+2. **Decision/evento/carta:** Decision AGENTE/OPERACIONAL, o-que-mudou = esqueleto D8 exato,
+   `evidencia` = racional do bloco, ancorada; `ISSUE_ABSORVIDA` só-IDs; carta md5 IGUAL
+   antes/depois.
+3. **Não-cabe ponta a ponta:** recomendação de cargo visível → "propõe" do dono → trilho Q→P→E →
+   card `CREATE_TEAM` PENDING ancorado → APPROVE → time + arquiteta Aqua na MESMA tx (membro ✓)
+   → **retoma automática** → ```` ```absorcao ```` → #3 atribuída à Aqua.
+4. **Elo quebrado:** time Ops/Infra sem arquiteto → aviso com moldura de anomalia, nada
+   atribuído, zero Decision nova.
+5. **Já-tem-dono:** bloco para a #2 → "A #2 já tem dona: Ana Arquiteta — nada mudei", assignee
+   intacto.
+6. **Fail-soft:** #99 → descarte com WARN exato, thread sem protocolo; Questionador emitindo →
+   WARN "só o Planejador tria o board", nada atribuído.
+7. **D2:** `CREATE_ISSUE` com time → #7 nasce com dona (e SEM conversa — negativa correta);
+   sem time → HTTP 409 com a mensagem do invariante, proposta segue PENDING.
+8. **Rajada:** 3 issues em sequência → 3 conversas + turnos coalescidos no MESMO Planejador
+   (resposta dinâmica por `#N` extraído do prompt), as 3 absorvidas.
+9. **Faxina (auditoria read-only no :8080):** 2 demos com 3 personas ✓; **1 ilegal:
+   `thumb-demo-9368` (0 personas)** — delete é mão do OPERADOR
+   (`scratchpad/absorcao-faxina-m12-auditoria.sh`, PARTE 2 comentada).
+10. **Gates:** backend **523** (piso 503 +20) · front **270** (piso 263 +7) · tsc/lint limpos.
+    UI verificada ao vivo (next dev 13000 → 18081): thread limpa no detalhe do card (blocos de
+    mecanismo descascados), lista de chats com prefixo `#N —`, card CREATE_TEAM completo.
+
+**Divergências mínimas de execução (com racional):**
+- **Prompt do EXECUTOR ganhou o formato do `CREATE_TEAM`** (M10 só citava o Planejador): sem o
+  shape no prompt, o motor inventaria o formato e o gate ficaria vazio — a lição literal do caso
+  C/Prova R3-A. Acréscimo espelho do exemplo do HIRE_AGENT, INDENTADO.
+- **"time inexistente" e "recomendação de cargo" colapsaram num ÚNICO aviso** (M6 listava os
+  dois): com o bloco apontando o time RECOMENDADO (D6), citação-errada e recomendação são
+  indistinguíveis por construção — o texto único serve às duas leituras (nome visível + racional
+  + como proceder). Reversível por veto.
+- **Carona de front:** `splitReply` passou a descascar também ```` ```correcao ```` e
+  ```` ```absorcao ```` (só descascava handoff/needs-grilling — o bloco do caso B já vazava cru
+  na bolha do chat; 1 linha, teste pinado).
+- **Prompt do Planejador ganhou o mapeamento `#### <dominio>/<foco>` → dois campos** (achado da
+  prova 1 ao vivo, acima) — emenda de texto dentro do próprio M10, proposto como veto.
+
+**Vetos pendentes PROPOSTOS no PR (implementados como propostos; NENHUM decidido em definitivo):**
+formato do bloco (campos separados; racional OBRIGATÓRIO — sem ele não há evidência de Decision)
+· textos M6 (feliz/já-tem-dono/recomendação-única/sem-arquiteto; voz = Planejador, molde caso B)
+· assunto "#N — <título>" · evento `ISSUE_ABSORVIDA` · card CREATE_TEAM (verbo "Criar time",
+destino + arquiteto + racional) · critério do Planejador no prompt (texto exato, com o
+mapeamento do ### Equipe) · nome `AbsorcaoDeIssueRouter`.

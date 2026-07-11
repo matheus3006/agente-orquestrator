@@ -9,7 +9,9 @@ import { shortId } from "./format";
 const PROPOSTA_FENCE = /```proposta\s*\n[\s\S]*?```/g;
 // Os blocos de bastão das personas (ADR-0031): mecanismo do roteador, nunca conversa — a bolha
 // os limpa como limpa o ```proposta. Coluna 0, espelhando o scanner do backend.
-const BASTAO_FENCE = /^```(?:handoff|needs-grilling)[ \t]*\n[\s\S]*?^```/gm;
+// Os 4 irmãos do roteador de personas são MECANISMO, não conversa (correcao = ADR-0034;
+// absorcao = ADR-0037) — a bolha nunca despeja o JSON cru.
+const BASTAO_FENCE = /^```(?:handoff|needs-grilling|correcao|absorcao)[ \t]*\n[\s\S]*?^```/gm;
 
 export interface ReplySplit {
   prosa: string;
