@@ -96,9 +96,15 @@ public class ContextHandoffLoop {
                 prompt, Map.of("ORQ_PROMPT", prompt), turn.target(), turn.volumeName(),
                 handle, turn.model(), turn.effort());
         try {
-            turn.adapter().execute(resume, (type, detail) -> {
+            AgentAdapter.Result distill = turn.adapter().execute(resume, (type, detail) -> {
                 // rastro descartado: a sessão do resume é terminal e NÃO é persistida (D4′).
             });
+            if (!distill.succeeded()) {
+                // Anti-silêncio (laudo motor-nativo R6): o adapter traduz exit≠0 em Result.fail, não
+                // exceção — descartá-lo deixaria só o "bilhete ausente" genérico, sem o PORQUÊ.
+                log.warn("handoff: resume-cirúrgico falhou (conv {}): {}", turn.conversationId(),
+                        distill.error());
+            }
         } catch (RuntimeException exception) {
             log.warn("handoff: resume-cirúrgico falhou (conv {}): {}", turn.conversationId(),
                     exception.getMessage());

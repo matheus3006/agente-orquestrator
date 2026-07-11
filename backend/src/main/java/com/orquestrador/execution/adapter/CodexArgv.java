@@ -21,7 +21,9 @@ import java.util.List;
  *   <li>{@code EXTERNALLY_SANDBOXED} → {@code --dangerously-bypass-approvals-and-sandbox} (o container É o
  *       sandbox, ADR-0023); {@code HOST} → {@code -s workspace-write} (self-sandbox; bypass no host seria
  *       exec arbitrário do modelo — recusado).</li>
- *   <li>{@code prompt} sempre no fim (posicional).</li>
+ *   <li>{@code priorSession} presente → subcomando {@code resume <id>} depois de TODOS os flags
+ *       (M9/ADR-0030 — a única rede que religa sessão; gramática pinada no source do tag).</li>
+ *   <li>{@code prompt} sempre no fim (posicional — do {@code exec} ou do {@code resume}).</li>
  * </ul>
  */
 final class CodexArgv {
@@ -40,12 +42,6 @@ final class CodexArgv {
         argv.add("codex");
         argv.add("exec");
         argv.add("--json");
-        // ADR-0030/M9: religa a sessão só para a rede resume-cirúrgico do handoff (todo run normal
-        // passa null — D4). Claude-first; a sintaxe exata do resume no codex é best-effort no v1.
-        if (isPresent(priorSession)) {
-            argv.add("--resume");
-            argv.add(priorSession.trim());
-        }
         if (isPresent(model)) {
             argv.add("--model");
             argv.add(model.trim());
@@ -60,6 +56,15 @@ final class CodexArgv {
         } else {
             argv.add("-s");
             argv.add("workspace-write");
+        }
+        // ADR-0030/M9: religa a sessão só para a rede resume-cirúrgico do handoff (todo run normal
+        // passa null — D4). No codex 0.142.5 resume é SUBCOMANDO (não flag) com SESSION_ID e PROMPT
+        // posicionais, e `-s` não é global ⟹ flags SEMPRE antes dele — a forma do override_usage do
+        // próprio source: `codex exec [OPTIONS] <COMMAND> [ARGS]` (codex-rs/exec/src/cli.rs:12 @
+        // rust-v0.142.5; Command::Resume :168, posicionais :180-181/:202-203, globais :157-163).
+        if (isPresent(priorSession)) {
+            argv.add("resume");
+            argv.add(priorSession.trim());
         }
         argv.add(prompt);
         return List.copyOf(argv);
