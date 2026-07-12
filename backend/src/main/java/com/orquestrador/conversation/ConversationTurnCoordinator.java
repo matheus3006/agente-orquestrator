@@ -426,6 +426,16 @@ public class ConversationTurnCoordinator {
                 + "  ```\n"
                 + "- Buraco na estratégia → emita `needs-grilling` (nunca conserto silencioso): quem"
                 + " re-grelha o dono é o Questionador.\n"
+                // Auto-kickback entre personas (rodada 9, D-motor-nativo §2): calibração inline,
+                // igual à do needs-grilling do Planejador — needs-grilling é INTENÇÃO do dono;
+                // retrabalho é DEFEITO no entregável de um par (nunca passa pelo dono).
+                + "- Defeito no que você RECEBEU do Planejador (não é dúvida sobre o NEGÓCIO — isso é"
+                + " `needs-grilling` — é ALGO ERRADO na estratégia: contradição interna, agente sem"
+                + " role definido, etc.): emita `retrabalho` — devolve o bastão a quem entregou, SEM"
+                + " passar pelo dono.\n"
+                + "  ```retrabalho\n"
+                + "  {\"lacuna\": \"<o que está errado ou faltando no entregável, 1 linha>\"}\n"
+                + "  ```\n"
                 // ADR-0037 (D7): o protocolo do time NOVO — time + arquiteto atômicos no gate.
                 + "- Time NOVO autorizado pelo dono (ex.: absorção de issue sem time que cubra):"
                 + " emita um bloco `proposta` de CREATE_TEAM carregando o time E o arquiteto JUNTOS"

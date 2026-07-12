@@ -91,6 +91,23 @@ public class PersonaBatonRouter {
                     }
                     yield absorcoes.rotear(turno, absorcao);
                 }
+                // Auto-kickback entre personas (rodada 9): só o EXECUTOR devolve — é o único que
+                // RECEBE um entregável de outra persona (o Planejador só recebe do Questionador, e
+                // um defeito no dossiê ainda é lacuna de intenção-do-usuário, não deste canal, D7).
+                // O destino NUNCA é um campo do bloco: o poster o deriva do bastão mais recente da
+                // conversa (mesmo princípio de "nunca confiar em identidade do LLM" do `origem`
+                // acima) — precisa do HISTÓRICO da conversa (a reincidência pós-prossiga responde
+                // à sentinela de prossiga, não a um bastão fresco), por isso mora lá, não aqui.
+                case PersonaHandoffScanner.Retrabalho retrabalho -> {
+                    if (origem != CeoPersona.EXECUTOR) {
+                        log.warn("retrabalho: persona '{}' emitiu ```retrabalho``` — só o Executor"
+                                + " devolve entregável a quem entregou (descartado, fail-soft)",
+                                origem.dbValue());
+                        yield false;
+                    }
+                    yield poster.postRetrabalho(turno.getCompanyId(), turno.getConversationId(),
+                            origem, retrabalho.lacuna());
+                }
             };
             if (posted) {
                 if (i < routes.size() - 1) {
