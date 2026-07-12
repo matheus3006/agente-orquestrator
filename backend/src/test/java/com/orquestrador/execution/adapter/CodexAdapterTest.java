@@ -99,7 +99,8 @@ class CodexAdapterTest {
         assertThat(target.spec.command()).containsExactly(
                 "codex", "exec", "--json", "--model", "gpt-5.5", "-c", "model_reasoning_effort=high",
                 "-c", "agents.max_threads=6", "-c", "agents.max_depth=3",
-                "--skip-git-repo-check", "-s", "workspace-write", "faça X");
+                "--skip-git-repo-check", "-s", "workspace-write",
+                "--dangerously-bypass-hook-trust", "faça X");
         // F.8 (ADR-0016): container próprio — imagem pinada do codex + SÓ a credencial do plano
         // Codex (jamais a do Claude; a prova de interseção vazia vive no EngineContainerTest).
         assertThat(target.spec.image()).isEqualTo(EngineContainer.codex().image());
@@ -130,7 +131,8 @@ class CodexAdapterTest {
         assertThat(target.spec.command())
                 .containsExactly("codex", "exec", "--json",
                         "-c", "agents.max_threads=6", "-c", "agents.max_depth=3",
-                        "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "faça X");
+                        "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
+                        "--dangerously-bypass-hook-trust", "faça X");
     }
 
     @Test

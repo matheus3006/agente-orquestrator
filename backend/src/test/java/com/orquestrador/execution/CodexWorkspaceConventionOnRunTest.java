@@ -137,12 +137,16 @@ class CodexWorkspaceConventionOnRunTest {
         // D6: faxina permanente — o espelho claude (inativo) some do chão INTEIRO, inclusive o
         // diretório pai vazio (critério literal do §VENDO: ".claude/ NÃO existe").
         assertThat(Files.exists(workDir.resolve(".claude"))).isFalse();
+        // F-N6 (ADR-0042, D6/D7): o hook PreToolUse materializa no canal nativo do codex —
+        // hooks.json dedicado (não settings.json) + o mesmo script guarda dos dois motores.
+        assertThat(Files.readString(workDir.resolve(".codex/hooks.json"))).contains("\"PreToolUse\"");
+        assertThat(Files.exists(workDir.resolve(".codex/hooks/pretooluse-guard.js"))).isTrue();
     }
 
     @Test
     void turnoEscreveAUniaoDasConvencoesNoEscritorDeWorkspace() {
         // D6 no DOCKER de graça (P2): o escritor é REPLACE por subtree — listar a união faz o
-        // volume remover o que não existe no host. Issue: skillsSubdirs; turno: + memoryFiles.
+        // volume remover o que não existe no host. Issue: skillsSubdirs+hooks; turno: + memoryFiles.
         UUID companyId = novaCompany();
         ceoCodex(companyId);
         memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA, "# Carta", 1));
@@ -152,7 +156,10 @@ class CodexWorkspaceConventionOnRunTest {
 
         assertThat(recorder.writes).hasSize(1);
         assertThat(recorder.writes.get(0)).containsExactly(
-                ".claude/skills", ".codex/skills", ".claude/CLAUDE.md", "AGENTS.md");
+                ".claude/skills", ".codex/skills",
+                ".claude/settings.json", ".claude/hooks/pretooluse-guard.js",
+                ".codex/hooks.json", ".codex/hooks/pretooluse-guard.js",
+                ".claude/CLAUDE.md", "AGENTS.md");
     }
 
     @Test
@@ -177,8 +184,13 @@ class CodexWorkspaceConventionOnRunTest {
         assertThat(Files.exists(workDir.resolve(".codex/skills/mat-codex/SKILL.md"))).isTrue();
         assertThat(Files.exists(workDir.resolve(".claude/skills"))).isFalse();
         assertThat(Files.readString(workDir.resolve("AGENTS.md"))).isEqualTo("notas do proprio agente");
+        // F-N6: hooks materializam em TODO run (junto das skills) — também em run de Issue.
+        assertThat(Files.exists(workDir.resolve(".codex/hooks/pretooluse-guard.js"))).isTrue();
         assertThat(recorder.writes).hasSize(1);
-        assertThat(recorder.writes.get(0)).containsExactly(".claude/skills", ".codex/skills");
+        assertThat(recorder.writes.get(0)).containsExactly(
+                ".claude/skills", ".codex/skills",
+                ".claude/settings.json", ".claude/hooks/pretooluse-guard.js",
+                ".codex/hooks.json", ".codex/hooks/pretooluse-guard.js");
     }
 
     @Test
@@ -217,6 +229,10 @@ class CodexWorkspaceConventionOnRunTest {
         assertThat(Files.readString(workDir.resolve(".claude/CLAUDE.md"))).isEqualTo("# Carta");
         assertThat(Files.exists(workDir.resolve(".codex"))).isFalse();
         assertThat(Files.exists(workDir.resolve("AGENTS.md"))).isFalse();
+        // F-N6: o simétrico também vale para hooks — claude ativo materializa settings.json,
+        // e o hooks.json/script do codex (motor anterior) somem junto do resto de .codex.
+        assertThat(Files.readString(workDir.resolve(".claude/settings.json"))).contains("\"PreToolUse\"");
+        assertThat(Files.exists(workDir.resolve(".claude/hooks/pretooluse-guard.js"))).isTrue();
     }
 
     @Test

@@ -90,7 +90,11 @@ class WorkspaceWriteOnRunTest {
         WorkspaceWrite write = recorder.writes.get(0);
         // A lista é a UNIÃO das convenções conhecidas (ADR-0032/D6): o replace-por-subtree
         // remove do volume o que não existe no host — a faxina do DOCKER de graça (P2).
-        assertThat(write.relativePaths()).containsExactly(".claude/skills", ".codex/skills");
+        // F-N6 (ADR-0042): hooks materializam em TODO run, junto das skills.
+        assertThat(write.relativePaths()).containsExactly(
+                ".claude/skills", ".codex/skills",
+                ".claude/settings.json", ".claude/hooks/pretooluse-guard.js",
+                ".codex/hooks.json", ".codex/hooks/pretooluse-guard.js");
         assertThat(write.spec().workDir()).isEqualTo(workspaces.resolve(companyId, agentId, issueId));
         assertThat(write.spec().volumeName()).isEqualTo(workspaces.volumeName(companyId, agentId, issueId));
         // A imagem e a do PROPRIO adapter (process = plainShell), como no leitor do preview; e o
@@ -115,7 +119,11 @@ class WorkspaceWriteOnRunTest {
 
         assertThat(recorder.writes).hasSize(1);
         assertThat(recorder.writes.get(0).relativePaths())
-                .containsExactly(".claude/skills", ".codex/skills", ".claude/CLAUDE.md", "AGENTS.md");
+                .containsExactly(
+                        ".claude/skills", ".codex/skills",
+                        ".claude/settings.json", ".claude/hooks/pretooluse-guard.js",
+                        ".codex/hooks.json", ".codex/hooks/pretooluse-guard.js",
+                        ".claude/CLAUDE.md", "AGENTS.md");
     }
 
     @Test

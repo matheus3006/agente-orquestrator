@@ -19,6 +19,9 @@ class WorkspaceConventionTest {
 
         assertThat(claude.memoryFile()).isEqualTo(".claude/CLAUDE.md");
         assertThat(claude.skillsSubdir()).isEqualTo(".claude/skills");
+        // F-N6 (ADR-0042, D6/D7): o claude nega PreToolUse via settings.json na raiz do .claude/.
+        assertThat(claude.hooksFile()).isEqualTo(".claude/settings.json");
+        assertThat(claude.hooksScript()).isEqualTo(".claude/hooks/pretooluse-guard.js");
     }
 
     @Test
@@ -29,6 +32,9 @@ class WorkspaceConventionTest {
 
         assertThat(codex.memoryFile()).isEqualTo("AGENTS.md");
         assertThat(codex.skillsSubdir()).isEqualTo(".codex/skills");
+        // F-N6 (ADR-0042): o codex lê hooks de um arquivo dedicado (hooks.json), não do settings.json.
+        assertThat(codex.hooksFile()).isEqualTo(".codex/hooks.json");
+        assertThat(codex.hooksScript()).isEqualTo(".codex/hooks/pretooluse-guard.js");
     }
 
     @Test

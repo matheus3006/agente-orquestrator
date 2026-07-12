@@ -121,6 +121,29 @@ class CodexArgvTest {
     }
 
     @Test
+    void hooksHabilitadosGanhamOBypassDeTrustAntesDoSubcomandoResume() {
+        // F-N6 (ADR-0042, D6/D7): o codex não roda hooks não-confiados sem esta flag (gotcha de
+        // trust confirmado no source do tag rust-v0.142.5, pin R5-B) — os hooks materializam em
+        // TODO run (junto das skills), então o adapter sempre passa hooksEnabled=true.
+        assertThat(CodexArgv.build("faça X", "gpt-5.5", "high", IsolationPosture.HOST, null, 0, 0, null, true))
+                .containsSubsequence("--skip-git-repo-check", "-s", "workspace-write",
+                        "--dangerously-bypass-hook-trust", "faça X");
+    }
+
+    @Test
+    void hooksDesabilitadosOmitemOBypassDeTrust() {
+        assertThat(CodexArgv.build("t", "gpt-5.5", "high", IsolationPosture.HOST, null, 0, 0, null, false))
+                .doesNotContain("--dangerously-bypass-hook-trust");
+    }
+
+    @Test
+    void overloadsCurtasDeGramaticaPuraOmitemOBypassDeTrustPorDefault() {
+        // "Sem teto" / "sem schema": os testes de gramática pura não precisam pensar em hooks.
+        assertThat(CodexArgv.build("faça X", "gpt-5.5", "high", IsolationPosture.HOST))
+                .doesNotContain("--dangerously-bypass-hook-trust");
+    }
+
+    @Test
     void externamenteSandboxadoGanhaSkipGitEBypassComPromptNoFim() {
         // F.11 (ADR-0025): o container E o sandbox externo — o codex roda sem self-sandbox.
         // Flags empiricamente confirmados contra o codex 0.142.5; prompt segue o ULTIMO.
