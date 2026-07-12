@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -30,7 +31,9 @@ import java.util.UUID;
  *       seguidos SEM o dono no meio → em vez de re-grelhar de novo, a ORIGEM recebe "prossiga com
  *       a melhor premissa e SINALIZE" (o dono pega no review/gate) — nunca trava. N espelha o
  *       {@code SpawnLineageGuard.MAX_DEPTH=5} (confirmado pelo dono em 2026-07-10, como o
- *       MAX_CONSECUTIVE da ADR-0030).</li>
+ *       MAX_CONSECUTIVE da ADR-0030). A régua é COMPARTILHADA entre o kickback cirúrgico
+ *       ({@link #postKickback}, ao Questionador) e o auto-kickback entre personas (rodada 9,
+ *       {@link #postRetrabalho}, entre back-office) — {@link #postTetoDeRegua}.</li>
  * </ul>
  */
 @Component
@@ -84,23 +87,7 @@ public class PersonaContinuationPoster {
             return false;
         }
         if (kickbacksSeguidosNoTail(doConv) >= MAX_KICKBACKS_SEGUIDOS) {
-            // Reincidência PÓS-prossiga: a origem já recebeu "prossiga" e voltou a travar — sem o
-            // dono no meio isso giraria para sempre. CORTA como a ADR-0030 (turno ANSWERED visível,
-            // sem novo Run): o loop para de fato e o dono vê onde emperrou.
-            if (prossigaJaNoTail(doConv)) {
-                postCutNotice(companyId, conversationId, origem, lacuna);
-                return true;
-            }
-            Agent origemAgent = personaAgent(companyId, origem);
-            if (origemAgent == null) {
-                return false;
-            }
-            log.warn("persona: conversa {} bateu {} kickbacks seguidos — origem '{}' prossegue com a"
-                    + " melhor premissa e sinaliza (M9)", conversationId, MAX_KICKBACKS_SEGUIDOS,
-                    origem.dbValue());
-            postTurno(companyId, conversationId, origemAgent,
-                    PersonaContinuationSentinel.prossiga(lacuna), "persona-prossiga");
-            return true;
+            return postTetoDeRegua(companyId, conversationId, doConv, origem, lacuna);
         }
         Agent questionador = personaAgent(companyId, CeoPersona.QUESTIONADOR);
         if (questionador == null) {
@@ -109,6 +96,66 @@ public class PersonaContinuationPoster {
         }
         postTurno(companyId, conversationId, questionador,
                 KickbackTurn.ownerMessage(origem, lacuna), "persona-kickback");
+        return true;
+    }
+
+    /**
+     * Auto-kickback entre personas (rodada 9, D-motor-nativo §2): a persona {@code origem} topou
+     * um defeito no entregável que RECEBEU e devolve o bastão a quem entregou — INVISÍVEL (D4),
+     * sem passar pelo dono. O destino NUNCA é um campo do bloco: é o bastão mais recente do TAIL
+     * (a reincidência pós-prossiga responde à sentinela de "prossiga", não a um bastão fresco —
+     * {@link #origemDoBastaoNoTail} anda pra trás através dela). Mesma régua M9 do kickback
+     * cirúrgico (o ping-pong entre personas some do dono; sem a régua compartilhada giraria para
+     * sempre) — o teto vira "prossiga" para a origem, igual ao needs-grilling.
+     */
+    @Transactional
+    public boolean postRetrabalho(UUID companyId, UUID conversationId, CeoPersona origem, String lacuna) {
+        List<ConversationTurn> doConv = turns.findByConversationIdAndCompanyIdOrderByCreatedAtAsc(
+                conversationId, companyId);
+        if (hasPendingPersonaFlow(doConv)) {
+            return false;
+        }
+        CeoPersona destino = origemDoBastaoNoTail(doConv).orElse(null);
+        if (destino == null) {
+            log.warn("persona: retrabalho da conversa {} sem bastão no tail — sem origem para"
+                    + " devolver (descartado, fail-soft)", conversationId);
+            return false;
+        }
+        if (kickbacksSeguidosNoTail(doConv) >= MAX_KICKBACKS_SEGUIDOS) {
+            return postTetoDeRegua(companyId, conversationId, doConv, origem, lacuna);
+        }
+        Agent alvo = personaAgent(companyId, destino);
+        if (alvo == null) {
+            log.warn("persona: retrabalho para '{}' sem agente na company {} — descartado (fail-soft)",
+                    destino.dbValue(), companyId);
+            return false;
+        }
+        postTurno(companyId, conversationId, alvo,
+                PersonaContinuationSentinel.retrabalho(origem, destino, lacuna), "persona-retrabalho");
+        return true;
+    }
+
+    /**
+     * O TETO compartilhado da régua M9 (kickback cirúrgico E retrabalho entre personas contam
+     * junto — os dois são "o sistema não resolveu sozinho e voltou"): na reincidência PÓS-prossiga
+     * CORTA (espelho da ADR-0030, turno ANSWERED visível, sem novo Run); senão, a ORIGEM prossegue
+     * com a melhor premissa e sinaliza.
+     */
+    private boolean postTetoDeRegua(UUID companyId, UUID conversationId, List<ConversationTurn> doConv,
+                                    CeoPersona origem, String lacuna) {
+        if (prossigaJaNoTail(doConv)) {
+            postCutNotice(companyId, conversationId, origem, lacuna);
+            return true;
+        }
+        Agent origemAgent = personaAgent(companyId, origem);
+        if (origemAgent == null) {
+            return false;
+        }
+        log.warn("persona: conversa {} bateu {} kickbacks seguidos — origem '{}' prossegue com a"
+                + " melhor premissa e sinaliza (M9)", conversationId, MAX_KICKBACKS_SEGUIDOS,
+                origem.dbValue());
+        postTurno(companyId, conversationId, origemAgent,
+                PersonaContinuationSentinel.prossiga(lacuna), "persona-prossiga");
         return true;
     }
 
@@ -152,20 +199,20 @@ public class PersonaContinuationPoster {
     }
 
     /**
-     * Kickbacks seguidos SEM o dono no meio (M9): anda do fim para trás CONTANDO kickbacks e
-     * PULANDO turnos internos (sentinelas de bastão/prossiga/reset e o aviso de descarte da
-     * ADR-0036 — plantado pelo sistema, não é o dono de volta); a primeira mensagem que não é
-     * do fluxo — o dono de volta na conversa — ZERA a régua. O ping-pong autônomo
-     * (P→Q→P→… sem resposta do dono) é exatamente o que acumula.
+     * Kickbacks seguidos SEM o dono no meio (M9): anda do fim para trás CONTANDO kickbacks —
+     * cirúrgico (D7, ao Questionador) E retrabalho entre personas (rodada 9, mesma régua: os dois
+     * são "o sistema não resolveu sozinho e voltou") — e PULANDO turnos internos (sentinelas de
+     * bastão/prossiga/reset e o aviso de descarte da ADR-0036 — plantado pelo sistema, não é o
+     * dono de volta); a primeira mensagem que não é do fluxo — o dono de volta na conversa — ZERA
+     * a régua. O ping-pong autônomo (P→Q→P→… ou P→E→P→… sem resposta do dono) é o que acumula.
      */
     private static long kickbacksSeguidosNoTail(List<ConversationTurn> doConv) {
         long count = 0;
         for (int i = doConv.size() - 1; i >= 0; i--) {
             String message = doConv.get(i).getOwnerMessage();
-            if (KickbackTurn.isKickback(message)) {
+            if (KickbackTurn.isKickback(message) || PersonaContinuationSentinel.isRetrabalho(message)) {
                 count++;
-            } else if (!ContinuationSentinel.isContinuation(message)
-                    && !ProposalDescarteNotice.isAviso(message)) {
+            } else if (donoDeVoltaNaConversa(message)) {
                 break;
             }
         }
@@ -179,12 +226,38 @@ public class PersonaContinuationPoster {
             if (PersonaContinuationSentinel.isProssiga(message)) {
                 return true;
             }
-            if (!ContinuationSentinel.isContinuation(message) && !KickbackTurn.isKickback(message)
-                    && !ProposalDescarteNotice.isAviso(message)) {
+            if (donoDeVoltaNaConversa(message)) {
                 return false; // o dono voltou à conversa — régua nova
             }
         }
         return false;
+    }
+
+    /**
+     * O bastão mais recente do TAIL (rodada 9): anda pra trás PULANDO turnos internos do fluxo
+     * (retrabalho/prossiga/kickback/aviso são o MESMO ping-pong sem o dono no meio — a
+     * reincidência pós-prossiga responde à sentinela de "prossiga", não a um bastão fresco) até
+     * achar o bastão que originou esta corrente — é a quem o retrabalho devolve. Sem bastão no
+     * tail (turno raiz do dono, ou o dono já voltou): vazio — sem para onde devolver.
+     */
+    private static Optional<CeoPersona> origemDoBastaoNoTail(List<ConversationTurn> doConv) {
+        for (int i = doConv.size() - 1; i >= 0; i--) {
+            String message = doConv.get(i).getOwnerMessage();
+            Optional<CeoPersona> origem = PersonaContinuationSentinel.origemDoBastao(message);
+            if (origem.isPresent()) {
+                return origem;
+            }
+            if (donoDeVoltaNaConversa(message)) {
+                return Optional.empty(); // o dono voltou — sem bastão vigente
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** A primeira mensagem que NÃO é do fluxo interno de personas — o dono de volta na conversa. */
+    private static boolean donoDeVoltaNaConversa(String message) {
+        return !ContinuationSentinel.isContinuation(message) && !KickbackTurn.isKickback(message)
+                && !ProposalDescarteNotice.isAviso(message);
     }
 
     /** O corte (espelho do aviso da ADR-0030): turno ANSWERED visível, sem wakeup — o loop PARA. */

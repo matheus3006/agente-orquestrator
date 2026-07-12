@@ -37,6 +37,8 @@ public class PersonaHandoffScanner {
             Pattern.compile("(?m)^```correcao[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
     private static final Pattern ABSORCAO_BLOCK =
             Pattern.compile("(?m)^```absorcao[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
+    private static final Pattern RETRABALHO_BLOCK =
+            Pattern.compile("(?m)^```retrabalho[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -73,6 +75,13 @@ public class PersonaHandoffScanner {
                 found.add(new PositionedRoute(absorcoes.start(), absorcao));
             }
         }
+        Matcher retrabalhos = RETRABALHO_BLOCK.matcher(reply);
+        while (retrabalhos.find()) {
+            Retrabalho retrabalho = parseRetrabalho(readObject(retrabalhos.group(1)));
+            if (retrabalho != null) {
+                found.add(new PositionedRoute(retrabalhos.start(), retrabalho));
+            }
+        }
         return found.stream()
                 .sorted((a, b) -> Integer.compare(a.position(), b.position()))
                 .map(PositionedRoute::route)
@@ -97,6 +106,7 @@ public class PersonaHandoffScanner {
                 case "needs-grilling" -> parseNeedsGrilling(bloco);
                 case "correcao" -> parseCorrecao(bloco);
                 case "absorcao" -> parseAbsorcao(bloco);
+                case "retrabalho" -> parseRetrabalho(bloco);
                 default -> null; // proposta (ProposalScanner) ou tipo desconhecido: fail-soft
             };
             if (route != null) {
@@ -157,6 +167,14 @@ public class PersonaHandoffScanner {
         return new Absorcao(issue.asInt(), dominio, foco, racional);
     }
 
+    private static Retrabalho parseRetrabalho(JsonNode node) {
+        if (node == null) {
+            return null;
+        }
+        String lacuna = textOrNull(node, "lacuna");
+        return lacuna == null ? null : new Retrabalho(lacuna);
+    }
+
     private static JsonNode readObject(String block) {
         try {
             JsonNode node = MAPPER.readTree(block.strip());
@@ -175,7 +193,7 @@ public class PersonaHandoffScanner {
     }
 
     /** Uma virada extraída da resposta, na ordem do texto. */
-    public sealed interface Route permits Handoff, NeedsGrilling, Correcao, Absorcao {
+    public sealed interface Route permits Handoff, NeedsGrilling, Correcao, Absorcao, Retrabalho {
     }
 
     /** Bastão adiante (D6): a persona {@code para} reivindica o próximo turno com o entregável. */
@@ -202,5 +220,15 @@ public class PersonaHandoffScanner {
      * confirmação visível na thread (G1/G6).
      */
     public record Absorcao(int issue, String dominio, String foco, String racional) implements Route {
+    }
+
+    /**
+     * Auto-kickback entre personas (rodada 9, D-motor-nativo §2 "Auto-kickback amplo"): a persona
+     * topou um defeito/lacuna NO ENTREGÁVEL que RECEBEU — não é lacuna de intenção-do-usuário (essa
+     * segue exclusiva do {@link NeedsGrilling}, D7) — e devolve o bastão a quem entregou, SEM
+     * passar pelo dono. O destino NUNCA viaja no bloco (mesmo princípio do {@code origem} em
+     * {@link PersonaBatonRouter}): o roteador o deriva do bastão que este turno está respondendo.
+     */
+    public record Retrabalho(String lacuna) implements Route {
     }
 }

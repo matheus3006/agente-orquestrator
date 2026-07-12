@@ -150,6 +150,33 @@ class PersonaHandoffScannerTest {
                 .as("o exemplo INDENTADO no prompt do Planejador nunca dispara").isEmpty();
     }
 
+    /**
+     * O 5º irmão (auto-kickback entre personas, rodada 9): o Executor topa um defeito no
+     * entregável que RECEBEU (não é lacuna de intenção do dono, D7 segue intocado) e devolve o
+     * bastão a quem entregou — mesma forma do needs-grilling, destino DIFERENTE (derivado, nunca
+     * um campo do bloco).
+     */
+    @Test
+    void retrabalhoCanonicoCarregaALacuna() {
+        String reply = "A estratégia tem um buraco.\n```retrabalho\n"
+                + "{\"lacuna\": \"o agente 'Dev Backend' não tem role definido\"}\n```";
+
+        List<PersonaHandoffScanner.Route> routes = scanner.scan(reply);
+
+        assertThat(routes).hasSize(1);
+        PersonaHandoffScanner.Retrabalho retrabalho = (PersonaHandoffScanner.Retrabalho) routes.get(0);
+        assertThat(retrabalho.lacuna()).isEqualTo("o agente 'Dev Backend' não tem role definido");
+    }
+
+    /** Fail-soft do retrabalho: sem lacuna, não-JSON ou cerca indentada = nada (espelho do irmão). */
+    @Test
+    void retrabalhoMalformadoOuIndentadoEDescartado() {
+        assertThat(scanner.scan("```retrabalho\nisto não é json\n```")).isEmpty();
+        assertThat(scanner.scan("```retrabalho\n{\"motivo\": \"faltou algo\"}\n```")).isEmpty();
+        assertThat(scanner.scan("O formato é:\n  ```retrabalho\n  {\"lacuna\": \"l\"}\n  ```\n"))
+                .as("o exemplo INDENTADO no prompt do Executor nunca dispara").isEmpty();
+    }
+
     // ---- F-N3 (ADR-0039, D2): a entrada ESTRUTURADA — o motor validou o shape na fonte, os blocos
     // chegam como JSON já parseado (campo `tipo` discrimina), sem regex. A validação de DOMÍNIO
     // (persona conhecida, #N >= 1, campos presentes) segue viva — é a mesma dos parsers do regex.
@@ -189,6 +216,16 @@ class PersonaHandoffScannerTest {
                 "{\"tipo\":\"correcao\",\"issue\":0}"));
 
         assertThat(routes).isEmpty();
+    }
+
+    @Test
+    void scanStructuredDespachaRetrabalho() {
+        List<PersonaHandoffScanner.Route> routes = scanner.scanStructured(blocos(
+                "{\"tipo\":\"retrabalho\",\"lacuna\":\"o agente sem role definido\"}"));
+
+        assertThat(routes).hasSize(1);
+        assertThat(((PersonaHandoffScanner.Retrabalho) routes.get(0)).lacuna())
+                .isEqualTo("o agente sem role definido");
     }
 
     @Test

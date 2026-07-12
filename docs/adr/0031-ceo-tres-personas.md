@@ -129,3 +129,20 @@ pula o aviso). Racional completo na ADR-0036.
 O Planejador ganhou a triagem das issues órfãs do dono: 4º bloco tipado ` ```absorcao ` (emissor
 restrito a ele, espelho da restrição do caso B), decidindo time-alvo contra o `### Equipe` (M8);
 kickback `needs-grilling` e régua M9 reusados como estão. Racional completo na ADR-0037.
+
+## Forward-ref (2026-07-12 — rodada 9/R9-B, auto-kickback amplo entre personas)
+O item congelado da Frente D ("iteração automática ampla entre personas, além do `needs-grilling`
+cirúrgico") foi DESTRAVADO pela saída estruturada nativa (ADR-0039): "entregável detectado" virou
+campo validado de `blocos[]`, então o mecanismo nasceu de graça — 5º bloco tipado ` ```retrabalho `
+(`{"lacuna"}`, mesma forma do `needs-grilling`), emissor restrito ao EXECUTOR (é o único que RECEBE
+entregável de outra persona back-office; o Planejador só recebe do Questionador, e um defeito no
+dossiê continua sendo lacuna de intenção-do-usuário — D7 intocado, não este canal). Diferente do
+`needs-grilling`: o destino NUNCA é um campo do bloco nem o turno imediato — o
+`PersonaContinuationPoster` deriva quem entregou o bastão andando para trás no TAIL da conversa
+através de retrabalho/prossiga/kickback (achado do `/verify` ao vivo: a reincidência pós-prossiga
+responde à sentinela de "prossiga", não a um bastão fresco; derivar só do turno imediato perdia
+esse caso e o corte nunca disparava). A régua M9 (§8) é COMPARTILHADA entre o kickback cirúrgico e
+o retrabalho — mesmo teto, mesmo "prossiga", mesmo corte na reincidência — porque as duas rotas são
+"o sistema não resolveu sozinho e voltou". Mecanismo continua "campo validado → rota": nenhuma
+semântica de produto nova, nenhum cinto por tipo de bloco. Racional completo no PR
+`feat/auto-kickback-personas`.

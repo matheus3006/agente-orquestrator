@@ -554,6 +554,173 @@ class PersonaBatonFlowTest {
         assertThat(atendido.getCeoReply()).isEqualTo("Estratégia pronta em estrategia.md.");
     }
 
+    // ---- Auto-kickback entre personas (rodada 9, D-motor-nativo §2): o Executor topa um defeito
+    // no entregável que RECEBEU (não é lacuna de intenção-do-usuário, D7 segue intocado) e devolve
+    // o bastão a quem entregou — SEM re-grelhar o dono. Mesma régua M9 do kickback cirúrgico.
+
+    /** O Executor devolve o bastão ao Planejador — INVISÍVEL na thread, sem passar pelo dono. */
+    @Test
+    void retrabalhoDoExecutorDevolveOBastaoAoPlanejador_invisivelNaThread() {
+        UUID companyId = novaCompany();
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID executorId = persona(companyId, "executor", "CEO Executor",
+                "printf '%s\\n' 'A estratégia tem um buraco.' '```retrabalho' "
+                        + "'{\"lacuna\": \"o agente Dev Backend não tem role definido\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        turnoPara(companyId, negocio.getId(), executorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.PLANEJADOR, CeoPersona.EXECUTOR,
+                        ".orq/conversa/x/estrategia.md", "protocolar"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1); // o run do Executor topa o defeito
+
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        assertThat(doConv).hasSize(2);
+        ConversationTurn continuacao = doConv.get(1);
+        assertThat(continuacao.getAgentId()).isEqualTo(planejadorId);
+        assertThat(continuacao.getStatus()).isEqualTo(TurnStatus.PENDING);
+        assertThat(continuacao.getOwnerMessage())
+                .startsWith("[continuação — retrabalho de executor para planejador")
+                .contains("o agente Dev Backend não tem role definido");
+        // D4: invisível na thread do board — o dono nunca vê o ping-pong entre personas.
+        assertThat(conversations.thread(companyId, negocio.getId()))
+                .noneMatch(turno -> turno.getId().equals(continuacao.getId()));
+        assertThat(executorId).isNotEqualTo(planejadorId);
+    }
+
+    /** M3 (espelho de correcao/absorcao): só o EXECUTOR roteia ```retrabalho``` — fail-soft. */
+    @Test
+    void retrabalhoDoPlanejadorEDescartadoSemNada() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' 'Devolvo eu.' '```retrabalho' '{\"lacuna\": \"x\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Negócio");
+        turnoPara(companyId, negocio.getId(), planejadorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.QUESTIONADOR, CeoPersona.PLANEJADOR,
+                        ".orq/conversa/x/dossie.md", "gerar estratégia"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(thread(companyId, negocio.getId()))
+                .as("nenhum turno de protocolo além do bastão atendido").hasSize(1);
+    }
+
+    /** M9: retrabalhos seguidos SEM o dono no meio batem o MESMO teto → a ORIGEM prossegue. */
+    @Test
+    void tetoDeRetrabalhosViraProssigaComAMelhorPremissa() {
+        UUID companyId = novaCompany();
+        persona(companyId, "planejador", "CEO Planejador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID executorId = persona(companyId, "executor", "CEO Executor",
+                "printf '%s\\n' 'Ainda tem buraco.' '```retrabalho' "
+                        + "'{\"lacuna\": \"segue sem corrigir\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        // o tail já tem MAX retrabalhos seguidos (ping-pong autônomo entre P e E)
+        for (int i = 0; i < PersonaContinuationPoster.MAX_KICKBACKS_SEGUIDOS; i++) {
+            ConversationTurn retrabalho = new ConversationTurn(UUID.randomUUID(), negocio.getId(),
+                    companyId, executorId, PersonaContinuationSentinel.retrabalho(
+                            CeoPersona.EXECUTOR, CeoPersona.PLANEJADOR, "lacuna " + i));
+            retrabalho.answer("retrabalho " + i);
+            turns.save(retrabalho);
+        }
+        turnoPara(companyId, negocio.getId(), executorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.PLANEJADOR, CeoPersona.EXECUTOR,
+                        ".orq/conversa/x/estrategia.md", "tentar de novo"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        ConversationTurn ultimo = doConv.get(doConv.size() - 1);
+        assertThat(ultimo.getAgentId()).isEqualTo(executorId); // volta pra ORIGEM (o Executor)
+        assertThat(ultimo.getStatus()).isEqualTo(TurnStatus.PENDING);
+        assertThat(ultimo.getOwnerMessage()).startsWith("[continuação — prossiga");
+        long retrabalhos = doConv.stream()
+                .filter(turno -> PersonaContinuationSentinel.isRetrabalho(turno.getOwnerMessage())).count();
+        assertThat(retrabalhos).isEqualTo(PersonaContinuationPoster.MAX_KICKBACKS_SEGUIDOS);
+    }
+
+    /** M9, reincidência: retrabalho DEPOIS do prossiga vira CORTE (turno visível, sem novo Run). */
+    @Test
+    void retrabalhoAposProssigaViraCorteSemNovoRun() {
+        UUID companyId = novaCompany();
+        UUID questionadorId = persona(companyId, "questionador", "CEO Questionador",
+                "printf '%s\\n' \"$ORQ_PROMPT\"");
+        persona(companyId, "planejador", "CEO Planejador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID executorId = persona(companyId, "executor", "CEO Executor",
+                "printf '%s\\n' 'Ainda tem buraco.' '```retrabalho' "
+                        + "'{\"lacuna\": \"segue sem corrigir\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        for (int i = 0; i < PersonaContinuationPoster.MAX_KICKBACKS_SEGUIDOS; i++) {
+            ConversationTurn retrabalho = new ConversationTurn(UUID.randomUUID(), negocio.getId(),
+                    companyId, executorId, PersonaContinuationSentinel.retrabalho(
+                            CeoPersona.EXECUTOR, CeoPersona.PLANEJADOR, "lacuna " + i));
+            retrabalho.answer("retrabalho " + i);
+            turns.save(retrabalho);
+        }
+        // o prossiga JÁ aconteceu e o Executor topou o MESMO defeito de novo
+        ConversationTurn prossiga = new ConversationTurn(UUID.randomUUID(), negocio.getId(), companyId,
+                executorId, PersonaContinuationSentinel.prossiga("segue sem corrigir"));
+        prossiga.answer("tentei — travei de novo");
+        turns.save(prossiga);
+        turnoPara(companyId, negocio.getId(), executorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.PLANEJADOR, CeoPersona.EXECUTOR,
+                        ".orq/conversa/x/estrategia.md", "de novo"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        ConversationTurn corte = doConv.get(doConv.size() - 1);
+        assertThat(corte.getStatus()).isEqualTo(TurnStatus.ANSWERED); // ANSWERED direto: sem Run novo
+        assertThat(corte.getOwnerMessage()).startsWith("Bastão parado");
+        assertThat(corte.getCeoReply()).contains("segue sem corrigir");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(0); // o ping-pong morreu aqui
+        assertThat(questionadorId).isNotNull(); // o Questionador é o porta-voz do corte
+    }
+
+    /**
+     * M9, reincidência DIRETA (achado do /verify ao vivo, R9-B): o Executor responde ao PRÓPRIO
+     * turno de "prossiga" com outro `retrabalho` — SEM um bastão fresco do Planejador no meio. O
+     * destino tem de ser derivado andando pra trás através do "prossiga" e dos retrabalhos até o
+     * bastão original — não só do turno imediato — senão a reincidência mais comum (a origem
+     * insiste na MESMA lacuna, sem esperar por um novo bastão) nunca vira corte.
+     */
+    @Test
+    void retrabalhoDiretoNoTurnoDeProssigaTambemViraCorteSemNovoRun() {
+        UUID companyId = novaCompany();
+        persona(companyId, "questionador", "CEO Questionador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        persona(companyId, "planejador", "CEO Planejador", "printf '%s\\n' \"$ORQ_PROMPT\"");
+        UUID executorId = persona(companyId, "executor", "CEO Executor",
+                "printf '%s\\n' 'Ainda tem buraco.' '```retrabalho' "
+                        + "'{\"lacuna\": \"segue sem corrigir\"}' '```'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        // o bastão ORIGINAL (a única fonte real de "pra quem devolver" no tail)…
+        ConversationTurn bastaoOriginal = new ConversationTurn(UUID.randomUUID(), negocio.getId(),
+                companyId, executorId, PersonaContinuationSentinel.bastao(CeoPersona.PLANEJADOR,
+                        CeoPersona.EXECUTOR, ".orq/conversa/x/estrategia.md", "protocolar"));
+        bastaoOriginal.answer("A estratégia tem um buraco.");
+        turns.save(bastaoOriginal);
+        // … seguido de MAX retrabalhos (o ping-pong comprimido, sem os re-handoffs intermediários).
+        for (int i = 0; i < PersonaContinuationPoster.MAX_KICKBACKS_SEGUIDOS; i++) {
+            ConversationTurn retrabalho = new ConversationTurn(UUID.randomUUID(), negocio.getId(),
+                    companyId, executorId, PersonaContinuationSentinel.retrabalho(
+                            CeoPersona.EXECUTOR, CeoPersona.PLANEJADOR, "lacuna " + i));
+            retrabalho.answer("retrabalho " + i);
+            turns.save(retrabalho);
+        }
+        // o teto já bateu e a origem recebeu "prossiga" — ela responde DIRETO a ele, sem bastão novo.
+        turnoPara(companyId, negocio.getId(), executorId,
+                PersonaContinuationSentinel.prossiga("segue sem corrigir"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        ConversationTurn corte = doConv.get(doConv.size() - 1);
+        assertThat(corte.getStatus()).isEqualTo(TurnStatus.ANSWERED); // ANSWERED direto: sem Run novo
+        assertThat(corte.getOwnerMessage()).startsWith("Bastão parado");
+        assertThat(corte.getCeoReply()).contains("segue sem corrigir");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(0); // o ping-pong morreu aqui
+    }
+
     /** D5: o confirma-antes fica IDLE — resposta sem bloco (a pergunta ao dono) não vira nada. */
     @Test
     void respostaSemBlocoNaoViraContinuacao_confirmaAntesIdle() {
@@ -570,5 +737,33 @@ class PersonaBatonFlowTest {
         // (cerca só vale em coluna 0): o backend nunca interpreta a prosa; a persona decide.
         assertThat(thread(companyId, negocio.getId())).hasSize(1);
         assertThat(dispatcher.dispatchOnce()).isEqualTo(0);
+    }
+
+    /** O retrabalho pela via ESTRUTURADA (schema nativo, ADR-0039) — mesmo destino do fenced. */
+    @Test
+    void retrabalhoEstruturadoDoExecutorDevolveOBastaoAoPlanejador() {
+        UUID companyId = novaCompany();
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador",
+                "printf '%s\\n' \"$ORQ_PROMPT\"");
+        String json = "{\"resposta\":\"Achei um furo.\",\"blocos\":[{\"tipo\":\"retrabalho\","
+                + "\"lacuna\":\"o agente sem role definido\"}]}";
+        UUID executorId = persona(companyId, "executor", "CEO Executor", "printf '%s' '" + json + "'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        UUID turnId = turnoPara(companyId, negocio.getId(), executorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.PLANEJADOR, CeoPersona.EXECUTOR,
+                        ".orq/conversa/x/estrategia.md", "protocolar"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        ConversationTurn continuacao = doConv.get(doConv.size() - 1);
+        assertThat(continuacao.getAgentId()).isEqualTo(planejadorId);
+        assertThat(continuacao.getStatus()).isEqualTo(TurnStatus.PENDING);
+        assertThat(continuacao.getOwnerMessage())
+                .startsWith("[continuação — retrabalho de executor para planejador")
+                .contains("o agente sem role definido");
+        // o reply do Executor na sua trilha é o CAMPO resposta, limpo (não o JSON).
+        ConversationTurn atendido = turns.findById(turnId).orElseThrow();
+        assertThat(atendido.getCeoReply()).isEqualTo("Achei um furo.");
     }
 }

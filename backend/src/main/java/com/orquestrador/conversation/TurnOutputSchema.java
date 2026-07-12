@@ -67,6 +67,7 @@ public class TurnOutputSchema {
                 anyOf.add(propostaHireVariant());
                 anyOf.add(propostaCreateTeamVariant());
                 anyOf.add(needsGrillingVariant());
+                anyOf.add(retrabalhoVariant());
             }
         }
         ObjectNode items = mapper.createObjectNode();
@@ -92,6 +93,17 @@ public class TurnOutputSchema {
     private ObjectNode correcaoVariant() {
         ObjectNode block = strictObject("correcao", "issue");
         ((ObjectNode) block.get("properties")).putObject("issue").put("type", "integer");
+        return block;
+    }
+
+    /**
+     * Auto-kickback entre personas (rodada 9): só o Executor emite (é quem recebe entregável de
+     * outra persona back-office); mesma forma do {@code needs-grilling} — o destino nunca é campo
+     * do schema, o roteador o deriva do bastão que o turno está respondendo.
+     */
+    private ObjectNode retrabalhoVariant() {
+        ObjectNode block = strictObject("retrabalho", "lacuna");
+        putString((ObjectNode) block.get("properties"), "lacuna");
         return block;
     }
 

@@ -76,13 +76,19 @@ class TurnOutputSchemaTest {
         assertThat(schema.forPersona(CeoPersona.QUESTIONADOR))
                 .contains("\"handoff\"").contains("\"correcao\"")
                 .doesNotContain("\"proposta\"").doesNotContain("\"absorcao\"");
-        // O Executor protocola o gate: proposta com as DUAS ações (HIRE_AGENT + CREATE_TEAM).
+        // O Executor protocola o gate: proposta com as DUAS ações (HIRE_AGENT + CREATE_TEAM) + o
+        // retrabalho (rodada 9: só ele recebe entregável de outra persona back-office).
         assertThat(schema.forPersona(CeoPersona.EXECUTOR))
                 .contains("\"proposta\"").contains("HIRE_AGENT").contains("CREATE_TEAM")
+                .contains("\"retrabalho\"")
                 .doesNotContain("\"correcao\"").doesNotContain("\"absorcao\"");
-        // O Planejador tria o board: absorcao é só dele.
+        // O Planejador tria o board: absorcao é só dele; retrabalho não é seu (D7 segue cobrindo
+        // a lacuna do dossiê como intenção-do-usuário, não como defeito de par).
         assertThat(schema.forPersona(CeoPersona.PLANEJADOR))
                 .contains("\"absorcao\"").contains("\"handoff\"")
-                .doesNotContain("\"proposta\"").doesNotContain("\"correcao\"");
+                .doesNotContain("\"proposta\"").doesNotContain("\"correcao\"")
+                .doesNotContain("\"retrabalho\"");
+        // O Questionador nunca recebe bastão de par — retrabalho não existe no seu schema.
+        assertThat(schema.forPersona(CeoPersona.QUESTIONADOR)).doesNotContain("\"retrabalho\"");
     }
 }
