@@ -88,8 +88,10 @@ public class CodexAdapter implements AgentAdapter {
         } catch (IOException falhaAoGravar) {
             return Result.fail("codex: falha ao gravar o schema de saída do turno: " + falhaAoGravar.getMessage());
         }
+        // F-N6 (ADR-0042): hooks materializam em TODO run (junto das skills, HookMaterializer),
+        // então o bypass de trust é sempre necessário — nunca condicional aqui.
         List<String> argv = CodexArgv.build(context.command(), context.model(), context.effort(),
-                context.target().posture(), context.priorSession(), maxThreads, maxDepth, outputSchemaFile);
+                context.target().posture(), context.priorSession(), maxThreads, maxDepth, outputSchemaFile, true);
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,
