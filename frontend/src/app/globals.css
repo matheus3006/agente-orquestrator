@@ -1020,7 +1020,10 @@ button:focus-visible,
   }
   .run-status.QUEUED,
   .run-status.RECOVERING { color: var(--amber); background: var(--amber-bg); }
-  .run-status.CANCELLED { color: var(--text-faint); background: var(--overlay); }
+  /* INTERRUPTED (F-N4/ADR-0040): parada pelo operador, não falha — mesmo tratamento
+     mudo de CANCELLED (nem fósforo de sucesso, nem coral de erro). */
+  .run-status.CANCELLED,
+  .run-status.INTERRUPTED { color: var(--text-faint); background: var(--overlay); }
 }
 
 /* ============================================================

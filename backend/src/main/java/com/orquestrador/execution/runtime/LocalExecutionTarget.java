@@ -362,8 +362,11 @@ public class LocalExecutionTarget implements ExecutionTarget {
         }
     }
 
+    /** O processo NATIVO vivo de cada runId (F-N4/ADR-0040) — o que {@link #interrupt} mata. */
+    private final RunProcessRegistry processes = new RunProcessRegistry();
+
     @Override
-    public Result run(Spec spec, Consumer<String> onStdoutLine) {
+    public Result run(Spec spec, UUID runId, Consumer<String> onStdoutLine) {
         try {
             ProcessBuilder localProcess = new ProcessBuilder(spec.command());
             localProcess.directory(spec.workDir().toFile());
@@ -375,16 +378,28 @@ public class LocalExecutionTarget implements ExecutionTarget {
             // default ficava aberto e motor que le stdin (`codex exec`) travava o run inteiro.
             localProcess.redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
             Process process = localProcess.start();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    onStdoutLine.accept(line);
+            processes.register(runId, process);
+            try {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        onStdoutLine.accept(line);
+                    }
                 }
+                return new Result(process.waitFor(), null);
+            } finally {
+                processes.unregister(runId);
             }
-            return new Result(process.waitFor(), null);
         } catch (Exception exception) {
             return new Result(-1, exception.getMessage());
         }
+    }
+
+    /** F-N4 (ADR-0040): descendentes primeiro (o filho da tool sobrevive orfao a um SIGKILL
+      * so-do-pai, sonda R6-B), depois o processo raiz — molde de {@link #stopPreviewServer}. */
+    @Override
+    public boolean interrupt(UUID runId) {
+        return processes.interrupt(runId);
     }
 }

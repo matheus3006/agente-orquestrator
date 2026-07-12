@@ -104,7 +104,14 @@ export async function findCompanyBySlug(slug: string): Promise<Company | undefin
 
 export type AgentBoardStatus = "RUNNING" | "QUEUED" | "BLOCKED" | "IDLE";
 
-export type RunStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "RECOVERING" | "CANCELLED";
+export type RunStatus =
+  | "QUEUED"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "RECOVERING"
+  | "CANCELLED"
+  | "INTERRUPTED";
 
 export interface MissionControlStep {
   runId: string;
@@ -169,6 +176,103 @@ export function getRunSteps(
   return apiFetch<RunStepsPage>(
     `/api/companies/${companyId}/runs/${runId}/steps?offset=${offset}&limit=${limit}`,
   );
+}
+
+/** F-N4 (ADR-0040): o botão "parar" do board — kill controlado, run vai a INTERRUPTED. */
+export interface InterruptRunResult {
+  runId: string;
+  status: RunStatus;
+  processKilled: boolean;
+}
+
+export function interruptRun(
+  companyId: string,
+  runId: string,
+  reason?: string,
+): Promise<InterruptRunResult> {
+  return apiFetch<InterruptRunResult>(`/api/companies/${companyId}/runs/${runId}/interrupt`, {
+    method: "POST",
+    body: reason ? { reason } : undefined,
+  });
+}
+
+export interface RunStepsStreamHandlers {
+  onStep?: (step: TranscriptStep) => void;
+  onStatus?: (status: RunStatus) => void;
+  onError?: (error: unknown) => void;
+}
+
+/** Um evento `event:`/`data:` do SSE — `data` pode vir em VÁRIAS linhas (spec), juntas por \n. */
+function parseSseEvent(rawEvent: string): { event: string; data: string } {
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const line of rawEvent.split("\n")) {
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).replace(/^ /, ""));
+    }
+  }
+  return { event, data: dataLines.join("\n") };
+}
+
+/**
+ * F-N4 (ADR-0040): o transporte SSE do transcript — `fetch()` + `ReadableStream`, NÃO o
+ * `EventSource` nativo (ele não manda headers arbitrários e o `X-Board-User` é o ÚNICO canal de
+ * auth do board, ver o topo deste arquivo — virar querystring vazaria o ator para logs/histórico).
+ * Devolve `close()` para o `useEffect` que abriu desligar a leitura ao desmontar/trocar de run.
+ */
+export function streamRunSteps(
+  companyId: string,
+  runId: string,
+  offset: number,
+  handlers: RunStepsStreamHandlers,
+): { close: () => void } {
+  const controller = new AbortController();
+  const headers = new Headers();
+  headers.set("X-Board-User", process.env.NEXT_PUBLIC_DEV_BOARD_USER ?? "");
+
+  (async () => {
+    try {
+      const response = await fetch(
+        `${resolveBaseUrl()}/api/companies/${companyId}/runs/${runId}/steps/stream?offset=${offset}`,
+        { headers, signal: controller.signal },
+      );
+      if (!response.ok || !response.body) {
+        throw await toApiError(response);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) {
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let boundary: number;
+        while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+          const rawEvent = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          if (!rawEvent.trim()) {
+            continue;
+          }
+          const { event, data } = parseSseEvent(rawEvent);
+          if (event === "step") {
+            handlers.onStep?.(JSON.parse(data) as TranscriptStep);
+          } else if (event === "status") {
+            handlers.onStatus?.(data as RunStatus);
+          }
+        }
+      }
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") {
+        handlers.onError?.(error);
+      }
+    }
+  })();
+
+  return { close: () => controller.abort() };
 }
 
 export interface ActivityEvent {

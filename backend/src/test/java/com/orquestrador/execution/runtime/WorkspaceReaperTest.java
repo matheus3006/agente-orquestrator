@@ -287,7 +287,7 @@ class WorkspaceReaperTest {
         }
 
         @Override
-        public Result run(Spec spec, Consumer<String> onStdoutLine) {
+        public Result run(Spec spec, UUID runId, Consumer<String> onStdoutLine) {
             throw new UnsupportedOperationException();
         }
 

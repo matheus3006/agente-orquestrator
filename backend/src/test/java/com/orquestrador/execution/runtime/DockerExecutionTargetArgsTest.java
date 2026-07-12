@@ -33,11 +33,12 @@ class DockerExecutionTargetArgsTest {
                 "alpine:3",
                 "vol1",
                 List.of());
+        UUID runId = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
 
-        List<String> argv = target.buildArgs(spec);
+        List<String> argv = target.buildArgs(spec, runId);
 
         assertThat(argv).containsExactly(
-                "docker", "run", "--rm", "-w", "/workspace",
+                "docker", "run", "--rm", "--name", "orq_run_" + runId, "-w", "/workspace",
                 "-v", "vol1:/workspace",
                 "-e", "K=V",
                 "alpine:3", "sh", "-c", "echo hi");
@@ -270,14 +271,28 @@ class DockerExecutionTargetArgsTest {
                 "orq-claude-code:2.1.201",
                 "vol1",
                 List.of(new ExecutionTarget.VolumeMount("orq_claude_creds", "/home/node")));
+        UUID runId = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
 
-        List<String> argv = target.buildArgs(spec);
+        List<String> argv = target.buildArgs(spec, runId);
 
         assertThat(argv).containsExactly(
-                "docker", "run", "--rm", "-w", "/workspace",
+                "docker", "run", "--rm", "--name", "orq_run_" + runId, "-w", "/workspace",
                 "-v", "vol1:/workspace",
                 "-v", "orq_claude_creds:/home/node",
                 "orq-claude-code:2.1.201", "claude", "-p", "oi");
+    }
+
+    // ===== F-N4 (ADR-0040): interrupt — mesmo molde do stop de preview server =====
+
+    @Test
+    void interruptDerrubaForcadoPeloNomeDeterministicoDoRun() {
+        // Molde EXATO de stopDerrubaForcadoPorNome (preview server): rm -f mata e remove num so
+        // passo. Nao ha processo de HOST a rastrear — o nome do container e a chave inteira.
+        DockerExecutionTarget target = new DockerExecutionTarget();
+        UUID runId = UUID.fromString("00000000-0000-0000-0000-0000000000cc");
+
+        assertThat(target.buildInterruptArgs(runId))
+                .containsExactly("docker", "rm", "-f", "orq_run_" + runId);
     }
 
     // ===== F.12 (ADR-0026): GC de workspaces — argv/parse/classify puros, sem daemon =====

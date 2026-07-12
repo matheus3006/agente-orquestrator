@@ -81,7 +81,7 @@ public class CodexAdapter implements AgentAdapter {
                 CONTAINER.credentialMounts());
 
         CodexStreamParser parser = new CodexStreamParser();
-        ExecutionTarget.Result run = context.target().run(spec, line -> {
+        ExecutionTarget.Result run = context.target().run(spec, context.runId(), line -> {
             CodexStreamParser.Step step = parser.accept(line);
             steps.emit(step.type(), step.detail());
         });

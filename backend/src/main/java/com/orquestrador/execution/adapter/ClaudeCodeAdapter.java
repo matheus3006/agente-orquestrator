@@ -80,7 +80,7 @@ public class ClaudeCodeAdapter implements AgentAdapter {
                 CONTAINER.credentialMounts());
 
         ClaudeStreamParser parser = new ClaudeStreamParser();
-        ExecutionTarget.Result run = context.target().run(spec, line -> {
+        ExecutionTarget.Result run = context.target().run(spec, context.runId(), line -> {
             ClaudeStreamParser.Step step = parser.accept(line);
             steps.emit(step.type(), step.detail());
         });

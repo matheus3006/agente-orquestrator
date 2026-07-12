@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch, batchDecideApprovals, decideApproval } from "./api";
+import {
+  ApiError,
+  apiFetch,
+  batchDecideApprovals,
+  decideApproval,
+  interruptRun,
+  streamRunSteps,
+} from "./api";
 
 // O fetcher é o ÚNICO ponto de auth e de tradução de erro do app (ADR-0013):
 // X-Board-User entra aqui (trocar por cookie = tocar 1 arquivo) e o formato
@@ -186,5 +193,137 @@ describe("batchDecideApprovals (o lote do gate — ADR-0035/D10)", () => {
 
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).status).toBe(400);
+  });
+});
+
+describe("interruptRun (F-N4/ADR-0040: o botão parar)", () => {
+  it("POSTa com o motivo quando informado", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { runId: "r1", status: "INTERRUPTED", processKilled: true }),
+    );
+
+    const result = await interruptRun("c1", "r1", "dono pediu parar");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("http://backend-teste:8080/api/companies/c1/runs/r1/interrupt");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ reason: "dono pediu parar" });
+    expect(result).toEqual({ runId: "r1", status: "INTERRUPTED", processKilled: true });
+  });
+
+  it("sem motivo, POSTa sem corpo (o backend aplica o default legível)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { runId: "r1", status: "INTERRUPTED", processKilled: false }),
+    );
+
+    await interruptRun("c1", "r1");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.body).toBeUndefined();
+  });
+
+  it("409 (run que já não está rodando) segue o contrato de erro da casa", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(409, { error: "conflict", message: "Run nao esta em execucao" }),
+    );
+
+    const failure = await interruptRun("c1", "r1").catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as ApiError).status).toBe(409);
+  });
+});
+
+describe("streamRunSteps (F-N4/ADR-0040: transporte SSE via fetch — EventSource não manda headers)", () => {
+  function sseResponse(chunks: string[]): Response {
+    const encoder = new TextEncoder();
+    let index = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (index < chunks.length) {
+          controller.enqueue(encoder.encode(chunks[index++]));
+        } else {
+          controller.close();
+        }
+      },
+    });
+    return new Response(body, { status: 200 });
+  }
+
+  it("monta a URL com offset e injeta X-Board-User (mesmo canal de auth do apiFetch)", async () => {
+    fetchMock.mockResolvedValue(sseResponse([]));
+
+    streamRunSteps("c1", "r1", 42, {});
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("http://backend-teste:8080/api/companies/c1/runs/r1/steps/stream?offset=42");
+    expect(new Headers(init.headers).get("X-Board-User")).toBe(
+      "b0a7d000-0000-4000-8000-000000000001",
+    );
+  });
+
+  it("consome eventos `step` em ordem e devolve os steps parseados", async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: step\ndata: {"type":"STDOUT","detail":"linha-1","createdAt":"2026-01-01T00:00:00Z"}\n\n',
+        'event: step\ndata: {"type":"STDOUT","detail":"linha-2","createdAt":"2026-01-01T00:00:01Z"}\n\n',
+      ]),
+    );
+    const steps: unknown[] = [];
+
+    streamRunSteps("c1", "r1", 0, { onStep: (step) => steps.push(step) });
+
+    await vi.waitFor(() => expect(steps).toHaveLength(2));
+    expect(steps[0]).toEqual({ type: "STDOUT", detail: "linha-1", createdAt: "2026-01-01T00:00:00Z" });
+    expect(steps[1]).toEqual({ type: "STDOUT", detail: "linha-2", createdAt: "2026-01-01T00:00:01Z" });
+  });
+
+  it("evento `status` chega via onStatus (o sinal que fecha o drawer/desliga o poll)", async () => {
+    fetchMock.mockResolvedValue(sseResponse(["event: status\ndata: SUCCEEDED\n\n"]));
+    const statuses: string[] = [];
+
+    streamRunSteps("c1", "r1", 0, { onStatus: (status) => statuses.push(status) });
+
+    await vi.waitFor(() => expect(statuses).toEqual(["SUCCEEDED"]));
+  });
+
+  it("um evento partido em dois chunks de rede ainda parseia (buffer acumula até a linha em branco)", async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse(['event: step\ndata: {"typ', 'e":"STDOUT","detail":"junto","createdAt":"x"}\n\n']),
+    );
+    const steps: unknown[] = [];
+
+    streamRunSteps("c1", "r1", 0, { onStep: (step) => steps.push(step) });
+
+    await vi.waitFor(() => expect(steps).toHaveLength(1));
+    expect(steps[0]).toEqual({ type: "STDOUT", detail: "junto", createdAt: "x" });
+  });
+
+  it("close() aborta a leitura em andamento (o signal do fetch fica aborted)", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      capturedSignal = init.signal as AbortSignal;
+      return new Promise(() => {}); // nunca resolve — simula uma conexão viva
+    });
+
+    const stream = streamRunSteps("c1", "r1", 0, {});
+
+    await vi.waitFor(() => expect(capturedSignal).toBeDefined());
+    stream.close();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("resposta de erro (403/404) vira onError, nunca lança sem handler", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(404, { error: "not_found", message: "Run nao encontrado nesta company" }),
+    );
+    const errors: unknown[] = [];
+
+    streamRunSteps("c1", "r1", 0, { onError: (error) => errors.push(error) });
+
+    await vi.waitFor(() => expect(errors).toHaveLength(1));
+    expect(errors[0]).toBeInstanceOf(ApiError);
+    expect((errors[0] as ApiError).status).toBe(404);
   });
 });
