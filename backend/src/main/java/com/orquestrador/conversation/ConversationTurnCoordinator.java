@@ -11,9 +11,11 @@ import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -40,12 +42,24 @@ public class ConversationTurnCoordinator {
     private final PersonaBatonRouter personaRouter;
     private final ProposalDescarteNotice descarteNotice;
     private final AgentSessionStore agentSessions;
+    private final TurnOutputSchema turnSchema;
+
+    /**
+     * F-N3 (ADR-0039, D2), ETAPA 2: a saída estruturada nativa dos turnos de CONVERSA (o
+     * Questionador, cujo {@code resposta} é a fala ao dono). Back-office (Planejador/Executor) é
+     * etapa 1 e NÃO depende deste flag — ligado sempre (sem prosa ao dono, risco baixo). Este flag
+     * é o recuo informado do D2: se a prosa degradar ao VENDO, desliga (etapa 1 continua de pé).
+     */
+    private final boolean conversaEstruturadaNativa;
 
     public ConversationTurnCoordinator(ConversationTurnRepository turns, ConversationRepository conversations,
                                        LiveStateProjector liveState, WakeupService wakeups,
                                        ProposalScanner proposalScanner, ApprovalService approvals,
                                        AgentRepository agents, PersonaBatonRouter personaRouter,
-                                       ProposalDescarteNotice descarteNotice, AgentSessionStore agentSessions) {
+                                       ProposalDescarteNotice descarteNotice, AgentSessionStore agentSessions,
+                                       TurnOutputSchema turnSchema,
+                                       @Value("${orquestrador.saida-estruturada.conversa-nativa:true}")
+                                       boolean conversaEstruturadaNativa) {
         this.turns = turns;
         this.conversations = conversations;
         this.liveState = liveState;
@@ -56,6 +70,23 @@ public class ConversationTurnCoordinator {
         this.personaRouter = personaRouter;
         this.descarteNotice = descarteNotice;
         this.agentSessions = agentSessions;
+        this.turnSchema = turnSchema;
+        this.conversaEstruturadaNativa = conversaEstruturadaNativa;
+    }
+
+    /**
+     * Esta persona emite a saída em schema nativo (F-N3/ADR-0039, D2)? Etapa 1: Planejador e Executor
+     * (back-office, sempre). Etapa 2: Questionador (config {@code conversa-nativa}, VENDO-gated).
+     * CEO legado (persona nula): NÃO — segue no regex (fora de escopo; o cinto de bloco fica).
+     */
+    private boolean usaSaidaEstruturada(CeoPersona persona) {
+        if (persona == null) {
+            return false;
+        }
+        return switch (persona) {
+            case PLANEJADOR, EXECUTOR -> true;
+            case QUESTIONADOR -> conversaEstruturadaNativa;
+        };
     }
 
     /**
@@ -86,9 +117,15 @@ public class ConversationTurnCoordinator {
         // no caminho NORMAL (antes: null literal). Handle presente ⟹ turno-2+ numa sessão que já lembra:
         // o prompt entra em DIETA (o modelo não relê o que a sessão carrega). Conversa nova = sem handle.
         String priorSession = agentSessions.currentHandle(agentId, turno.getConversationId()).orElse(null);
+        // F-N3 (ADR-0039, D2): a saída estruturada nativa. Persona migrada ⟹ o schema por-persona
+        // (o motor prende {resposta, blocos[]} na fonte); persona não migrada ⟹ null (saída em prosa,
+        // o caminho regex). O prompt sabe se é estruturado para instruir o formato certo.
+        boolean estruturada = usaSaidaEstruturada(persona);
+        String outputSchema = estruturada ? turnSchema.forPersona(persona) : null;
         String prompt = composePrompt(persona, subject, liveState.project(companyId), turno.getOwnerMessage(),
-                turno.getConversationId(), priorSession != null);
-        return Optional.of(new TurnAssignment(turno.getId(), turno.getConversationId(), prompt, priorSession));
+                turno.getConversationId(), priorSession != null, estruturada);
+        return Optional.of(new TurnAssignment(turno.getId(), turno.getConversationId(), prompt, priorSession,
+                outputSchema));
     }
 
     /**
@@ -105,9 +142,31 @@ public class ConversationTurnCoordinator {
     @Transactional
     public void settleAnswered(UUID turnId, String reply) {
         ConversationTurn turno = turns.findById(turnId).orElseThrow();
+        CeoPersona persona = agents.findById(turno.getAgentId())
+                .flatMap(agent -> CeoPersona.fromDbValue(agent.getPersona()))
+                .orElse(null);
+        // F-N3 (ADR-0039, D2): persona migrada ⟹ a saída é o JSON validado {resposta, blocos[]}. O
+        // reply da thread vira o CAMPO `resposta` (mata o last-wins do reply codex) e os scanners
+        // consomem `blocos[]` SEM regex — o caso C morre na fonte (o schema nem tem o bloco errado).
+        if (usaSaidaEstruturada(persona)) {
+            TurnOutputSchema.ParsedTurnOutput saida = turnSchema.parse(reply);
+            if (!saida.malformado()) {
+                turno.answer(saida.resposta());
+                turns.save(turno);
+                entregarPropostasAoGate(turno, proposalScanner.scanStructured(saida.blocos()));
+                personaRouter.afterCeoTurnAnsweredStructured(turno, saida.blocos());
+                drainQueue(turno);
+                return;
+            }
+            // Malformado (schema ignorado pelo claude <2.1.205, ou motor cuspiu prosa): NUNCA
+            // silêncio (D2) — WARN alto e CAI no caminho regex sobre o texto cru (o cinto que já
+            // existe segue valendo; a remoção dos cintos é fatia de faxina própria, futura).
+            log.warn("saída estruturada do turno {} veio malformada — fallback regex sobre o texto cru",
+                    turnId);
+        }
         turno.answer(reply);
         turns.save(turno);
-        entregarPropostasAoGate(turno, reply);
+        entregarPropostasAoGate(turno, proposalScanner.scan(reply));
         // ADR-0031 (M5/D6): a virada de persona é DETECÇÃO DE ENTREGÁVEL na mesma saída — o
         // scanner-irmão roteia ```handoff/```needs-grilling; o ```proposta acima segue pro T3.
         personaRouter.afterCeoTurnAnswered(turno, reply);
@@ -121,12 +180,11 @@ public class ConversationTurnCoordinator {
      * pré-Fatia 2) propõem — Questionador/Planejador emitindo é proposta SEM estratégia. Todo
      * descarte (cinto ou shape fora do contrato) AVISA o dono na thread — anti-silêncio.
      */
-    private void entregarPropostasAoGate(ConversationTurn turno, String reply) {
+    private void entregarPropostasAoGate(ConversationTurn turno, ProposalScanner.Scan colheita) {
         CeoPersona emissor = agents.findById(turno.getAgentId())
                 .flatMap(agent -> CeoPersona.fromDbValue(agent.getPersona()))
                 .orElse(null);
         boolean emissorAutorizado = emissor == null || emissor == CeoPersona.EXECUTOR;
-        ProposalScanner.Scan colheita = proposalScanner.scan(reply);
         if (emissorAutorizado) {
             for (ProposalScanner.Proposal proposal : colheita.propostas()) {
                 approvals.propose(turno.getCompanyId(), turno.getAgentId(), turno.getConversationId(),
@@ -162,7 +220,8 @@ public class ConversationTurnCoordinator {
     }
 
     private static String composePrompt(CeoPersona persona, String subject, String estadoVivo,
-                                        String ownerMessage, UUID conversationId, boolean resuming) {
+                                        String ownerMessage, UUID conversationId, boolean resuming,
+                                        boolean saidaEstruturada) {
         // F-N1 (ADR-0038, D1): DIETA na sessão continuada. Turno 2+ (resuming) roda numa sessão nativa
         // que JÁ carrega o protocolo desta persona (visto no turno 1) — re-injetar os blocos estáticos
         // paga contexto em dobro (a sessão lembra E o prompt repete). O estado vivo SEGUE (é dinâmico:
@@ -170,13 +229,19 @@ public class ConversationTurnCoordinator {
         // recorte fino do estado vivo (delta por linha) fica como otimização futura — a repetição
         // estática é o grosso do custo dobrado. Turno 1 (fresco) mantém o prompt inteiro.
         if (resuming) {
-            return composePromptDietado(subject, estadoVivo, ownerMessage);
+            return composePromptDietado(subject, estadoVivo, ownerMessage, saidaEstruturada);
         }
         StringBuilder prompt = new StringBuilder()
                 .append("# Conversa com o dono — chat \"").append(subject).append("\"\n\n")
                 .append(estadoVivo)
                 .append("\n## Mensagem do dono\n").append(ownerMessage).append("\n\n")
                 .append("## Instruções do turno\n");
+        // F-N3 (ADR-0039, D2): quando a saída é estruturada nativa, o contrato do formato vem PRIMEIRO
+        // e é autoritativo — remapeia toda "emita o bloco ```X```" das instruções abaixo para um item
+        // de `blocos`, sem tocar na prosa SEMÂNTICA (afinada em muitos grills). O schema do motor valida.
+        if (saidaEstruturada) {
+            prompt.append(blocoContratoSaida(persona));
+        }
         // O balcão único conversa (D2): as linhas G1 valem para o Questionador e para o CEO legado
         // (persona nula); Planejador/Executor são back-office — nunca recebem o dono, então o bloco
         // de conversa sai e entra o bloco do bastão (o adendo/design vence onde conflitaria).
@@ -203,16 +268,46 @@ public class ConversationTurnCoordinator {
      * marcador curto de continuidade. Os blocos estáticos de persona e a regra-de-ouro do bilhete
      * saem daqui: a regra-de-ouro é reforçada pela REDE pós-settle (ADR-0030), não pela re-injeção.
      */
-    private static String composePromptDietado(String subject, String estadoVivo, String ownerMessage) {
+    private static String composePromptDietado(String subject, String estadoVivo, String ownerMessage,
+                                               boolean saidaEstruturada) {
+        // F-N3 (ADR-0039, D2): o schema é RE-APLICADO em todo turno (o argv sempre o carrega), então
+        // a dieta reforça o contrato do formato numa linha — o resto do protocolo já vive na sessão.
+        String contratoSaida = saidaEstruturada
+                ? "- Formato da saída (o motor VALIDA): UM objeto JSON `{\"resposta\": \"...\","
+                        + " \"blocos\": [...]}` — `resposta` é o seu texto, `blocos` as suas viradas"
+                        + " tipadas (cada uma com `tipo`); nada de cercas ```.\n"
+                : "";
         return "# Conversa com o dono — chat \"" + subject + "\" (sessão contínua)\n\n"
                 + estadoVivo
                 + "\n## Mensagem do dono\n" + ownerMessage + "\n\n"
                 + "## Instruções do turno\n"
+                + contratoSaida
                 + "- Continue ESTA conversa na mesma linha do que já discutimos NESTA sessão: o"
                 + " protocolo do seu papel e as instruções desta persona já estão aqui — use-os, não"
                 + " os repita.\n"
                 + "- Responda com a SUA voz, direto e curto. O \"Estado vivo\" acima é o board"
                 + " ATUALIZADO (o que pode ter mudado desde o seu último turno) — não é uma conversa nova.\n";
+    }
+
+    /**
+     * F-N3 (ADR-0039, D2): o contrato AUTORITATIVO da saída estruturada. Vem antes das instruções
+     * de persona e as REMAPEIA: onde elas mandam "emita o bloco ```X```" (o mundo regex), aqui isso
+     * é UM ITEM de {@code blocos} com {@code tipo:"X"}. A prosa semântica das personas fica intacta
+     * (afinada em muitos grills) — só o FORMATO muda, e o motor o valida na fonte.
+     */
+    private static String blocoContratoSaida(CeoPersona persona) {
+        String respostaEh = (persona == null || persona == CeoPersona.QUESTIONADOR)
+                ? "a sua FALA AO DONO (direta e curta) — é o que vira a thread do chat"
+                : "a sua narração back-office do turno (o registro do que você fez)";
+        return "- Formato da saída (o motor VALIDA — obrigatório): sua saída é UM objeto JSON"
+                + " `{\"resposta\": \"...\", \"blocos\": [...]}` e NADA além dele.\n"
+                + "  - `resposta`: " + respostaEh + ".\n"
+                + "  - `blocos`: a lista das suas viradas/entregáveis tipados (VAZIA `[]` se não"
+                + " houver). Cada item tem um campo `tipo` e os campos daquele tipo.\n"
+                + "  - As instruções abaixo mostram os blocos como cercas ```proposta / ```handoff /"
+                + " etc.: isso é doc dos CAMPOS. Emita cada um como um ITEM de `blocos` com"
+                + " `\"tipo\":\"<o nome da cerca>\"` — NUNCA escreva a cerca ``` nem repita o JSON na"
+                + " `resposta`. A disciplina de coluna-0/indentação NÃO se aplica (não há cercas).\n";
     }
 
     // G1 (grill 2026-07-09): "delegador puro" (ADR-0018) sempre foi sobre ENTREGÁVEIS;
@@ -387,8 +482,10 @@ public class ConversationTurnCoordinator {
 
     /**
      * O turno claimado por este Run + o prompt por-Run que vai ao CLI + o handle de sessão a resumir
-     * (F-N1/ADR-0038: null no turno 1 da conversa, o handle gravado do turno anterior a partir do 2).
+     * (F-N1/ADR-0038: null no turno 1 da conversa, o handle gravado do turno anterior a partir do 2)
+     * + o schema de saída estruturada (F-N3/ADR-0039: null na persona não migrada — saída em prosa).
      */
-    public record TurnAssignment(UUID turnId, UUID conversationId, String prompt, String priorSession) {
+    public record TurnAssignment(UUID turnId, UUID conversationId, String prompt, String priorSession,
+                                 String outputSchema) {
     }
 }

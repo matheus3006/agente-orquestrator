@@ -40,6 +40,24 @@ class ClaudeCodeAdapterTest {
     }
 
     @Test
+    void oSchemaDoTurnoViraJsonSchemaInlineNoArgv() {
+        // F-N3 (ADR-0039, D2): a saída estruturada nativa. O claude aceita o schema INLINE — o
+        // adapter só o repassa ao ClaudeArgv (o JSON validado volta no `result` do stream, provado).
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, STREAM);
+        String schema = "{\"type\":\"object\"}";
+        Context comSchema = new Context(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), Path.of("/tmp"), "faça X", Map.of(), target, "vol", null,
+                "opus", "high", schema);
+
+        adapter.execute(comSchema, sink);
+
+        int i = target.spec.command().indexOf("--json-schema");
+        assertThat(i).isPositive();
+        assertThat(target.spec.command().get(i + 1)).isEqualTo(schema);
+    }
+
+    @Test
     void executaMontaArgvParseiaStreamEEmiteCostEvent() {
         RecordingSink sink = new RecordingSink();
         FakeTarget target = new FakeTarget(0, STREAM);

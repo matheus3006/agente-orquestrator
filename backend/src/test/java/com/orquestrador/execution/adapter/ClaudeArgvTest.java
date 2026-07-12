@@ -94,4 +94,24 @@ class ClaudeArgvTest {
         assertThat(ClaudeArgv.build("t", "opus", "high")).doesNotContain("--resume");
         assertThat(ClaudeArgv.build("t", "opus", "high", null)).doesNotContain("--resume");
     }
+
+    @Test
+    void outputSchemaViraJsonSchemaInline() {
+        // F-N3 (ADR-0039, D2): a saída estruturada nativa. O schema entra INLINE (o claude aceita a
+        // string direta em --json-schema — provado ao vivo) e prende o {resposta, blocos[]} do turno.
+        String schema = "{\"type\":\"object\"}";
+        List<String> argv = ClaudeArgv.build("faça X", "opus", "high", null, null, schema);
+        int i = argv.indexOf("--json-schema");
+        assertThat(i).isPositive();
+        assertThat(argv.get(i + 1)).isEqualTo(schema);
+    }
+
+    @Test
+    void schemaNuloOmiteAFlagEConviveComResume() {
+        // Sem schema (turno não migrado / persona legada): nenhuma flag. Com schema E resume (turno
+        // 2+ de persona migrada): os dois coexistem — a saída é validada mesmo na sessão continuada.
+        assertThat(ClaudeArgv.build("t", "opus", "high", null, null, null)).doesNotContain("--json-schema");
+        assertThat(ClaudeArgv.build("t", "opus", "high", "sess-x", null, "{\"type\":\"object\"}"))
+                .contains("--json-schema", "--resume", "sess-x");
+    }
 }

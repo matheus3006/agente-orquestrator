@@ -360,6 +360,33 @@ class CeoTurnExecutionTest {
         assertThat(prompt).doesNotContain("MANTENHA UMA CONVERSA");
     }
 
+    /**
+     * F-N3 (ADR-0039, D2): a persona migrada (aqui o Executor, etapa 1) recebe o CONTRATO da saída
+     * estruturada ANTES das instruções — remapeia "emita o bloco ```X```" para um item de `blocos`,
+     * sem tocar na prosa semântica (que segue igual). O motor valida o {resposta, blocos[]} na fonte.
+     */
+    @Test
+    void personaMigradaRecebeOContratoDeSaidaEstruturada() {
+        UUID companyId = novaCompany();
+        contrataCeoEchoComPersona(companyId, "executor", "CEO Executor");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        ConversationService.TurnReceipt receipt = conversations.postMessage(
+                companyId, negocio.getId(), "[continuação — bastão]", ActorType.BOARD, UUID.randomUUID());
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        String prompt = turno(receipt.turnId()).getCeoReply();
+        // o contrato autoritativo do formato, com o remap das cercas para itens de `blocos`
+        assertThat(prompt).contains("Formato da saída (o motor VALIDA");
+        assertThat(prompt).contains("\"resposta\"").contains("\"blocos\"");
+        assertThat(prompt).contains("Emita cada um como um ITEM de `blocos`");
+        assertThat(prompt).contains("NUNCA escreva a cerca");
+        // back-office: a `resposta` é narração, NÃO fala ao dono (o Executor nunca vê o dono)
+        assertThat(prompt).contains("narração back-office");
+        // a prosa semântica da persona segue intacta — acréscimo, não reescrita
+        assertThat(prompt).contains("SEM MEXER").contains("```proposta");
+    }
+
     @Test
     void umTurnoPorRunComDrainDaFila() {
         UUID companyId = novaCompany();

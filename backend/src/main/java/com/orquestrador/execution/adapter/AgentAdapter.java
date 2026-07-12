@@ -54,11 +54,24 @@ public interface AgentAdapter {
     /**
      * A imagem NÃO entra aqui (F.8, ADR-0016): o container de um runtime — imagem pinada +
      * credencial do plano — é do adapter ({@link EngineContainer}); o executor não o conhece.
+     *
+     * <p>{@code outputSchema} (F-N3/ADR-0039, D2): o JSON Schema que PRENDE a saída do turno a
+     * {@code {resposta, blocos[]}} — o adapter rico o entrega ao seu CLI (claude {@code --json-schema}
+     * inline · codex grava um arquivo e passa {@code --output-schema}). Nulo ⟹ turno não migrado
+     * (persona legada / etapa não ligada): saída em prosa, o caminho pré-F-N3.
      */
     record Context(UUID companyId, UUID agentId, UUID runId, UUID issueId, Path workDir,
                    String command, Map<String, String> env, ExecutionTarget target,
                    String volumeName, String priorSession,
-                   String model, String effort) {
+                   String model, String effort, String outputSchema) {
+
+        /** Sem schema de saída: o caminho não-migrado e as redes (resume-cirúrgico, fresh start). */
+        public Context(UUID companyId, UUID agentId, UUID runId, UUID issueId, Path workDir,
+                       String command, Map<String, String> env, ExecutionTarget target,
+                       String volumeName, String priorSession, String model, String effort) {
+            this(companyId, agentId, runId, issueId, workDir, command, env, target, volumeName,
+                    priorSession, model, effort, null);
+        }
     }
 
     /**

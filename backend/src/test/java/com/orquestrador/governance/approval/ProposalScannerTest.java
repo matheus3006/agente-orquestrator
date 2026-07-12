@@ -1,5 +1,7 @@
 package com.orquestrador.governance.approval;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -98,5 +100,43 @@ class ProposalScannerTest {
 
         assertThat(scan.propostas()).isEmpty();
         assertThat(scan.descartadas()).isZero();
+    }
+
+    // ---- F-N3 (ADR-0039, D2): a entrada ESTRUTURADA — o motor validou o shape na fonte (o caso C
+    // vira impossível: o schema do Questionador nem contém proposta). O gate segue igual: só o bloco
+    // com tipo=proposta vira Approval; o alvo continua re-serializado canônico p/ o fingerprint.
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    private List<JsonNode> blocos(String... jsons) {
+        return java.util.Arrays.stream(jsons).map(json -> {
+            try {
+                return (JsonNode) mapper.readTree(json);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).toList();
+    }
+
+    @Test
+    void scanStructuredColhePropostaValidadaEIgnoraOsOutrosBlocos() {
+        ProposalScanner.Scan scan = scanner.scanStructured(blocos(
+                "{\"tipo\":\"proposta\",\"acao\":\"HIRE_AGENT\",\"alvo\":{\"role\":\"executor\","
+                        + "\"name\":\"Nix\"},\"resumo\":\"Contratar Nix\",\"area\":\"estrutura-org\"}",
+                "{\"tipo\":\"handoff\",\"para\":\"executor\",\"bastao\":\"x\",\"resumo\":\"r\"}"));
+
+        assertThat(scan.propostas()).hasSize(1);
+        assertThat(scan.propostas().get(0).actionType()).isEqualTo(ApprovalActionType.HIRE_AGENT);
+        // O alvo segue re-serializado CANÔNICO (chaves ordenadas) — o fingerprint de dedupe intacto.
+        assertThat(scan.propostas().get(0).targetDetailJson()).isEqualTo("{\"name\":\"Nix\",\"role\":\"executor\"}");
+        assertThat(scan.propostas().get(0).area()).isEqualTo("estrutura-org");
+        assertThat(scan.descartadas()).isZero(); // o handoff não é proposta — ignorado, não descartado
+    }
+
+    @Test
+    void scanStructuredVazioOuNuloNaoColhe() {
+        assertThat(scanner.scanStructured(List.of()).propostas()).isEmpty();
+        assertThat(scanner.scanStructured(null).propostas()).isEmpty();
+        assertThat(scanner.scanStructured(null).descartadas()).isZero();
     }
 }

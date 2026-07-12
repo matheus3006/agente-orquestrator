@@ -47,28 +47,28 @@ public class PersonaHandoffScanner {
         List<PositionedRoute> found = new ArrayList<>();
         Matcher handoffs = HANDOFF_BLOCK.matcher(reply);
         while (handoffs.find()) {
-            Handoff handoff = parseHandoff(handoffs.group(1));
+            Handoff handoff = parseHandoff(readObject(handoffs.group(1)));
             if (handoff != null) {
                 found.add(new PositionedRoute(handoffs.start(), handoff));
             }
         }
         Matcher kickbacks = NEEDS_GRILLING_BLOCK.matcher(reply);
         while (kickbacks.find()) {
-            NeedsGrilling kickback = parseNeedsGrilling(kickbacks.group(1));
+            NeedsGrilling kickback = parseNeedsGrilling(readObject(kickbacks.group(1)));
             if (kickback != null) {
                 found.add(new PositionedRoute(kickbacks.start(), kickback));
             }
         }
         Matcher correcoes = CORRECAO_BLOCK.matcher(reply);
         while (correcoes.find()) {
-            Correcao correcao = parseCorrecao(correcoes.group(1));
+            Correcao correcao = parseCorrecao(readObject(correcoes.group(1)));
             if (correcao != null) {
                 found.add(new PositionedRoute(correcoes.start(), correcao));
             }
         }
         Matcher absorcoes = ABSORCAO_BLOCK.matcher(reply);
         while (absorcoes.find()) {
-            Absorcao absorcao = parseAbsorcao(absorcoes.group(1));
+            Absorcao absorcao = parseAbsorcao(readObject(absorcoes.group(1)));
             if (absorcao != null) {
                 found.add(new PositionedRoute(absorcoes.start(), absorcao));
             }
@@ -79,8 +79,34 @@ public class PersonaHandoffScanner {
                 .toList();
     }
 
-    private static Handoff parseHandoff(String block) {
-        JsonNode node = readObject(block);
+    /**
+     * F-N3 (ADR-0039, D2): a entrada ESTRUTURADA — os {@code blocos[]} já validados pelo motor na
+     * fonte (schema nativo) chegam parseados; o campo {@code tipo} discrimina. Espelho do regex
+     * {@link #scan}, na ORDEM do array (o motor emite na ordem que decidiu), com a MESMA validação
+     * de domínio dos parsers (persona conhecida, #N &gt;= 1, campos presentes). O bloco
+     * {@code proposta} não sai daqui (segue no {@code ProposalScanner} → gate T3, como no regex).
+     */
+    public List<Route> scanStructured(List<JsonNode> blocos) {
+        if (blocos == null || blocos.isEmpty()) {
+            return List.of();
+        }
+        List<Route> routes = new ArrayList<>();
+        for (JsonNode bloco : blocos) {
+            Route route = switch (textOrNull(bloco, "tipo") == null ? "" : bloco.path("tipo").asText()) {
+                case "handoff" -> parseHandoff(bloco);
+                case "needs-grilling" -> parseNeedsGrilling(bloco);
+                case "correcao" -> parseCorrecao(bloco);
+                case "absorcao" -> parseAbsorcao(bloco);
+                default -> null; // proposta (ProposalScanner) ou tipo desconhecido: fail-soft
+            };
+            if (route != null) {
+                routes.add(route);
+            }
+        }
+        return routes;
+    }
+
+    private static Handoff parseHandoff(JsonNode node) {
         if (node == null) {
             return null;
         }
@@ -93,8 +119,7 @@ public class PersonaHandoffScanner {
         return new Handoff(para, bastao, resumo != null ? resumo : "");
     }
 
-    private static NeedsGrilling parseNeedsGrilling(String block) {
-        JsonNode node = readObject(block);
+    private static NeedsGrilling parseNeedsGrilling(JsonNode node) {
         if (node == null) {
             return null;
         }
@@ -102,8 +127,7 @@ public class PersonaHandoffScanner {
         return lacuna == null ? null : new NeedsGrilling(lacuna);
     }
 
-    private static Correcao parseCorrecao(String block) {
-        JsonNode node = readObject(block);
+    private static Correcao parseCorrecao(JsonNode node) {
         if (node == null) {
             return null;
         }
@@ -114,8 +138,7 @@ public class PersonaHandoffScanner {
         return new Correcao(issue.asInt());
     }
 
-    private static Absorcao parseAbsorcao(String block) {
-        JsonNode node = readObject(block);
+    private static Absorcao parseAbsorcao(JsonNode node) {
         if (node == null) {
             return null;
         }

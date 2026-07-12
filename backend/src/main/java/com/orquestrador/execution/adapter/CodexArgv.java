@@ -45,12 +45,26 @@ final class CodexArgv {
         return build(prompt, model, effort, posture, priorSession, 0, 0);
     }
 
+    /** Sem schema: o caminho não-migrado (persona legada / etapa não ligada) e os testes de teto. */
     static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
                               String priorSession, int maxThreads, int maxDepth) {
+        return build(prompt, model, effort, posture, priorSession, maxThreads, maxDepth, null);
+    }
+
+    static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
+                              String priorSession, int maxThreads, int maxDepth, String outputSchemaFile) {
         List<String> argv = new ArrayList<>();
         argv.add("codex");
         argv.add("exec");
         argv.add("--json");
+        // F-N3 (ADR-0039, D2): saída estruturada nativa. Diferente do claude (schema inline), o codex
+        // exige um ARQUIVO — o adapter grava o schema e passa o caminho aqui. Flag GLOBAL (funciona
+        // também com o subcomando resume, laudo X-8): fica entre os flags, antes do subcomando/prompt.
+        // Vazio ⟹ turno não migrado, omite. O strict do OpenAI mora no builder do schema, não aqui.
+        if (isPresent(outputSchemaFile)) {
+            argv.add("--output-schema");
+            argv.add(outputSchemaFile.trim());
+        }
         if (isPresent(model)) {
             argv.add("--model");
             argv.add(model.trim());

@@ -66,8 +66,11 @@ public class ClaudeCodeAdapter implements AgentAdapter {
             return Result.ok(context.priorSession());
         }
 
+        // F-N3 (ADR-0039, D2): a saída estruturada nativa entra INLINE (--json-schema); o JSON
+        // validado do turno volta no campo `result` do stream (que o parser já captura). Nulo ⟹
+        // turno não migrado, o argv omite a flag e a saída segue em prosa (o caminho pré-F-N3).
         List<String> argv = ClaudeArgv.build(context.command(), context.model(), context.effort(),
-                context.priorSession(), disallowedTools);
+                context.priorSession(), disallowedTools, context.outputSchema());
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,
