@@ -29,7 +29,13 @@ final class ClaudeArgv {
         return build(prompt, model, effort, null);
     }
 
+    /** Sem denylist: usado pelos testes de gramática pura; o adapter sempre passa o teto do D6. */
     static List<String> build(String prompt, String model, String effort, String priorSession) {
+        return build(prompt, model, effort, priorSession, null);
+    }
+
+    static List<String> build(String prompt, String model, String effort, String priorSession,
+                              String disallowedTools) {
         List<String> argv = new ArrayList<>();
         argv.add("claude");
         argv.add("-p");
@@ -42,6 +48,13 @@ final class ClaudeArgv {
         // de seguranca e o CONTAINER (F.8/ADR-0016), nao o prompt do CLI.
         argv.add("--permission-mode");
         argv.add("bypassPermissions");
+        // D6 (ADR-0038): o teto de subagentes do claude. O aninhamento já é capado NATIVAMENTE em
+        // profundidade 5 (laudo [C-3]); esta é a regra de PRODUTO que nega tools específicas por nome
+        // (`Agent(...)`/`Task(...)`). Default vazio ⟹ só o cap nativo vale (a fatia não rebaixa a barra).
+        if (isPresent(disallowedTools)) {
+            argv.add("--disallowedTools");
+            argv.add(disallowedTools.trim());
+        }
         // ADR-0030/M9: SÓ a rede resume-cirúrgico do handoff preenche priorSession (todo run normal
         // passa null — D4, --resume desligado para CONTINUAR). Religa a MESMA sessão só p/ destilar.
         if (isPresent(priorSession)) {

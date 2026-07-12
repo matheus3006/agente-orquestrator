@@ -25,6 +25,7 @@ final class ClaudeStreamParser {
     private int tokensOutput;
     private boolean sawUsage;
     private String credentialFailureLine;
+    private String sessionLostLine;
 
     /** Um passo do StepTrace derivado de uma linha do stream: {@code type} = evento nativo (UPPER). */
     record Step(String type, String detail) {
@@ -34,10 +35,14 @@ final class ClaudeStreamParser {
     Step accept(String line) {
         JsonNode node = tryParse(line);
         if (node == null || !node.isObject()) {
-            // Só linhas FORA da gramática farejam credencial (ADR-0016, peça 4): é onde o CLI
-            // avisa auth quebrada; a prosa do modelo vive DENTRO de JSON — sem falso-positivo.
+            // Só linhas FORA da gramática farejam credencial (ADR-0016, peça 4) e sessão perdida
+            // (F-N2/ADR-0038): é onde o CLI avisa auth/resume quebrado; a prosa do modelo vive DENTRO
+            // de JSON — sem falso-positivo.
             if (credentialFailureLine == null && CredentialFailureSignal.detectedIn(line)) {
                 credentialFailureLine = line;
+            }
+            if (sessionLostLine == null && SessionLostSignal.detectedIn(line)) {
+                sessionLostLine = line;
             }
             return new Step("STDOUT", line == null ? "" : line); // não-JSON → fail-soft
         }
@@ -72,6 +77,11 @@ final class ClaudeStreamParser {
     /** A primeira linha do stream com cara de falha de credencial; nula se nenhuma. */
     String credentialFailure() {
         return credentialFailureLine;
+    }
+
+    /** O stream avisou que a sessão nativa a resumir sumiu (F-N2/ADR-0038)? */
+    boolean sessionLost() {
+        return sessionLostLine != null;
     }
 
     private static JsonNode tryParse(String line) {

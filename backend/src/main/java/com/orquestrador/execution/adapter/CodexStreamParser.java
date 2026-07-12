@@ -34,6 +34,7 @@ final class CodexStreamParser {
     private int tokensOutput;
     private boolean sawUsage;
     private String credentialFailureLine;
+    private String sessionLostLine;
 
     /** Um passo do StepTrace derivado de um evento do stream: {@code type} = evento nativo (UPPER). */
     record Step(String type, String detail) {
@@ -42,9 +43,13 @@ final class CodexStreamParser {
     Step accept(String line) {
         JsonNode node = tryParse(line);
         if (node == null || !node.isObject()) {
-            // Texto puro fareja credencial (ADR-0016, peça 4) — a prosa do modelo vive em JSON.
+            // Texto puro fareja credencial (ADR-0016, peça 4) e sessão perdida (F-N2/ADR-0038) — a
+            // prosa do modelo vive em JSON.
             if (credentialFailureLine == null && CredentialFailureSignal.detectedIn(line)) {
                 credentialFailureLine = line;
+            }
+            if (sessionLostLine == null && SessionLostSignal.detectedIn(line)) {
+                sessionLostLine = line;
             }
             return new Step("STDOUT", line == null ? "" : line); // não-JSON → fail-soft
         }
@@ -52,11 +57,14 @@ final class CodexStreamParser {
         captureModel(node);
         captureUsage(node);
         String type = text(node, "type");
-        // No Codex a auth quebrada também chega DENTRO da gramática: evento error com a message.
+        // No Codex a auth/resume quebrado também chega DENTRO da gramática: evento error com a message.
         if ("error".equals(type)) {
             String message = text(node, "message");
             if (credentialFailureLine == null && CredentialFailureSignal.detectedIn(message)) {
                 credentialFailureLine = message;
+            }
+            if (sessionLostLine == null && SessionLostSignal.detectedIn(message)) {
+                sessionLostLine = message;
             }
         }
         return new Step(stepTag(node, type), describe(node, type));
@@ -114,6 +122,11 @@ final class CodexStreamParser {
     /** A primeira linha/mensagem do stream com cara de falha de credencial; nula se nenhuma. */
     String credentialFailure() {
         return credentialFailureLine;
+    }
+
+    /** O stream avisou que a sessão nativa a resumir sumiu (F-N2/ADR-0038)? */
+    boolean sessionLost() {
+        return sessionLostLine != null;
     }
 
     private static JsonNode tryParse(String line) {

@@ -249,19 +249,43 @@ public class AdapterRunExecutor implements RunExecutor {
             return RunOutcome.failure("falha ao escrever o workspace do run: " + workspaceWrite.error());
         }
 
+        // F-N1/F-N2 (ADR-0038): a continuidade nativa liga AQUI — o handle gravado da conversa (turno)
+        // ou da Issue (heartbeat) volta como priorSession, e o adapter religa o --resume no caminho
+        // NORMAL. Era `null` literal (a regressão-mãe do laudo). Turno: o handle vem no TurnAssignment
+        // (lido sob o claim). Issue: resolvido por (agent, issue.conversation_id) — só quando a Issue
+        // tem conversa (absorvida, V27); Issue sem conversa segue fresca (sem migração, sem regressão).
+        // A conversa da Issue é resolvida UMA vez (reusada no record pós-run, mais abaixo).
+        UUID issueConversationId = turno == null && runContext.issueId() != null
+                ? issues.conversationIdOf(runContext.companyId(), runContext.issueId())
+                : null;
+        String priorSession = turno != null
+                ? turno.priorSession()
+                : issueConversationId != null
+                        ? agentSessions.currentHandle(runContext.agentId(), issueConversationId).orElse(null)
+                        : null;
         AgentAdapter.Context adapterContext = new AgentAdapter.Context(
                 runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(), workDir,
-                command, env, target, volumeName, null,
+                command, env, target, volumeName, priorSession,
                 agent.getModel(), agent.getEffort());
-
-        AgentAdapter.StepSink sink = (type, detail) -> store.recordStep(runContext.runId(), type, detail);
-        if (replyCollector != null) {
-            sink = replyCollector.wrap(sink);
-        }
 
         AgentAdapter.Result result;
         try {
-            result = adapter.execute(adapterContext, sink);
+            result = adapter.execute(adapterContext, buildSink(runContext.runId(), replyCollector));
+            // F-N2 (ADR-0038, D3): a sessão nativa a resumir sumiu (handle inválido/expirado) — fresh
+            // start BARULHENTO, nunca silêncio: evento visível RUN_SESSION_LOST (espírito do
+            // RUN_LEASE_LOST) + re-execução SEM priorSession. A verdade-fonte do executor é o WORKSPACE,
+            // então re-derivar é o baseline barato. Um-shot: o fresh não resume ⟹ não re-cai aqui.
+            if (result.sessionLost()) {
+                store.recordStep(runContext.runId(), "RUN_SESSION_LOST",
+                        "resume falhou (sessão nativa sumida) — reiniciando do workspace: " + result.error());
+                if (replyCollector != null) {
+                    replyCollector = new RunFinalOutput(); // a tentativa perdida não entra no reply
+                }
+                AgentAdapter.Context fresh = new AgentAdapter.Context(
+                        runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(),
+                        workDir, command, env, target, volumeName, null, agent.getModel(), agent.getEffort());
+                result = adapter.execute(fresh, buildSink(runContext.runId(), replyCollector));
+            }
         } catch (Exception exception) {
             if (turno != null) {
                 turnCoordinator.settleFailed(turno.turnId());
@@ -278,7 +302,7 @@ public class AdapterRunExecutor implements RunExecutor {
 
         // Settle do turno (T.3): a resposta capturada vira a thread; falha marca FAILED (o erro
         // detalhado vive no StepTrace). O handle de sessão é persistido por (Agent, Conversation)
-        // — fiação do ADR-0002, --resume segue desligado.
+        // — F-N1 (ADR-0038) o LÊ no início do próximo turno para religar o --resume nativo.
         if (turno != null) {
             if (result.succeeded()) {
                 turnCoordinator.settleAnswered(turno.turnId(), replyCollector.text());
@@ -287,15 +311,21 @@ public class AdapterRunExecutor implements RunExecutor {
             }
             agentSessions.record(runContext.companyId(), runContext.agentId(), turno.conversationId(),
                     agent.getAdapterType(), result.session(), runContext.runId());
-            // M8 (ADR-0030): pós-settle, o loop de handoff. Só em SUCESSO (um turno falho não tem
-            // estado coerente a continuar). O handle de sessão já foi gravado acima — a rede
-            // resume-cirúrgico (M9) pode lê-lo. Best-effort: o loop nunca reabre o turno liquidado.
+            // M8 (ADR-0030): pós-settle, o loop de handoff — a REDE de segurança de quando a janela
+            // enche (rebaixado por F-N1; a continuidade nativa + dieta carregam a memória entre turnos).
+            // Só em SUCESSO (um turno falho não tem estado coerente a continuar). Best-effort.
             if (result.succeeded()) {
                 handoffLoop.afterCeoTurn(new ContextHandoffLoop.FinishedCeoTurn(
                         runContext.companyId(), runContext.agentId(), turno.conversationId(), runContext.runId(),
                         agent.getAdapterType(), agent.getModel(), agent.getEffort(), result.costEvents(),
                         adapter, target, workDir, volumeName));
             }
+        } else if (issueConversationId != null) {
+            // F-N2 (ADR-0038, D3): o executor GRAVA o handle escopado à Issue (via issue.conversation_id)
+            // para o run N+1 do heartbeat resumir. Espelha o turno: Result.fail ⟹ session=null ⟹
+            // record() no-op ⟹ o handle anterior sobrevive (mesma semântica de retry, task #3).
+            agentSessions.record(runContext.companyId(), runContext.agentId(), issueConversationId,
+                    agent.getAdapterType(), result.session(), runContext.runId());
         }
 
         if (!result.succeeded()) {
@@ -344,6 +374,12 @@ public class AdapterRunExecutor implements RunExecutor {
         } catch (IOException exception) {
             throw new UncheckedIOException("falha na faxina de convencao inativa em " + root, exception);
         }
+    }
+
+    /** O sink de steps do run; embrulhado pelo coletor de reply quando o run é um turno de conversa. */
+    private AgentAdapter.StepSink buildSink(UUID runId, RunFinalOutput replyCollector) {
+        AgentAdapter.StepSink sink = (type, detail) -> store.recordStep(runId, type, detail);
+        return replyCollector != null ? replyCollector.wrap(sink) : sink;
     }
 
     /** Cada emissão do adapter vira uma linha no ledger (append-only) com costCents=0 (assinatura). */

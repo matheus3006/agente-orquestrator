@@ -1,6 +1,7 @@
 package com.orquestrador.execution.adapter;
 
 import com.orquestrador.execution.runtime.ExecutionTarget;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -18,6 +19,21 @@ public class CodexAdapter implements AgentAdapter {
 
     /** O container DESTE runtime (F.8): imagem pinada + só a credencial do plano Codex. */
     private static final EngineContainer CONTAINER = EngineContainer.codex();
+
+    /**
+     * O teto NATIVO de subagentes do D6 (ADR-0038, requisito de aceite): {@code [agents]
+     * max_threads}/{@code max_depth}, embarcado em TODO run do codex (CEO e executor). Config de
+     * produto (default 6/3), não da CLI — o eixo 0 desliga. A fatia amplia autonomia e não shippa sem ele.
+     */
+    private final int maxThreads;
+    private final int maxDepth;
+
+    public CodexAdapter(
+            @Value("${orquestrador.ceiling.codex.max-threads:6}") int maxThreads,
+            @Value("${orquestrador.ceiling.codex.max-depth:3}") int maxDepth) {
+        this.maxThreads = maxThreads;
+        this.maxDepth = maxDepth;
+    }
 
     @Override
     public EngineContainer engineContainer() {
@@ -42,7 +58,7 @@ public class CodexAdapter implements AgentAdapter {
         }
 
         List<String> argv = CodexArgv.build(context.command(), context.model(), context.effort(),
-                context.target().posture(), context.priorSession());
+                context.target().posture(), context.priorSession(), maxThreads, maxDepth);
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,
@@ -64,7 +80,18 @@ public class CodexAdapter implements AgentAdapter {
         }
         String failure = "codex terminou com exit " + run.exitCode()
                 + (run.error() != null ? ": " + run.error() : "");
-        return Result.fail(withCredentialRemedy(failure, parser.credentialFailure(), context), costEvents);
+        String remediado = withCredentialRemedy(failure, parser.credentialFailure(), context);
+        // F-N2 (ADR-0038): resumiu (priorSession) E a sessão sumiu ⟹ sessionLost — fresh start
+        // barulhento no executor (RUN_SESSION_LOST). Sem resume, o sinal não vale (guarda dupla).
+        if (parser.sessionLost() && resumed(context)) {
+            return Result.failSessionLost(remediado, costEvents);
+        }
+        return Result.fail(remediado, costEvents);
+    }
+
+    /** Este run tentou religar uma sessão nativa (F-N2)? Só então o sinal de sessão perdida vale. */
+    private static boolean resumed(Context context) {
+        return context.priorSession() != null && !context.priorSession().isBlank();
     }
 
     /** Peça 4 do ADR-0016 — espelho do remédio do ClaudeCodeAdapter com o volume do plano Codex. */

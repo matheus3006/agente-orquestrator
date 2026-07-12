@@ -30,7 +30,7 @@ class CodexAdapterTest {
             "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":200,\"cached_input_tokens\":1000,"
                     + "\"output_tokens\":50}}");
 
-    private final CodexAdapter adapter = new CodexAdapter();
+    private final CodexAdapter adapter = new CodexAdapter(6, 3);
 
     @Test
     void tipoEhCodex() {
@@ -46,6 +46,7 @@ class CodexAdapterTest {
 
         assertThat(target.spec.command()).containsExactly(
                 "codex", "exec", "--json", "--model", "gpt-5.5", "-c", "model_reasoning_effort=high",
+                "-c", "agents.max_threads=6", "-c", "agents.max_depth=3",
                 "--skip-git-repo-check", "-s", "workspace-write", "faça X");
         // F.8 (ADR-0016): container próprio — imagem pinada do codex + SÓ a credencial do plano
         // Codex (jamais a do Claude; a prova de interseção vazia vive no EngineContainerTest).
@@ -75,8 +76,21 @@ class CodexAdapterTest {
         adapter.execute(ctx(target, "faça X", null, null), sink);
 
         assertThat(target.spec.command())
-                .containsExactly("codex", "exec", "--json", "--skip-git-repo-check",
-                        "--dangerously-bypass-approvals-and-sandbox", "faça X");
+                .containsExactly("codex", "exec", "--json",
+                        "-c", "agents.max_threads=6", "-c", "agents.max_depth=3",
+                        "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "faça X");
+    }
+
+    @Test
+    void oTetoDeSubagenteDoD6ChegaAoArgvEmTodoRun() {
+        // D6 (ADR-0038): o teto não é opcional — o adapter o embarca em TODO run (CEO e executor).
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, STREAM);
+
+        adapter.execute(ctx(target, "faça X", "gpt-5.5", "high"), sink);
+
+        assertThat(target.spec.command())
+                .containsSubsequence("-c", "agents.max_threads=6", "-c", "agents.max_depth=3");
     }
 
     @Test

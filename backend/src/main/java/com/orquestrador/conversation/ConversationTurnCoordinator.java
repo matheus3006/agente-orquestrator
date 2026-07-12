@@ -2,6 +2,7 @@ package com.orquestrador.conversation;
 
 import com.orquestrador.conversation.persona.ConversationBaton;
 import com.orquestrador.conversation.persona.PersonaBatonRouter;
+import com.orquestrador.execution.AgentSessionStore;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.governance.approval.ApprovalService;
 import com.orquestrador.governance.approval.ProposalScanner;
@@ -38,12 +39,13 @@ public class ConversationTurnCoordinator {
     private final AgentRepository agents;
     private final PersonaBatonRouter personaRouter;
     private final ProposalDescarteNotice descarteNotice;
+    private final AgentSessionStore agentSessions;
 
     public ConversationTurnCoordinator(ConversationTurnRepository turns, ConversationRepository conversations,
                                        LiveStateProjector liveState, WakeupService wakeups,
                                        ProposalScanner proposalScanner, ApprovalService approvals,
                                        AgentRepository agents, PersonaBatonRouter personaRouter,
-                                       ProposalDescarteNotice descarteNotice) {
+                                       ProposalDescarteNotice descarteNotice, AgentSessionStore agentSessions) {
         this.turns = turns;
         this.conversations = conversations;
         this.liveState = liveState;
@@ -53,6 +55,7 @@ public class ConversationTurnCoordinator {
         this.agents = agents;
         this.personaRouter = personaRouter;
         this.descarteNotice = descarteNotice;
+        this.agentSessions = agentSessions;
     }
 
     /**
@@ -78,9 +81,14 @@ public class ConversationTurnCoordinator {
         CeoPersona persona = agents.findById(agentId)
                 .flatMap(agent -> CeoPersona.fromDbValue(agent.getPersona()))
                 .orElse(null);
+        // F-N1 (ADR-0038, D1): a continuidade nativa por CONVERSA. O handle gravado no turno anterior
+        // (chave (agent, conversation), ADR-0002) volta como priorSession — o executor liga o --resume
+        // no caminho NORMAL (antes: null literal). Handle presente ⟹ turno-2+ numa sessão que já lembra:
+        // o prompt entra em DIETA (o modelo não relê o que a sessão carrega). Conversa nova = sem handle.
+        String priorSession = agentSessions.currentHandle(agentId, turno.getConversationId()).orElse(null);
         String prompt = composePrompt(persona, subject, liveState.project(companyId), turno.getOwnerMessage(),
-                turno.getConversationId());
-        return Optional.of(new TurnAssignment(turno.getId(), turno.getConversationId(), prompt));
+                turno.getConversationId(), priorSession != null);
+        return Optional.of(new TurnAssignment(turno.getId(), turno.getConversationId(), prompt, priorSession));
     }
 
     /**
@@ -154,7 +162,16 @@ public class ConversationTurnCoordinator {
     }
 
     private static String composePrompt(CeoPersona persona, String subject, String estadoVivo,
-                                        String ownerMessage, UUID conversationId) {
+                                        String ownerMessage, UUID conversationId, boolean resuming) {
+        // F-N1 (ADR-0038, D1): DIETA na sessão continuada. Turno 2+ (resuming) roda numa sessão nativa
+        // que JÁ carrega o protocolo desta persona (visto no turno 1) — re-injetar os blocos estáticos
+        // paga contexto em dobro (a sessão lembra E o prompt repete). O estado vivo SEGUE (é dinâmico:
+        // o board mudou), mas os ~75 linhas de instrução estática saem e entra um marcador curto. O
+        // recorte fino do estado vivo (delta por linha) fica como otimização futura — a repetição
+        // estática é o grosso do custo dobrado. Turno 1 (fresco) mantém o prompt inteiro.
+        if (resuming) {
+            return composePromptDietado(subject, estadoVivo, ownerMessage);
+        }
         StringBuilder prompt = new StringBuilder()
                 .append("# Conversa com o dono — chat \"").append(subject).append("\"\n\n")
                 .append(estadoVivo)
@@ -177,6 +194,25 @@ public class ConversationTurnCoordinator {
         // ouro do bilhete vale POR PERSONA, em todo turno.
         prompt.append(blocoRegraDeOuroDoHandoff(HandoffNote.relativePath(conversationId)));
         return prompt.toString();
+    }
+
+    /**
+     * O prompt DIETADO do turno continuado (F-N1/ADR-0038, D1): a sessão nativa já carrega o
+     * protocolo desta persona (visto no turno 1) — re-enviá-lo seria o "contexto em dobro". Fica só
+     * o que a sessão NÃO tem: o estado vivo ATUALIZADO (dinâmico) + a mensagem nova do dono + um
+     * marcador curto de continuidade. Os blocos estáticos de persona e a regra-de-ouro do bilhete
+     * saem daqui: a regra-de-ouro é reforçada pela REDE pós-settle (ADR-0030), não pela re-injeção.
+     */
+    private static String composePromptDietado(String subject, String estadoVivo, String ownerMessage) {
+        return "# Conversa com o dono — chat \"" + subject + "\" (sessão contínua)\n\n"
+                + estadoVivo
+                + "\n## Mensagem do dono\n" + ownerMessage + "\n\n"
+                + "## Instruções do turno\n"
+                + "- Continue ESTA conversa na mesma linha do que já discutimos NESTA sessão: o"
+                + " protocolo do seu papel e as instruções desta persona já estão aqui — use-os, não"
+                + " os repita.\n"
+                + "- Responda com a SUA voz, direto e curto. O \"Estado vivo\" acima é o board"
+                + " ATUALIZADO (o que pode ter mudado desde o seu último turno) — não é uma conversa nova.\n";
     }
 
     // G1 (grill 2026-07-09): "delegador puro" (ADR-0018) sempre foi sobre ENTREGÁVEIS;
@@ -349,7 +385,10 @@ public class ConversationTurnCoordinator {
                 + "- Uma sessão NOVA retoma pelo bilhete em vez de recarregar a conversa inteira.\n";
     }
 
-    /** O turno claimado por este Run + o prompt por-Run que vai ao CLI. */
-    public record TurnAssignment(UUID turnId, UUID conversationId, String prompt) {
+    /**
+     * O turno claimado por este Run + o prompt por-Run que vai ao CLI + o handle de sessão a resumir
+     * (F-N1/ADR-0038: null no turno 1 da conversa, o handle gravado do turno anterior a partir do 2).
+     */
+    public record TurnAssignment(UUID turnId, UUID conversationId, String prompt, String priorSession) {
     }
 }
