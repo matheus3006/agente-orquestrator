@@ -108,6 +108,7 @@ const VERBO_POR_ACAO: Record<Approval["actionType"], string> = {
   HIRE_AGENT: "Contratar agente",
   WAKEUP_AGENT: "Acordar agente",
   CREATE_TEAM: "Criar time",
+  CREATE_ROLE_TEMPLATE: "Criar molde",
 };
 
 /** Parse fail-soft do targetDetail — espelha o ProposalScanner: quebrado nunca derruba a tela. */
@@ -152,6 +153,9 @@ export function acaoLegivel(approval: Approval): AcaoLegivel {
       }
       return { verbo, alvo: `${dominio} / ${foco}${nome ? ` · arquiteto ${nome}` : ""}` };
     }
+    case "CREATE_ROLE_TEMPLATE":
+      // R10-A: o card mostra a role específica do preset proposto (o molde é GLOBAL).
+      return { verbo, alvo: typeof alvo.roleEspecifica === "string" ? alvo.roleEspecifica : null };
   }
 }
 

@@ -69,7 +69,9 @@ nasce válida, não lint depois). Spec de entrada: `docs/handoff-t1-fe-canvas.md
 - Revisão/QA e Suporte são tipos "reservados" (sem agente próprio). Comunicação lateral entre times = futura.
   Sequência plano→impl = manual (dependência automática entre Issues = futura, ADR-0012).
 - Invariantes de composição vivem no **backend** (canvas espelha; drop-zone tipada nasce válida, não lint depois).
-- A governança de molde (propose-then-commit, diff, drift-badge) **reusa a fila de Review**.
+- A governança de molde (propose-then-commit, diff, drift-badge) **reusa a fila de Approval** (emendado
+  em 2026-07-12/R10-A — o texto original dizia "fila de Review", mas a `review` V11 exige `issue_id`/
+  `run_id` NOT NULL e a proposta de molde não tem nenhum dos dois; ver Forward-ref R10-A).
 
 ## Schema (fatia T.1 / seção C do fechado)
 - `role_template` (id, tipo_funcao enum, role_especifica, company_id NULL=global, current_version_id).
@@ -100,3 +102,18 @@ time nasce com arquiteto" declarado pelo dono (2026-07-11). A porta manual segue
 dispatch; o supersede da regra "trava no dispatch, não na criação" está PENDENTE DE GRILL próprio
 (contrato de intenção verbatim em `handoff-grilling-absorcao-issues.md` §G.1 — inclui a possível
 divisão do arquiteto em 2 personas e o multi-arquiteto por ociosidade).
+
+## Forward-ref (2026-07-12 — R10-A, propose-then-commit de molde + drift-badge)
+A governança de molde prometida (§Moldes: "O CEO pode CRIAR molde — a pedido do dono, com aprovação")
+foi CONSTRUÍDA. Decisões em `docs/handoff-grilling-propose-then-commit-molde.md` (D1–D10). Resumo:
+(D1/D2) o CEO PROPÕE molde pelo canal de SAÍDA → a **fila de Approval** (não a Review — ver
+§Consequências), 5ª ação `CREATE_ROLE_TEMPLATE` do enum (precedente `CREATE_TEAM`, ADR-0037); o dono
+segue criando/editando molde DIRETO (mão soberana, nasce APPROVED). (D3) a versão nasce só no APPROVE,
+sempre APPROVED, com `proposed_by`=CEO / `approved_by`=dono DISTINTOS (o hardcode `proposedBy=approvedBy`
+era stand-in); DRAFT fica vestigial (o rascunho vive na Approval PENDING). (D8) o CEO só CRIA molde novo;
+editar molde existente segue mão-soberana-direta (CEO-propõe-edição = v1.1). (D4) **drift-badge derivado
+NA TELA** (a versão pinada do agente ≠ a corrente do molde; `agent.pinnedTemplateId` read-join + o
+`currentVersionId` já expostos). (D5/D6) **re-pin COMPLETO e SUBSTITUI**: o botão re-aplica o preset da
+versão (motor + skillset) e move o pin; a versão MANDA (ajustes manuais do operador descartados) — é
+mão soberana LOCAL (board-only-direto, sem gate). (D7) teto = o próprio gate (nada persiste enquanto
+PENDING). **Sem migração, sem ADR nova** (emenda; ADR-0043 fica livre). Novo piso 640 back / 286 front.

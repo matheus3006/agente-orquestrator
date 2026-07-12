@@ -47,11 +47,24 @@ public class RoleTemplateService {
     @Transactional
     public RoleTemplate createTemplate(TipoFuncao tipoFuncao, String roleEspecifica, Preset preset,
                                        String changeDescription, UUID actorId) {
+        // Mão soberana do dono direto (ADR-0018): propõe e aprova num só ato (proposedBy==approvedBy).
+        return createTemplate(tipoFuncao, roleEspecifica, preset, changeDescription, actorId, actorId);
+    }
+
+    /**
+     * Propose-then-commit (R10-A, ADR-0017 emendada): o CEO PROPÔS ({@code proposedBy}) e o dono
+     * APROVOU ({@code approvedBy}) — os dois campos que o hardcode {@code proposedBy=approvedBy=ator}
+     * era um stand-in. A versão nasce só aqui (no APPROVE do gate), sempre APPROVED.
+     */
+    @Transactional
+    public RoleTemplate createTemplate(TipoFuncao tipoFuncao, String roleEspecifica, Preset preset,
+                                       String changeDescription, UUID proposedBy, UUID approvedBy) {
         templates.findByCompanyIdIsNullAndRoleEspecifica(roleEspecifica).ifPresent(existing -> {
             throw new ConflictException("Ja existe um molde global para a role: " + roleEspecifica);
         });
         RoleTemplate template = templates.save(new RoleTemplate(UUID.randomUUID(), tipoFuncao, roleEspecifica, null));
-        RoleTemplateVersion v1 = appendVersion(template.getId(), 1, preset, "inicial", changeDescription, actorId);
+        RoleTemplateVersion v1 = appendVersion(template.getId(), 1, preset, "inicial",
+                changeDescription, proposedBy, approvedBy);
         template.promoteCurrentVersion(v1.getId());
         templates.save(template);
         return template;
@@ -64,7 +77,8 @@ public class RoleTemplateService {
         RoleTemplate template = templates.findById(templateId)
                 .orElseThrow(() -> new NotFoundException("Molde nao encontrado: " + templateId));
         int next = versions.maxVersion(templateId) + 1;
-        RoleTemplateVersion version = appendVersion(templateId, next, preset, changeType, changeDescription, actorId);
+        RoleTemplateVersion version = appendVersion(templateId, next, preset, changeType,
+                changeDescription, actorId, actorId);
         template.promoteCurrentVersion(version.getId());
         templates.save(template);
         return version;
@@ -105,12 +119,14 @@ public class RoleTemplateService {
     }
 
     private RoleTemplateVersion appendVersion(UUID templateId, int version, Preset preset, String changeType,
-                                              String changeDescription, UUID actorId) {
-        // v1 board-direct: proposedBy=approvedBy=ator, status APPROVED (a fila de Review liga na sub-fatia
-        // de governança do canvas — DRAFT/propose-then-commit reusam a Review, ADR-0012).
+                                              String changeDescription, UUID proposedBy, UUID approvedBy) {
+        // Propose-then-commit LIGADO (R10-A, ADR-0017 emendada): a fila é a APPROVAL, não a Review
+        // (review V11 exige issue_id/run_id NOT NULL — proposta de molde não tem nenhum; G2). A versão
+        // nasce sempre APPROVED (o "rascunho" vive na Approval PENDING, não numa linha DRAFT — espelha
+        // HIRE_AGENT); proposedBy/approvedBy DISTINTOS quando o CEO propõe e o dono aprova.
         return versions.save(new RoleTemplateVersion(UUID.randomUUID(), templateId, version,
                 preset.adapterType(), preset.model(), preset.effort(), writeSkillKeys(preset.skillKeys()),
-                preset.reportsToDefault(), changeType, changeDescription, actorId, actorId, "APPROVED"));
+                preset.reportsToDefault(), changeType, changeDescription, proposedBy, approvedBy, "APPROVED"));
     }
 
     private String writeSkillKeys(List<String> skillKeys) {

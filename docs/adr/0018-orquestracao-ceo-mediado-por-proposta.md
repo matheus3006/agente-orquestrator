@@ -115,3 +115,11 @@ turno 2+ resume a sessão do turno 1 e o `composePrompt` emagrece (não re-injet
 que a sessão já tem — pagaria contexto em dobro). O loop de handoff (ADR-0030) é rebaixado a rede de
 janela cheia. "1 turno = 1 Run" e o prompt-por-Run seguem; muda só o que o prompt carrega no turno
 continuado. Racional completo na ADR-0038.
+
+## Forward-ref (2026-07-12 — R10-A, propose-then-commit de molde)
+O enum FECHADO `ApprovalActionType` ganhou a 5ª ação `CREATE_ROLE_TEMPLATE` (o CEO propõe um molde
+GLOBAL, o dono aprova — a governança que a ADR-0017 §Moldes prometeu; gate por ALCANCE). A Approval é
+o "2º consumidor" que a `review` reservava, agora também para a proposta de molde (a `review` V11 não
+cabia — issue_id/run_id NOT NULL). O APPROVE dispara `createTemplate` com `proposedBy`=proponente /
+`approvedBy`=aprovador (o split que o gate sempre implicou). Emenda (sem ADR nova); decisões em
+`docs/handoff-grilling-propose-then-commit-molde.md` (D1–D3/D7).

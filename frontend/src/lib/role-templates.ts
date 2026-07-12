@@ -1,4 +1,4 @@
-import type { Engine, RoleTemplate, RoleTemplateVersion, TipoFuncao } from "./api";
+import type { AgentSummary, Engine, RoleTemplate, RoleTemplateVersion, TipoFuncao } from "./api";
 import { engineLabel, type Motor } from "./engines";
 
 // Helpers PUROS dos moldes (Teams T.1, ADR-0017). O eixo FIXO (tipo de função) tem rótulo legível e ordem
@@ -79,6 +79,26 @@ export function versaoCorrente(
   savelog: RoleTemplateVersion[],
 ): RoleTemplateVersion | null {
   return savelog.find((versao) => versao.id === template.currentVersionId) ?? null;
+}
+
+/**
+ * O agente está em DRIFT? (drift-badge, R10-A/D4 — derivado NA TELA, zero estado novo): a versão que
+ * ele pinou no hire ≠ a versão CORRENTE do molde. Precisa dos dois campos já expostos — a versão
+ * pinada e o molde dela (read-join `pinnedTemplateId`) — mais o `currentVersionId` do molde. Sem pin,
+ * molde fora da lista, ou molde sem corrente → NÃO alarma (o que não dá pra saber, não vira badge).
+ */
+export function agenteEmDrift(
+  agent: Pick<AgentSummary, "pinnedTemplateVersionId" | "pinnedTemplateId">,
+  templates: Pick<RoleTemplate, "id" | "currentVersionId">[],
+): boolean {
+  if (!agent.pinnedTemplateVersionId || !agent.pinnedTemplateId) {
+    return false;
+  }
+  const molde = templates.find((template) => template.id === agent.pinnedTemplateId);
+  if (!molde || !molde.currentVersionId) {
+    return false;
+  }
+  return molde.currentVersionId !== agent.pinnedTemplateVersionId;
 }
 
 /** `value` é um dos 6 tipos de função? (o reports_to_default do seed usa o nome do enum) */

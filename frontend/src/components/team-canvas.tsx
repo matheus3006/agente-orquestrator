@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { EllipsisVertical, Stamp } from "lucide-react";
+import { CircleArrowUp, EllipsisVertical, Stamp } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import {
   Controls,
@@ -29,16 +29,19 @@ import {
   ApiError,
   assignAgentTeam,
   reparentAgent,
+  repinAgent,
   setTeamArquiteto,
   type AgentBoardStatus,
   type AgentSummary,
   type Engine,
+  type RoleTemplate,
   type Team,
 } from "@/lib/api";
 import { engineLabel } from "@/lib/engines";
 import { glossa } from "@/lib/glossario";
 import { statusClass } from "@/lib/mission-control";
 import { queryKeys } from "@/lib/query-keys";
+import { agenteEmDrift } from "@/lib/role-templates";
 import { montarOrganograma, ORG_NODE_H, ORG_NODE_W, teamHue } from "@/lib/team-canvas";
 import { pushToast } from "@/lib/toaster";
 import { cn } from "@/lib/utils";
@@ -56,6 +59,11 @@ type DadosDoNo = {
   motorLabel: string;
   time: Team | null;
   times: Team[];
+  // R10-A/D4-D5: o molde do agente derivou (pinou versão velha) → badge clicável de re-pin. O alvo
+  // é a versão CORRENTE do molde (null quando não há drift). Derivado na tela (agenteEmDrift).
+  emDrift: boolean;
+  driftTargetVersionId: string | null;
+  onRepin: (agentId: string, versionId: string) => void;
   onReparent: (agentId: string, novoLiderId: string | null) => void;
   onMoverParaTime: (agentId: string, teamId: string | null) => void;
   onDesignarArquiteto: (teamId: string, agentId: string) => void;
@@ -152,10 +160,21 @@ function AgenteNode({ data }: NodeProps<NoAgente>) {
         <span className="motor" title={glossa("motor")}>
           {data.motorLabel}
         </span>
-        {agent.pinnedTemplateVersionId && (
-          <span className="pin" title="contratado de um molde (versão pinada)">
-            <Stamp size={10} strokeWidth={2.2} /> molde
-          </span>
+        {data.emDrift && data.driftTargetVersionId ? (
+          <button
+            type="button"
+            className="pin drift nodrag"
+            title="o molde ganhou uma versão nova — atualizar este agente (substitui motor e skills)"
+            onClick={() => data.onRepin(agent.id, data.driftTargetVersionId as string)}
+          >
+            <CircleArrowUp size={10} strokeWidth={2.2} /> atualizar molde
+          </button>
+        ) : (
+          agent.pinnedTemplateVersionId && (
+            <span className="pin" title="contratado de um molde (versão pinada)">
+              <Stamp size={10} strokeWidth={2.2} /> molde
+            </span>
+          )
         )}
       </div>
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
@@ -171,6 +190,7 @@ export function TeamCanvas(props: {
   agents: AgentSummary[];
   engines: Engine[];
   teams: Team[];
+  roleTemplates: RoleTemplate[];
   statusById: ReadonlyMap<string, AgentBoardStatus>;
 }) {
   return (
@@ -185,12 +205,14 @@ function CanvasDaCadeia({
   agents,
   engines,
   teams,
+  roleTemplates,
   statusById,
 }: {
   companyId: string;
   agents: AgentSummary[];
   engines: Engine[];
   teams: Team[];
+  roleTemplates: RoleTemplate[];
   statusById: ReadonlyMap<string, AgentBoardStatus>;
 }) {
   const queryClient = useQueryClient();
@@ -244,6 +266,18 @@ function CanvasDaCadeia({
     onError: (error) => toastDeFalha(error, "designar o arquiteto"),
   });
 
+  // R10-A/D5-D6: re-pin COMPLETO — re-aplica o preset da versão corrente (motor + skillset) e move
+  // o pin. SUBSTITUI (ajustes manuais descartados); mão soberana board-only. Some o drift-badge.
+  const repin = useMutation({
+    mutationFn: ({ agentId, versionId }: { agentId: string; versionId: string }) =>
+      repinAgent(companyId, agentId, versionId),
+    onSuccess: (atualizado) => {
+      invalidarOrg();
+      pushToast(`${atualizado.name} atualizado para a versão atual do molde`);
+    },
+    onError: (error) => toastDeFalha(error, "atualizar o molde do agente"),
+  });
+
   const organograma = useMemo(() => montarOrganograma(agents), [agents]);
   const timePorId = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams]);
   const agentePorId = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
@@ -256,6 +290,13 @@ function CanvasDaCadeia({
           return [];
         }
         const status = statusById.get(agent.id) ?? "IDLE";
+        // Drift derivado NA TELA (D4): a versão pinada ≠ a corrente do molde. O alvo do re-pin é a
+        // versão corrente desse molde (o pinnedTemplateId é o read-join que o backend expõe).
+        const emDrift = agenteEmDrift(agent, roleTemplates);
+        const driftTargetVersionId = emDrift
+          ? (roleTemplates.find((template) => template.id === agent.pinnedTemplateId)?.currentVersionId ??
+            null)
+          : null;
         return [
           {
             id: agent.id,
@@ -267,6 +308,9 @@ function CanvasDaCadeia({
               motorLabel: engineLabel(agent, engines),
               time: agent.teamId ? (timePorId.get(agent.teamId) ?? null) : null,
               times: teams,
+              emDrift,
+              driftTargetVersionId,
+              onRepin: (agentId: string, versionId: string) => repin.mutate({ agentId, versionId }),
               onReparent: (agentId: string, novoLiderId: string | null) =>
                 reparent.mutate({ agentId, novoLiderId }),
               onMoverParaTime: (agentId: string, teamId: string | null) =>
@@ -280,7 +324,7 @@ function CanvasDaCadeia({
         ];
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- as mutations são estáveis por identidade de uso
-    [organograma, agentePorId, timePorId, teams, engines, statusById],
+    [organograma, agentePorId, timePorId, teams, engines, statusById, roleTemplates],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<NoAgente>(nosDoLayout);

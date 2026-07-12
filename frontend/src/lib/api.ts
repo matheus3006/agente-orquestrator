@@ -374,6 +374,9 @@ export interface AgentSummary {
   effort: string | null;
   // Molde pinado (ADR-0017): a versão de role-template copiada no hire; null = hire avulso.
   pinnedTemplateVersionId: string | null;
+  // R10-A/D4: o molde (roleTemplateId) da versão pinada — read-join pro drift-badge. Com ele + o
+  // currentVersionId do molde (já exposto), a tela DERIVA drift (pinada ≠ corrente). null = sem pin.
+  pinnedTemplateId: string | null;
   // Time (ADR-0017, T.2): null = fora de time (dispatch livre — a trava do arquiteto é DO TIME).
   teamId: string | null;
   createdAt: string;
@@ -476,6 +479,19 @@ export function updateAgentEngine(
   return apiFetch<AgentSummary>(`/api/companies/${companyId}/agents/${agentId}`, {
     method: "PATCH",
     body: input,
+  });
+}
+
+// Re-pin COMPLETO (R10-A/D5-D6): re-aplica o preset da versão no agente (motor + skillset) e move o
+// pin — SUBSTITUI (a versão manda; ajustes manuais descartados). Mão soberana do operador, board-only.
+export function repinAgent(
+  companyId: string,
+  agentId: string,
+  roleTemplateVersionId: string,
+): Promise<AgentSummary> {
+  return apiFetch<AgentSummary>(`/api/companies/${companyId}/agents/${agentId}/repin`, {
+    method: "POST",
+    body: { roleTemplateVersionId },
   });
 }
 
@@ -979,7 +995,13 @@ export function listTurns(companyId: string, conversationId: string): Promise<Co
 /* ---------- approvals: o gate pré-hoc (Teams T.3, ADR-0018/0020) ---------- */
 
 // CREATE_TEAM (ADR-0037/D7): time + arquiteto atômico — o time do gate nasce com arquiteto.
-export type ApprovalActionType = "HIRE_AGENT" | "CREATE_ISSUE" | "WAKEUP_AGENT" | "CREATE_TEAM";
+// CREATE_ROLE_TEMPLATE (R10-A): o CEO propõe um molde (preset de cargo GLOBAL) — o dono aprova.
+export type ApprovalActionType =
+  | "HIRE_AGENT"
+  | "CREATE_ISSUE"
+  | "WAKEUP_AGENT"
+  | "CREATE_TEAM"
+  | "CREATE_ROLE_TEMPLATE";
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
 

@@ -29,6 +29,19 @@ class TurnOutputSchemaTest {
     }
 
     @Test
+    void executorPodeProporMoldeNovoComVarianteCreateRoleTemplateBemFormada() {
+        // R10-A/D8 (propose-then-commit de molde): o Executor ganha a 3ª variante de proposta —
+        // CREATE_ROLE_TEMPLATE (só CRIAR molde novo; editar molde existente segue mão-soberana-direta,
+        // fora do schema, G6). O alvo carrega o preset: identidade + motor-trio + skillKeys[] (ARRAY).
+        String json = schema.forPersona(CeoPersona.EXECUTOR);
+        assertThatCode(() -> schema.requireWellFormed(json)).doesNotThrowAnyException();
+        assertThat(json).contains("CREATE_ROLE_TEMPLATE")
+                .contains("\"tipoFuncao\"").contains("\"roleEspecifica\"").contains("\"skillKeys\"");
+        // skillKeys é um array de strings (o único campo não-string do alvo — strict do codex).
+        assertThat(json).contains("\"skillKeys\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}");
+    }
+
+    @Test
     void parseExtraiRespostaEBlocosDaVoltaValidada() {
         // A forma REAL que os 2 motores devolvem (provado ao vivo): resposta + blocos[] no result.
         String reply = "{\"resposta\":\"Segue a estratégia.\",\"blocos\":["
@@ -76,10 +89,12 @@ class TurnOutputSchemaTest {
         assertThat(schema.forPersona(CeoPersona.QUESTIONADOR))
                 .contains("\"handoff\"").contains("\"correcao\"")
                 .doesNotContain("\"proposta\"").doesNotContain("\"absorcao\"");
-        // O Executor protocola o gate: proposta com as DUAS ações (HIRE_AGENT + CREATE_TEAM) + o
-        // retrabalho (rodada 9: só ele recebe entregável de outra persona back-office).
+        // O Executor protocola o gate: proposta com as TRÊS ações (HIRE_AGENT + CREATE_TEAM +
+        // CREATE_ROLE_TEMPLATE, R10-A) + o retrabalho (rodada 9: só ele recebe entregável de outra
+        // persona back-office).
         assertThat(schema.forPersona(CeoPersona.EXECUTOR))
                 .contains("\"proposta\"").contains("HIRE_AGENT").contains("CREATE_TEAM")
+                .contains("CREATE_ROLE_TEMPLATE")
                 .contains("\"retrabalho\"")
                 .doesNotContain("\"correcao\"").doesNotContain("\"absorcao\"");
         // O Planejador tria o board: absorcao é só dele; retrabalho não é seu (D7 segue cobrindo

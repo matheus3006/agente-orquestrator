@@ -66,6 +66,7 @@ public class TurnOutputSchema {
             case EXECUTOR -> {
                 anyOf.add(propostaHireVariant());
                 anyOf.add(propostaCreateTeamVariant());
+                anyOf.add(propostaCreateRoleTemplateVariant());
                 anyOf.add(needsGrillingVariant());
                 anyOf.add(retrabalhoVariant());
             }
@@ -127,6 +128,26 @@ public class TurnOutputSchema {
         return block;
     }
 
+    /**
+     * R10-A/D8 (propose-then-commit de molde, ADR-0017 emendada): o Executor propõe um MOLDE novo. O
+     * alvo é o preset: identidade (tipoFuncao+roleEspecifica) + motor-trio + {@code skillKeys[]} +
+     * reports_to sugerido + changeDescription + racional. {@code skillKeys} é o único campo ARRAY (os
+     * outros são strings); só CRIAR (editar molde existente segue mão-soberana-direta, fora do schema).
+     */
+    private ObjectNode propostaCreateRoleTemplateVariant() {
+        ObjectNode block = strictObject("proposta", "acao", "alvo", "resumo", "area");
+        ObjectNode props = (ObjectNode) block.get("properties");
+        putEnum(props, "acao", "CREATE_ROLE_TEMPLATE");
+        ObjectNode alvo = strictObjectWithStrings("tipoFuncao", "roleEspecifica", "adapterType",
+                "model", "effort", "reportsToDefault", "changeDescription", "racional");
+        ((ArrayNode) alvo.get("required")).add("skillKeys");
+        putStringArray((ObjectNode) alvo.get("properties"), "skillKeys");
+        props.set("alvo", alvo);
+        putString(props, "resumo");
+        putString(props, "area");
+        return block;
+    }
+
     private ObjectNode propostaCreateTeamVariant() {
         ObjectNode block = strictObject("proposta", "acao", "alvo", "resumo", "area");
         ObjectNode props = (ObjectNode) block.get("properties");
@@ -176,6 +197,13 @@ public class TurnOutputSchema {
     /** {@code "<campo>": {"type":"string"}} — o molde de campo mais comum. */
     private void putString(ObjectNode props, String campo) {
         props.putObject(campo).put("type", "string");
+    }
+
+    /** {@code "<campo>": {"type":"array","items":{"type":"string"}}} — lista de strings (skillKeys). */
+    private void putStringArray(ObjectNode props, String campo) {
+        ObjectNode array = props.putObject(campo);
+        array.put("type", "array");
+        array.putObject("items").put("type", "string");
     }
 
     /** {@code "<campo>": {"type":"string","enum":["<value>"]}} — discriminador const. */

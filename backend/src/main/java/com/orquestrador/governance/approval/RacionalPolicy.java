@@ -39,7 +39,7 @@ public class RacionalPolicy {
             return declaredArea.strip();
         }
         return switch (actionType) {
-            case HIRE_AGENT, CREATE_TEAM -> "estrutura-org";
+            case HIRE_AGENT, CREATE_TEAM, CREATE_ROLE_TEMPLATE -> "estrutura-org";
             case CREATE_ISSUE -> "backlog";
             case WAKEUP_AGENT -> "operacao";
         };

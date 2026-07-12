@@ -2026,6 +2026,19 @@ button:focus-visible,
     color: var(--phosphor-dim);
     flex-shrink: 0;
   }
+  /* R10-A/D4-D5: drift-badge — o agente pinou uma versão VELHA do molde. Clicável (âmbar =
+     atenção/ação): atualiza pra corrente (re-pin SUBSTITUI motor+skills). */
+  .org-node-foot button.pin.drift {
+    border: 0;
+    padding: 0;
+    background: none;
+    font: inherit;
+    color: var(--amber);
+    cursor: pointer;
+  }
+  .org-node-foot button.pin.drift:hover {
+    text-decoration: underline;
+  }
 
   /* --- T.2: canvas editável — listra do time, menu de composição (⋮) e régua de times --- */
   .org-node { position: relative; }

@@ -10,7 +10,15 @@ import { TeamCanvas } from "@/components/team-canvas";
 import { TeamToolbar } from "@/components/team-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { View, ViewHead } from "@/components/view";
-import { getMissionControl, listAgentSkills, listAgents, listEngines, listIssues, listTeams } from "@/lib/api";
+import {
+  getMissionControl,
+  listAgentSkills,
+  listAgents,
+  listEngines,
+  listIssues,
+  listRoleTemplates,
+  listTeams,
+} from "@/lib/api";
 import { rosterDoing } from "@/lib/agents";
 import { engineLabel } from "@/lib/engines";
 import { statusClass, statusWord } from "@/lib/mission-control";
@@ -61,6 +69,14 @@ export default function AgentsPage() {
     queryFn: () => listTeams(companyId as string),
     enabled: !!companyId && visao === "organograma",
     staleTime: 30_000,
+  });
+  // Moldes só p/ o drift-badge do organograma (R10-A/D4): compara a versão pinada do agente com a
+  // corrente do molde. Derivado NA TELA — o backend só expõe o pinnedTemplateId (read-join).
+  const roleTemplatesQuery = useQuery({
+    queryKey: queryKeys.roleTemplates(companyId ?? ""),
+    queryFn: () => listRoleTemplates(companyId as string),
+    enabled: !!companyId && visao === "organograma",
+    staleTime: 60_000,
   });
 
   const agents = agentsQuery.data ?? [];
@@ -140,6 +156,7 @@ export default function AgentsPage() {
             agents={agents}
             engines={engines}
             teams={teamsQuery.data ?? []}
+            roleTemplates={roleTemplatesQuery.data ?? []}
             statusById={
               new Map((mcQuery.data?.agents ?? []).map((station) => [station.agent.id, station.status]))
             }
