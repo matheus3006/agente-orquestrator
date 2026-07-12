@@ -18,6 +18,7 @@ import com.orquestrador.preview.PreviewArtifactCapturer;
 import com.orquestrador.preview.server.PreviewServerManifestRegistrar;
 import com.orquestrador.preview.server.PreviewServerSupervisor;
 import com.orquestrador.skills.CompanySkillVersion;
+import com.orquestrador.skills.HookMaterializer;
 import com.orquestrador.skills.SkillMaterializer;
 import com.orquestrador.skills.SkillSetService;
 import com.orquestrador.work.issue.CheckoutResult;
@@ -58,6 +59,7 @@ public class AdapterRunExecutor implements RunExecutor {
     private final HeartbeatRunStore store;
     private final SkillSetService skillSets;
     private final SkillMaterializer materializer;
+    private final HookMaterializer hookMaterializer;
     private final BudgetService budget;
     private final ConversationTurnCoordinator turnCoordinator;
     private final AgentSessionStore agentSessions;
@@ -70,7 +72,8 @@ public class AdapterRunExecutor implements RunExecutor {
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
-                              SkillSetService skillSets, SkillMaterializer materializer, BudgetService budget,
+                              SkillSetService skillSets, SkillMaterializer materializer,
+                              HookMaterializer hookMaterializer, BudgetService budget,
                               ConversationTurnCoordinator turnCoordinator, AgentSessionStore agentSessions,
                               CompanyMemoryMaterializer memoryMaterializer, PreviewArtifactCapturer previews,
                               PreviewServerManifestRegistrar serverManifests,
@@ -84,6 +87,7 @@ public class AdapterRunExecutor implements RunExecutor {
         this.store = store;
         this.skillSets = skillSets;
         this.materializer = materializer;
+        this.hookMaterializer = hookMaterializer;
         this.budget = budget;
         this.turnCoordinator = turnCoordinator;
         this.agentSessions = agentSessions;
@@ -164,6 +168,21 @@ public class AdapterRunExecutor implements RunExecutor {
             return RunOutcome.failure("falha ao materializar o SkillSet: " + exception.getMessage());
         }
 
+        try {
+            // F-N6 (ADR-0042, D6/D7): o hook PreToolUse materializa em TODO run que recebe skills
+            // (leitura adotada do escopo mínimo — mais simples que restringir a personas; ver
+            // handoff de volta) — skills read-only + cinto de leitura dos dirs de sessão dos motores.
+            hookMaterializer.materialize(workDir, convention);
+            for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
+                if (!inactive.equals(convention)) {
+                    faxinaConvencaoInativa(workDir, inactive.hooksFile());
+                    faxinaConvencaoInativa(workDir, inactive.hooksScript());
+                }
+            }
+        } catch (RuntimeException exception) {
+            return RunOutcome.failure("falha ao materializar os hooks PreToolUse: " + exception.getMessage());
+        }
+
         // Amarração slice 1<->2<->3: o Run detem a Issue via checkout atomico com o proprio runId.
         if (runContext.issueId() != null) {
             CheckoutResult checkout = issues.checkout(runContext.companyId(), runContext.issueId(), runContext.agentId(), runContext.runId());
@@ -232,6 +251,12 @@ public class AdapterRunExecutor implements RunExecutor {
         List<String> materializedSubtrees = new ArrayList<>();
         for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
             materializedSubtrees.add(known.skillsSubdir());
+        }
+        // F-N6 (ADR-0042): hooks materializam em TODO run (junto das skills), então entram na
+        // lista incondicional — não gated por turno != null como o memoryFile abaixo.
+        for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
+            materializedSubtrees.add(known.hooksFile());
+            materializedSubtrees.add(known.hooksScript());
         }
         if (turno != null) {
             for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {

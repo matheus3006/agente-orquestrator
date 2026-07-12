@@ -51,8 +51,15 @@ final class CodexArgv {
         return build(prompt, model, effort, posture, priorSession, maxThreads, maxDepth, null);
     }
 
+    /** Sem hooks: os testes de gramática pura anteriores ao F-N6; o adapter sempre passa hooksEnabled. */
     static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
                               String priorSession, int maxThreads, int maxDepth, String outputSchemaFile) {
+        return build(prompt, model, effort, posture, priorSession, maxThreads, maxDepth, outputSchemaFile, false);
+    }
+
+    static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
+                              String priorSession, int maxThreads, int maxDepth, String outputSchemaFile,
+                              boolean hooksEnabled) {
         List<String> argv = new ArrayList<>();
         argv.add("codex");
         argv.add("exec");
@@ -89,6 +96,13 @@ final class CodexArgv {
         } else {
             argv.add("-s");
             argv.add("workspace-write");
+        }
+        // F-N6 (ADR-0042, D6/D7): o codex recusa rodar hooks não-confiados sem esta flag (gotcha
+        // de trust, confirmado no source do tag pinado rust-v0.142.5 — `shared_options.rs`). Os
+        // hooks materializam em TODO run (junto das skills, HookMaterializer), então o adapter
+        // sempre passa hooksEnabled=true; só os testes de gramática pura passam false.
+        if (hooksEnabled) {
+            argv.add("--dangerously-bypass-hook-trust");
         }
         // ADR-0030/M9: religa a sessão só para a rede resume-cirúrgico do handoff (todo run normal
         // passa null — D4). No codex 0.142.5 resume é SUBCOMANDO (não flag) com SESSION_ID e PROMPT
