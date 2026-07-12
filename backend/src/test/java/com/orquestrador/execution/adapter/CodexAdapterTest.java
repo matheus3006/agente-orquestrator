@@ -8,6 +8,7 @@ import com.orquestrador.execution.runtime.ExecutionTarget;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -32,11 +33,60 @@ class CodexAdapterTest {
             "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":200,\"cached_input_tokens\":1000,"
                     + "\"output_tokens\":50}}");
 
-    private final CodexAdapter adapter = new CodexAdapter(6, 3);
+    private final CodexAdapter adapter = new CodexAdapter(6, 3, tempSessionsDir());
 
     @Test
     void tipoEhCodex() {
         assertThat(adapter.type()).isEqualTo("codex");
+    }
+
+    @Test
+    void subagenteViraCostEventOffBookLidoDoRolloutDoFilho(@TempDir Path sessionsRoot) throws IOException {
+        // F-N5 (ADR-0041, D5): o stream do parent só traz o thread_id do filho (collab_tool_call) —
+        // o gasto REAL vem do side-channel (rollout em ~/.codex/sessions). Rollout ausente não
+        // quebra o run (fail-soft, provado no CodexSubagentUsageReaderTest); aqui provamos a fiação.
+        String childThreadId = "019f54ae-b076-78c3-9725-6f18cbaad8e1";
+        Path dayDir = sessionsRoot.resolve("2026/07/12");
+        Files.createDirectories(dayDir);
+        Files.writeString(dayDir.resolve("rollout-x-" + childThreadId + ".jsonl"),
+                "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{"
+                        + "\"total_token_usage\":{\"input_tokens\":17595,\"cached_input_tokens\":4992,"
+                        + "\"output_tokens\":20}}}}");
+        CodexAdapter adapterComSessions = new CodexAdapter(6, 3, sessionsRoot.toString());
+        List<String> streamComSubagente = new ArrayList<>(STREAM);
+        streamComSubagente.add(1, "{\"type\":\"item.completed\",\"item\":{\"type\":\"collab_tool_call\","
+                + "\"tool\":\"spawn_agent\",\"receiver_thread_ids\":[\"" + childThreadId + "\"]}}");
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, streamComSubagente);
+
+        Result result = adapterComSessions.execute(ctx(target, "faça X", "gpt-5.5", "high"), sink);
+
+        assertThat(result.costEvents()).hasSize(2);
+        assertThat(result.costEvents().get(0).offBook()).isFalse();
+        CostEmission offBook = result.costEvents().get(1);
+        assertThat(offBook.offBook()).isTrue();
+        assertThat(offBook.provider()).isEqualTo("openai");
+        assertThat(offBook.tokensInput()).isEqualTo(22587);
+        assertThat(offBook.tokensOutput()).isEqualTo(20);
+    }
+
+    @Test
+    void semSubagenteSoOCostEventPrincipal() {
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, STREAM);
+
+        Result result = adapter.execute(ctx(target, "faça X", "gpt-5.5", "high"), sink);
+
+        assertThat(result.costEvents()).hasSize(1);
+        assertThat(result.costEvents().get(0).offBook()).isFalse();
+    }
+
+    private static String tempSessionsDir() {
+        try {
+            return Files.createTempDirectory("codex-sessions-test").toString();
+        } catch (IOException falha) {
+            throw new java.io.UncheckedIOException(falha);
+        }
     }
 
     @Test

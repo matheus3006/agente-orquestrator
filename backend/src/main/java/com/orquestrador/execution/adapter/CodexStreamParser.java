@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 
@@ -33,6 +34,7 @@ final class CodexStreamParser {
     private int tokensInput;
     private int tokensOutput;
     private boolean sawUsage;
+    private final Set<String> childThreadIds = new LinkedHashSet<>();
     private String credentialFailureLine;
     private String sessionLostLine;
 
@@ -56,6 +58,7 @@ final class CodexStreamParser {
         captureSession(node);
         captureModel(node);
         captureUsage(node);
+        captureChildThreadIds(node);
         String type = text(node, "type");
         // No Codex a auth/resume quebrado também chega DENTRO da gramática: evento error com a message.
         if ("error".equals(type)) {
@@ -119,6 +122,17 @@ final class CodexStreamParser {
         return sawUsage;
     }
 
+    /**
+     * Os {@code thread_id} dos subagentes que este run spawnou (F-N5/ADR-0041, D5): o stream do
+     * parent NÃO traz o usage deles (laudo, Sonda 1) — só os {@code receiver_thread_ids} do
+     * {@code collab_tool_call} (spawn_agent/wait/close_agent). O side-channel (rollout em
+     * {@code ~/.codex/sessions}) usa esta lista para ler o gasto de cada um. Ordem de descoberta,
+     * sem duplicata (o mesmo id repete em spawn/wait/close).
+     */
+    Set<String> childThreadIds() {
+        return childThreadIds;
+    }
+
     /** A primeira linha/mensagem do stream com cara de falha de credencial; nula se nenhuma. */
     String credentialFailure() {
         return credentialFailureLine;
@@ -166,6 +180,19 @@ final class CodexStreamParser {
             tokensInput = intAt(usage, "input_tokens") + intAt(usage, "cached_input_tokens");
             tokensOutput = intAt(usage, "output_tokens");
             sawUsage = true;
+        }
+    }
+
+    /** {@code collab_tool_call}: soma os {@code receiver_thread_ids} — os subagentes deste run. */
+    private void captureChildThreadIds(JsonNode node) {
+        JsonNode item = node.path("item");
+        if (!"collab_tool_call".equals(text(item, "type"))) {
+            return;
+        }
+        for (JsonNode id : item.path("receiver_thread_ids")) {
+            if (id.isTextual()) {
+                childThreadIds.add(id.asText());
+            }
         }
     }
 

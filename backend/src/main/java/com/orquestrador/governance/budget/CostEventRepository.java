@@ -41,6 +41,13 @@ public interface CostEventRepository extends JpaRepository<CostEvent, UUID> {
     /** Emissões de custo de um Run (observabilidade de tokens por-run; ADR-0014/0015). */
     List<CostEvent> findByRunId(UUID runId);
 
+    /**
+     * Os lançamentos de TOKEN (exclui orquestração, T.4/V19 — moeda própria) de um run, na company
+     * dona — a superfície de leitura do gasto off-book (F-N5/ADR-0041, D5). Ordem de gravação.
+     */
+    List<CostEvent> findByCompanyIdAndRunIdAndOrchestrationActionIsNullOrderByCreatedAtAsc(
+            UUID companyId, UUID runId);
+
     /** Os atos de orquestração de um tipo na company (observabilidade do ledger T.4). */
     List<CostEvent> findByCompanyIdAndOrchestrationAction(UUID companyId, OrchestrationAction action);
 }

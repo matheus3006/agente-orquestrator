@@ -55,6 +55,15 @@ public class CostEvent {
     @Column(name = "orchestration_action")
     private OrchestrationAction orchestrationAction;
 
+    /**
+     * F-N5 (ADR-0041, D5): este lançamento é gasto de SUBAGENTE (outra janela de contexto) — não é
+     * moeda separada (o dólar continua 0 igual, ADR-0006/0014 Q7), só um MARCADOR (espelha
+     * {@code orchestrationAction}, V19) que o handoff (ADR-0015/0030) usa para excluir da soma da
+     * janela do turno principal.
+     */
+    @Column(name = "off_book", nullable = false)
+    private boolean offBook;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -63,6 +72,12 @@ public class CostEvent {
 
     public CostEvent(UUID id, UUID companyId, UUID agentId, UUID runId, UUID issueId,
                      String provider, String model, long costCents, int tokensInput, int tokensOutput) {
+        this(id, companyId, agentId, runId, issueId, provider, model, costCents, tokensInput, tokensOutput, false);
+    }
+
+    public CostEvent(UUID id, UUID companyId, UUID agentId, UUID runId, UUID issueId,
+                     String provider, String model, long costCents, int tokensInput, int tokensOutput,
+                     boolean offBook) {
         this.id = id;
         this.companyId = companyId;
         this.agentId = agentId;
@@ -73,6 +88,7 @@ public class CostEvent {
         this.costCents = costCents;
         this.tokensInput = tokensInput;
         this.tokensOutput = tokensOutput;
+        this.offBook = offBook;
         this.createdAt = Instant.now();
     }
 
@@ -123,6 +139,10 @@ public class CostEvent {
 
     public OrchestrationAction getOrchestrationAction() {
         return orchestrationAction;
+    }
+
+    public boolean isOffBook() {
+        return offBook;
     }
 
     public Instant getCreatedAt() {

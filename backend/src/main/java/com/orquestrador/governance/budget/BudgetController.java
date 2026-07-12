@@ -54,6 +54,16 @@ public class BudgetController {
         return budgets.incidentsFor(companyId).stream().map(IncidentResponse::from).toList();
     }
 
+    /**
+     * A superfície do gasto off-book (F-N5/ADR-0041, D5): os lançamentos de token de um run,
+     * marcados {@code offBook} quando o gasto é de subagente (outra janela de contexto).
+     */
+    @GetMapping("/runs/{runId}/cost-events")
+    public List<CostEventResponse> costEvents(@PathVariable UUID companyId, @PathVariable UUID runId) {
+        guard.assertMember(companyId);
+        return budgets.costEventsForRun(companyId, runId).stream().map(CostEventResponse::from).toList();
+    }
+
     /** Override de governanca: resolve o incidente e destrava o escopo. */
     @PostMapping("/budget-incidents/{incidentId}/resolve")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -84,6 +94,14 @@ public class BudgetController {
             return new IncidentResponse(incident.getId(), incident.getScopeType().name(), incident.getScopeId(),
                     incident.getSpentCents(), incident.getLimitCents(), incident.getStatus().name(),
                     incident.getCreatedAt());
+        }
+    }
+
+    public record CostEventResponse(UUID id, String provider, String model, int tokensInput,
+                                    int tokensOutput, boolean offBook, Instant createdAt) {
+        static CostEventResponse from(CostEvent event) {
+            return new CostEventResponse(event.getId(), event.getProvider(), event.getModel(),
+                    event.getTokensInput(), event.getTokensOutput(), event.isOffBook(), event.getCreatedAt());
         }
     }
 }

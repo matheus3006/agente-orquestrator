@@ -88,6 +88,41 @@ class ClaudeCodeAdapterTest {
     }
 
     @Test
+    void subagentesEmitemCostEventOffBookSeparado() {
+        // F-N5 (ADR-0041, D5): task_notification vira UM segundo CostEmission (offBook=true) — o
+        // gasto é REAL mas de OUTRA janela de contexto (não soma no handoff do turno principal).
+        List<String> streamComSubagente = new ArrayList<>(STREAM);
+        streamComSubagente.add(4, "{\"type\":\"system\",\"subtype\":\"task_notification\","
+                + "\"usage\":{\"total_tokens\":13672}}");
+        streamComSubagente.add(5, "{\"type\":\"system\",\"subtype\":\"task_notification\","
+                + "\"usage\":{\"total_tokens\":13675}}");
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, streamComSubagente);
+
+        Result result = adapter.execute(ctx(target, "faça X", "opus", "ultracode"), sink);
+
+        assertThat(result.costEvents()).hasSize(2);
+        CostEmission principal = result.costEvents().get(0);
+        assertThat(principal.offBook()).isFalse();
+        assertThat(principal.tokensInput()).isEqualTo(3120);
+        CostEmission offBook = result.costEvents().get(1);
+        assertThat(offBook.offBook()).isTrue();
+        assertThat(offBook.provider()).isEqualTo("anthropic");
+        assertThat(offBook.tokensOutput()).isEqualTo(27347);
+    }
+
+    @Test
+    void semSubagenteSoOCostEventPrincipal() {
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, STREAM);
+
+        Result result = adapter.execute(ctx(target, "faça X", "opus", "high"), sink);
+
+        assertThat(result.costEvents()).hasSize(1);
+        assertThat(result.costEvents().get(0).offBook()).isFalse();
+    }
+
+    @Test
     void tetoDeSubagenteConfiguradoChegaAoArgv() {
         // D6 (ADR-0038): quando o operador configura a denylist, o adapter a fia no --disallowedTools.
         // O default (adapter padrão do teste) é VAZIO — só o cap nativo de profundidade 5 do claude.

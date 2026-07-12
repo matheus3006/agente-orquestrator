@@ -57,8 +57,16 @@ public class BudgetService {
     @Transactional
     public CostEvent recordCost(UUID companyId, UUID agentId, UUID runId, UUID issueId,
                                 String provider, String model, long costCents, int tokensIn, int tokensOut) {
+        return recordCost(companyId, agentId, runId, issueId, provider, model, costCents, tokensIn, tokensOut, false);
+    }
+
+    /** Espelho com o marcador off-book (F-N5/ADR-0041, D5) — mesmo enforcement, mesma moeda de dólar. */
+    @Transactional
+    public CostEvent recordCost(UUID companyId, UUID agentId, UUID runId, UUID issueId,
+                                String provider, String model, long costCents, int tokensIn, int tokensOut,
+                                boolean offBook) {
         CostEvent event = costs.save(new CostEvent(UUID.randomUUID(), companyId, agentId, runId, issueId,
-                provider, model, costCents, tokensIn, tokensOut));
+                provider, model, costCents, tokensIn, tokensOut, offBook));
         enforce(companyId, ScopeType.COMPANY, companyId);
         if (agentId != null) {
             enforce(companyId, ScopeType.AGENT, agentId);
@@ -192,5 +200,15 @@ public class BudgetService {
     @Transactional(readOnly = true)
     public List<BudgetIncident> incidentsFor(UUID companyId) {
         return incidents.findByCompanyIdOrderByCreatedAtDesc(companyId);
+    }
+
+    /**
+     * A superfície de leitura do gasto off-book (F-N5/ADR-0041, D5): os lançamentos de TOKEN de um
+     * run, na company dona — inclui o marcador {@code offBook} de cada linha. Company errada (ou
+     * run de outra company) devolve vazio — não vaza lançamento entre companies.
+     */
+    @Transactional(readOnly = true)
+    public List<CostEvent> costEventsForRun(UUID companyId, UUID runId) {
+        return costs.findByCompanyIdAndRunIdAndOrchestrationActionIsNullOrderByCreatedAtAsc(companyId, runId);
     }
 }

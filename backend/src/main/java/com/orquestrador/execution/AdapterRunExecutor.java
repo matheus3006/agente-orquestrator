@@ -393,7 +393,7 @@ public class AdapterRunExecutor implements RunExecutor {
         for (AgentAdapter.CostEmission emission : emissions) {
             budget.recordCost(runContext.companyId(), runContext.agentId(), runContext.runId(),
                     runContext.issueId(), emission.provider(), emission.model(), 0L,
-                    emission.tokensInput(), emission.tokensOutput());
+                    emission.tokensInput(), emission.tokensOutput(), emission.offBook());
         }
     }
 }
