@@ -172,3 +172,12 @@ produção) · ADR-0014 (a medição de tokens + `context_window` que são o ins
 conversacional mediado por proposta — 1 turno = 1 Run) · ADR-0028/0029 (o padrão "ADR nova quando
 diverge conscientemente" que esta segue) · ADR-0010 (módulos profundos atrás de seams pequenos — o
 detector, o poster e o loop).
+
+## Revisão 2026-07-11 (continuidade nativa — ADR-0038)
+D5 ("`--resume` OFF para continuar; retomada = carta + estado vivo + bilhete") é **rebaixado**: com a
+continuidade nativa por conversa (F-N1) + a dieta do prompt, a memória entre turnos é NATIVA e a
+janela enche DEVAGAR. Este loop deixa de ser o substituto da memória e vira a **REDE DE SEGURANÇA de
+quando a janela realmente enche** (destila e recomeça) — o papel que a D1 sempre lhe reservou. O
+detector (55%) e o restart passam a disparar raro. O `--resume` cirúrgico (D6/M9) continua válido como
+uma das camadas da rede. O bilhete mantém o papel de registro durável/auditável que a continuação lê.
+Racional na ADR-0038.

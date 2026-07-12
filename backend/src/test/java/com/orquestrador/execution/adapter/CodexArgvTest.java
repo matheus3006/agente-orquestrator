@@ -74,6 +74,32 @@ class CodexArgvTest {
     }
 
     @Test
+    void tetoDeSubagenteViraParDeCNativos() {
+        // D6 (ADR-0038, requisito de aceite): a fatia amplia autonomia (continuidade nativa) e não
+        // shippa sem o teto. No codex o teto é NATIVO e numérico: [agents] max_threads/max_depth via -c.
+        assertThat(CodexArgv.build("faça X", "gpt-5.5", "high", IsolationPosture.HOST, null, 6, 3))
+                .containsSubsequence("-c", "agents.max_threads=6", "-c", "agents.max_depth=3");
+    }
+
+    @Test
+    void tetoZeradoOmiteOFlagCorrespondente() {
+        // Teto desligado (config vazia/0) omite só o eixo desligado — nunca emite chave sem valor.
+        assertThat(CodexArgv.build("t", "gpt-5.5", "high", IsolationPosture.HOST, null, 0, 0))
+                .doesNotContain("agents.max_threads=0", "agents.max_depth=0");
+        assertThat(CodexArgv.build("t", "gpt-5.5", "high", IsolationPosture.HOST, null, 6, 0))
+                .contains("agents.max_threads=6")
+                .doesNotContain("agents.max_depth=0");
+    }
+
+    @Test
+    void tetoConviveComOResumeCirurgicoFlagsAntesDoSubcomando() {
+        // O teto é global (-c) ⟹ antes do subcomando resume, como todo flag; prompt segue o último.
+        assertThat(CodexArgv.build("grave", "gpt-5.5", "high", IsolationPosture.HOST, "sess-x", 6, 3))
+                .containsSubsequence("agents.max_threads=6", "agents.max_depth=3",
+                        "resume", "sess-x", "grave");
+    }
+
+    @Test
     void externamenteSandboxadoGanhaSkipGitEBypassComPromptNoFim() {
         // F.11 (ADR-0025): o container E o sandbox externo — o codex roda sem self-sandbox.
         // Flags empiricamente confirmados contra o codex 0.142.5; prompt segue o ULTIMO.

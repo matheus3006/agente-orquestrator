@@ -56,6 +56,30 @@ class ClaudeArgvTest {
     }
 
     @Test
+    void denylistDeToolsViraDisallowedTools() {
+        // D6 (ADR-0038, requisito de aceite): a fatia amplia autonomia e não shippa sem o teto. No
+        // claude o aninhamento de subagente já é capado NATIVAMENTE em profundidade 5 (laudo [C-3]);
+        // este seam é o lever de PRODUTO — nega tools por regra nativa (default vazio = só o cap nativo).
+        List<String> argv = ClaudeArgv.build("faça X", "opus", "high", null, "Agent Task");
+        int i = argv.indexOf("--disallowedTools");
+        assertThat(i).isPositive();
+        assertThat(argv.get(i + 1)).isEqualTo("Agent Task");
+    }
+
+    @Test
+    void denylistVaziaOuNulaOmiteAFlag() {
+        // Default (vazio): nenhuma flag — o teto ativo é o cap nativo de profundidade 5 do claude.
+        assertThat(ClaudeArgv.build("t", "opus", "high", null, null)).doesNotContain("--disallowedTools");
+        assertThat(ClaudeArgv.build("t", "opus", "high", null, "  ")).doesNotContain("--disallowedTools");
+    }
+
+    @Test
+    void denylistConviveComOResumeCirurgico() {
+        List<String> argv = ClaudeArgv.build("destile", "opus", "high", "sess-abc", "Agent");
+        assertThat(argv).contains("--disallowedTools", "Agent", "--resume", "sess-abc");
+    }
+
+    @Test
     void priorSessionLigaOResumeCirurgico() {
         // M9 (ADR-0030): a rede resume-cirúrgico religa a MESMA sessão só para destilar.
         List<String> argv = ClaudeArgv.build("destile", "opus", "high", "sess-abc123");

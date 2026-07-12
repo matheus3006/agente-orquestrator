@@ -32,7 +32,7 @@ class ClaudeCodeAdapterTest {
                     + "\"usage\":{\"input_tokens\":120,\"cache_read_input_tokens\":3000,"
                     + "\"cache_creation_input_tokens\":0,\"output_tokens\":45}}");
 
-    private final ClaudeCodeAdapter adapter = new ClaudeCodeAdapter("");
+    private final ClaudeCodeAdapter adapter = new ClaudeCodeAdapter("", "");
 
     @Test
     void tipoEhClaudeCode() {
@@ -70,6 +70,24 @@ class ClaudeCodeAdapterTest {
     }
 
     @Test
+    void tetoDeSubagenteConfiguradoChegaAoArgv() {
+        // D6 (ADR-0038): quando o operador configura a denylist, o adapter a fia no --disallowedTools.
+        // O default (adapter padrão do teste) é VAZIO — só o cap nativo de profundidade 5 do claude.
+        ClaudeCodeAdapter comTeto = new ClaudeCodeAdapter("", "Agent Task");
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, STREAM);
+
+        comTeto.execute(ctx(target, "faça X", "opus", "high"), sink);
+
+        assertThat(target.spec.command()).containsSubsequence("--disallowedTools", "Agent Task");
+        // Default vazio: o argv do adapter padrão do teste NÃO carrega a flag (rely no cap nativo).
+        RecordingSink sink2 = new RecordingSink();
+        FakeTarget target2 = new FakeTarget(0, STREAM);
+        adapter.execute(ctx(target2, "faça X", "opus", "high"), sink2);
+        assertThat(target2.spec.command()).doesNotContain("--disallowedTools");
+    }
+
+    @Test
     void falhaCarregaOsTokensJaGastos() {
         RecordingSink sink = new RecordingSink();
         FakeTarget target = new FakeTarget(1, STREAM); // exit != 0 DEPOIS de já ter lido o usage
@@ -88,7 +106,7 @@ class ClaudeCodeAdapterTest {
         // Alternativa de automação (ADR-0016): CLAUDE_CODE_OAUTH_TOKEN do `claude setup-token`
         // (~1 ano) via property — evita o login interativo no volume. O merge preserva o env
         // que o executor mandou (ORQ_PROMPT do turno).
-        ClaudeCodeAdapter comToken = new ClaudeCodeAdapter("tok-de-1-ano");
+        ClaudeCodeAdapter comToken = new ClaudeCodeAdapter("tok-de-1-ano", "");
         FakeTarget target = new FakeTarget(0, STREAM);
 
         comToken.execute(new Context(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), null,
@@ -125,6 +143,33 @@ class ClaudeCodeAdapterTest {
                 .contains("orq_claude_creds")
                 .contains("setup-claude.sh")
                 .contains("Please run /login");
+    }
+
+    @Test
+    void resumeParaSessaoSumidaViraFailSessionLost() {
+        // F-N2 (ADR-0038): um run que RESUMIU (priorSession) e falhou com o sinal de sessão sumida
+        // vira Result.sessionLost — o executor reage com RUN_SESSION_LOST + fresh start, não FAILED seco.
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(1, List.of("No conversation found with session ID: sess-old"));
+        Context comResume = new Context(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), null,
+                Path.of("/tmp"), "t", Map.of(), target, "vol", "sess-old", null, null);
+
+        Result result = adapter.execute(comResume, sink);
+
+        assertThat(result.succeeded()).isFalse();
+        assertThat(result.sessionLost()).isTrue();
+    }
+
+    @Test
+    void oMesmoSinalSemResumeNaoEhSessionLost() {
+        // Guarda dupla: sem priorSession não houve resume — o sinal não pode marcar sessionLost
+        // (seria um fresh start desnecessário sobre um run que nunca tentou religar sessão).
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(1, List.of("No conversation found with session ID: x"));
+
+        Result result = adapter.execute(ctx(target, "t", null, null), sink);
+
+        assertThat(result.sessionLost()).isFalse();
     }
 
     @Test

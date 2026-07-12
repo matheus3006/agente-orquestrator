@@ -107,3 +107,11 @@ O enum FECHADO `ApprovalActionType` foi alargado DELIBERADAMENTE com a 4ª açã
 time no alvo e a nascer com assignee = arquiteto (invariante do dono: nada que o CEO cria nasce
 sem dono). A issue criada pelo dono no board dispara a ABSORÇÃO (board→conversa — o transporte
 inverso da 0034); issue = conversa direcionada (ancoragem 1:1). Racional completo na ADR-0037.
+
+## Forward-ref (2026-07-11 — ADR-0038, continuidade nativa)
+A continuidade do CEO conversacional deixa de ser "só carta + recorte do log por turno": passa a ser
+**carta (canal nativo) + sessão NATIVA contínua por conversa (`--resume`) + estado vivo DIETADO**. O
+turno 2+ resume a sessão do turno 1 e o `composePrompt` emagrece (não re-injeta os blocos estáticos
+que a sessão já tem — pagaria contexto em dobro). O loop de handoff (ADR-0030) é rebaixado a rede de
+janela cheia. "1 turno = 1 Run" e o prompt-por-Run seguem; muda só o que o prompt carrega no turno
+continuado. Racional completo na ADR-0038.

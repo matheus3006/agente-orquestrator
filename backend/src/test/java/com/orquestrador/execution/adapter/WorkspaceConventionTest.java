@@ -41,7 +41,7 @@ class WorkspaceConventionTest {
 
     @Test
     void adaptersClaudeEProcessHerdamODefaultClaudeDaInterface() {
-        assertThat(new ClaudeCodeAdapter("").workspaceConvention())
+        assertThat(new ClaudeCodeAdapter("", "").workspaceConvention())
                 .isEqualTo(WorkspaceConvention.claude());
         assertThat(new ProcessAgentAdapter().workspaceConvention())
                 .isEqualTo(WorkspaceConvention.claude());
@@ -49,7 +49,7 @@ class WorkspaceConventionTest {
 
     @Test
     void codexAdapterDeclaraAConvencaoNativaDoCodex() {
-        assertThat(new CodexAdapter().workspaceConvention())
+        assertThat(new CodexAdapter(6, 3).workspaceConvention())
                 .isEqualTo(WorkspaceConvention.codex());
     }
 }

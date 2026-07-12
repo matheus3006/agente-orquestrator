@@ -38,8 +38,20 @@ public class ClaudeCodeAdapter implements AgentAdapter {
      */
     private final String setupOauthToken;
 
-    public ClaudeCodeAdapter(@Value("${orquestrador.engines.claude.oauth-token:}") String setupOauthToken) {
+    /**
+     * O teto de subagentes do D6 (ADR-0038, requisito de aceite) no claude: a denylist de tools
+     * por regra nativa ({@code --disallowedTools "Agent Task"}). Diferente do codex (número), o
+     * aninhamento do claude já é capado NATIVAMENTE em profundidade 5 (laudo [C-3]) — este seam é o
+     * lever de PRODUTO, default VAZIO (só o cap nativo vale; a fatia não rebaixa a barra). Pronto
+     * para o F-N6 (skills read-only) e para tuning do operador sem tocar código.
+     */
+    private final String disallowedTools;
+
+    public ClaudeCodeAdapter(
+            @Value("${orquestrador.engines.claude.oauth-token:}") String setupOauthToken,
+            @Value("${orquestrador.ceiling.claude.disallowed-tools:}") String disallowedTools) {
         this.setupOauthToken = setupOauthToken;
+        this.disallowedTools = disallowedTools;
     }
 
     @Override
@@ -55,7 +67,7 @@ public class ClaudeCodeAdapter implements AgentAdapter {
         }
 
         List<String> argv = ClaudeArgv.build(context.command(), context.model(), context.effort(),
-                context.priorSession());
+                context.priorSession(), disallowedTools);
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,
@@ -79,7 +91,13 @@ public class ClaudeCodeAdapter implements AgentAdapter {
         // ADR-0004). Os tokens já lidos VÃO junto (a factory de falha da fatia B os carrega).
         String failure = "claude terminou com exit " + run.exitCode()
                 + (run.error() != null ? ": " + run.error() : "");
-        return Result.fail(withCredentialRemedy(failure, parser.credentialFailure(), context), costEvents);
+        String remediado = withCredentialRemedy(failure, parser.credentialFailure(), context);
+        // F-N2 (ADR-0038): resumiu (priorSession) E a sessão sumiu ⟹ sessionLost — o executor faz
+        // fresh start barulhento (RUN_SESSION_LOST). Guarda dupla: sem resume, o sinal não vale.
+        if (parser.sessionLost() && resumed(context)) {
+            return Result.failSessionLost(remediado, costEvents);
+        }
+        return Result.fail(remediado, costEvents);
     }
 
     /**
@@ -95,6 +113,11 @@ public class ClaudeCodeAdapter implements AgentAdapter {
                 : "credencial do plano Claude indisponivel no host — refaca o login do `claude`"
                         + " (o alvo LOCAL herda o login do host)";
         return remedy + " | sinal: \"" + credentialSignal + "\" | " + failure;
+    }
+
+    /** Este run tentou religar uma sessão nativa (F-N2)? Só então o sinal de sessão perdida vale. */
+    private static boolean resumed(Context context) {
+        return context.priorSession() != null && !context.priorSession().isBlank();
     }
 
     /** Preserva o env do executor (ORQ_PROMPT) e soma o setup-token quando configurado. */

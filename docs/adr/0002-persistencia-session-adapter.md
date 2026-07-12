@@ -46,3 +46,12 @@ No modelo Docker-first, o **Workspace** (arquivos) mora num volume nomeado. Mas 
   DESCARTA a sessão. `--resume` para **CONTINUAR** o trabalho segue PROIBIDO (a janela cresceria); só o
   destilar-e-encerrar o liga. `ClaudeArgv`/`CodexArgv` emitem `--resume <handle>` apenas quando `priorSession`
   é preenchido — todo run normal ainda passa `null`.
+
+## Revisão 2026-07-11 (continuidade nativa — ADR-0038)
+- O `--resume` **desligado no v1** desta ADR é **SUPERSEDIDO**: religa no **caminho normal** dos Runs
+  (turno de conversa, F-N1; run de Issue, F-N2), lendo `AgentSessionStore.currentHandle` como
+  `priorSession`. A exceção resume-cirúrgico do ADR-0030 vira caso particular da rede, não mais o
+  único leitor. O handle segue **write-then-read** por `(agent, conversation)`; o executor agora
+  também GRAVA em run de Issue (via `issue.conversation_id`, V27 — escopo por Issue, sem migração).
+- Semântica de retry firmada: handle salvo = último gravado COM SUCESSO (`Result.fail`→`session=null`
+  →`record()` no-op); Run que falha antes de gravar preserva o handle anterior. Racional na ADR-0038.

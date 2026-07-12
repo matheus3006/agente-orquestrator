@@ -274,4 +274,16 @@ public class IssueService {
         return issues.findByIdAndCompanyId(issueId, companyId)
                 .orElseThrow(() -> new NotFoundException("Issue nao encontrada: " + issueId));
     }
+
+    /**
+     * F-N2 (ADR-0038, D3): a conversa que ancora esta Issue (V27) — a chave do escopo de sessão do
+     * executor. Null-safe (Issue sumida OU sem conversa ⟹ null): o executor cai em sessão fresca, o
+     * baseline de hoje (a verdade-fonte do executor é o WORKSPACE). Ler o handle NUNCA aborta um run.
+     */
+    @Transactional(readOnly = true)
+    public UUID conversationIdOf(UUID companyId, UUID issueId) {
+        return issues.findByIdAndCompanyId(issueId, companyId)
+                .map(Issue::getConversationId)
+                .orElse(null);
+    }
 }

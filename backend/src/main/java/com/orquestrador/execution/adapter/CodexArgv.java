@@ -21,6 +21,9 @@ import java.util.List;
  *   <li>{@code EXTERNALLY_SANDBOXED} → {@code --dangerously-bypass-approvals-and-sandbox} (o container É o
  *       sandbox, ADR-0023); {@code HOST} → {@code -s workspace-write} (self-sandbox; bypass no host seria
  *       exec arbitrário do modelo — recusado).</li>
+ *   <li>{@code maxThreads}/{@code maxDepth} &gt; 0 → o teto NATIVO de subagentes do codex,
+ *       {@code -c agents.max_threads=<n>}/{@code -c agents.max_depth=<m>} (D6/ADR-0038 — a fatia
+ *       amplia autonomia e não shippa sem o teto; o eixo com 0 é omitido, nunca chave sem valor).</li>
  *   <li>{@code priorSession} presente → subcomando {@code resume <id>} depois de TODOS os flags
  *       (M9/ADR-0030 — a única rede que religa sessão; gramática pinada no source do tag).</li>
  *   <li>{@code prompt} sempre no fim (posicional — do {@code exec} ou do {@code resume}).</li>
@@ -36,8 +39,14 @@ final class CodexArgv {
         return build(prompt, model, effort, posture, null);
     }
 
+    /** Sem teto (0/0): usado pelos testes de gramática pura; o adapter sempre passa o teto do D6. */
     static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
                               String priorSession) {
+        return build(prompt, model, effort, posture, priorSession, 0, 0);
+    }
+
+    static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
+                              String priorSession, int maxThreads, int maxDepth) {
         List<String> argv = new ArrayList<>();
         argv.add("codex");
         argv.add("exec");
@@ -49,6 +58,16 @@ final class CodexArgv {
         if (isPresent(effort)) {
             argv.add("-c");
             argv.add("model_reasoning_effort=" + effort.trim());
+        }
+        // D6 (ADR-0038): o teto de subagentes vira par -c nativo — agrupado com os outros -c, ANTES
+        // do subcomando resume (é global). Eixo com 0 = desligado (omite; nunca `chave=0` sem sentido).
+        if (maxThreads > 0) {
+            argv.add("-c");
+            argv.add("agents.max_threads=" + maxThreads);
+        }
+        if (maxDepth > 0) {
+            argv.add("-c");
+            argv.add("agents.max_depth=" + maxDepth);
         }
         argv.add("--skip-git-repo-check");
         if (posture == IsolationPosture.EXTERNALLY_SANDBOXED) {

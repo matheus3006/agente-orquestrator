@@ -73,27 +73,35 @@ public interface AgentAdapter {
     /**
      * {@code costEvents} = tokens instrumentados pelos adapters ricos (Claude/Codex); vazio no
      * arquétipo process. Emitidos no sucesso E na falha (os tokens gastos antes de falhar contam).
-     * O construtor compacto blinda: nunca nulo, sempre imutável.
+     * {@code sessionLost} (F-N2/ADR-0038): a falha foi "a sessão nativa sumiu" num run que resumiu
+     * (priorSession) — o executor reage com {@code RUN_SESSION_LOST} + fresh start, em vez de só
+     * marcar FAILED. O construtor compacto blinda: nunca nulo, sempre imutável.
      */
-    record Result(boolean succeeded, String error, String session, List<CostEmission> costEvents) {
+    record Result(boolean succeeded, String error, String session, List<CostEmission> costEvents,
+                  boolean sessionLost) {
         public Result {
             costEvents = (costEvents == null) ? List.of() : List.copyOf(costEvents);
         }
 
         public static Result ok(String session) {
-            return new Result(true, null, session, List.of());
+            return new Result(true, null, session, List.of(), false);
         }
 
         public static Result ok(String session, List<CostEmission> costEvents) {
-            return new Result(true, null, session, costEvents);
+            return new Result(true, null, session, costEvents, false);
         }
 
         public static Result fail(String error) {
-            return new Result(false, error, null, List.of());
+            return new Result(false, error, null, List.of(), false);
         }
 
         public static Result fail(String error, List<CostEmission> costEvents) {
-            return new Result(false, error, null, costEvents);
+            return new Result(false, error, null, costEvents, false);
+        }
+
+        /** Falha por sessão nativa perdida (resume apontou p/ handle sumido): dispara o fresh start. */
+        public static Result failSessionLost(String error, List<CostEmission> costEvents) {
+            return new Result(false, error, null, costEvents, true);
         }
     }
 }
