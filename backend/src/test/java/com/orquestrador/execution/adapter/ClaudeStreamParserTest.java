@@ -68,6 +68,25 @@ class ClaudeStreamParserTest {
     }
 
     @Test
+    void somaOUsageDeCadaSubagenteDoTaskNotification() {
+        // F-N5 (ADR-0041, D5): o usage do result NÃO inclui subagentes (laudo, Sonda 1) — mas cada
+        // um, ao completar, emite task_notification.usage.total_tokens no stream JÁ hoje (sem flag
+        // nova). Dois subagentes (RED+BLUE) somam; o usage do turno principal fica separado.
+        ClaudeStreamParser parser = new ClaudeStreamParser();
+        parser.accept("{\"type\":\"system\",\"subtype\":\"task_notification\",\"usage\":{\"total_tokens\":13672}}");
+        parser.accept("{\"type\":\"system\",\"subtype\":\"task_notification\",\"usage\":{\"total_tokens\":13675}}");
+
+        assertThat(parser.subagentTokens()).isEqualTo(27347);
+    }
+
+    @Test
+    void semTaskNotificationSubagentTokensFicaZero() {
+        ClaudeStreamParser parser = new ClaudeStreamParser();
+        STREAM.forEach(parser::accept);
+        assertThat(parser.subagentTokens()).isZero();
+    }
+
+    @Test
     void farejaFalhaDeCredencialSoForaDaGramaticaJson() {
         // Peça 4 do ADR-0016: o aviso de auth do CLI vem em texto puro → fareja. A PROSA do
         // modelo mencionando login vive DENTRO do JSON → jamais fareja (anti-falso-positivo:

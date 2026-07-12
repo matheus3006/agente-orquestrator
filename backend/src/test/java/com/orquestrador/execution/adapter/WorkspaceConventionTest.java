@@ -49,7 +49,7 @@ class WorkspaceConventionTest {
 
     @Test
     void codexAdapterDeclaraAConvencaoNativaDoCodex() {
-        assertThat(new CodexAdapter(6, 3).workspaceConvention())
+        assertThat(new CodexAdapter(6, 3, "").workspaceConvention())
                 .isEqualTo(WorkspaceConvention.codex());
     }
 }

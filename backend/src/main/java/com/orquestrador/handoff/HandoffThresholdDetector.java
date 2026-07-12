@@ -53,7 +53,11 @@ public class HandoffThresholdDetector {
         }
         long tokensInput = 0L;
         for (AgentAdapter.CostEmission emission : emissions) {
-            tokensInput += emission.tokensInput();
+            // F-N5 (ADR-0041, D5): off-book é gasto de subagente, de OUTRA janela de contexto — a
+            // do turno principal não cresceu por isso; somá-lo dispararia handoff falso.
+            if (!emission.offBook()) {
+                tokensInput += emission.tokensInput();
+            }
         }
         double percent = 100.0 * tokensInput / window;
         boolean crossed = percent >= thresholdPercent;

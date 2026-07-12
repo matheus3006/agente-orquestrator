@@ -24,6 +24,7 @@ final class ClaudeStreamParser {
     private int tokensInput;
     private int tokensOutput;
     private boolean sawUsage;
+    private int subagentTokens;
     private String credentialFailureLine;
     private String sessionLostLine;
 
@@ -49,6 +50,7 @@ final class ClaudeStreamParser {
         captureSession(node);
         captureModel(node);
         captureUsage(node);
+        captureSubagentUsage(node);
         String type = text(node, "type");
         String tag = (type == null) ? "EVENT" : type.toUpperCase(Locale.ROOT);
         return new Step(tag, describe(node, type));
@@ -72,6 +74,17 @@ final class ClaudeStreamParser {
 
     boolean sawUsage() {
         return sawUsage;
+    }
+
+    /**
+     * Soma do gasto de TODOS os subagentes deste run (F-N5/ADR-0041, D5): o {@code usage} do turno
+     * principal NÃO os inclui (laudo, Sonda 1) — cada subagente, ao completar, emite
+     * {@code task_notification.usage.total_tokens} no stream padrão (provado sem flag nova). Soma
+     * corrida (não last-wins, ao contrário de {@link #tokensInput()}): cada subagente notifica uma
+     * vez só, então acumular é a conta certa de N subagentes.
+     */
+    int subagentTokens() {
+        return subagentTokens;
     }
 
     /** A primeira linha do stream com cara de falha de credencial; nula se nenhuma. */
@@ -129,6 +142,17 @@ final class ClaudeStreamParser {
                     + intAt(usage, "cache_creation_input_tokens");
             tokensOutput = intAt(usage, "output_tokens");
             sawUsage = true;
+        }
+    }
+
+    /** {@code task_notification} = um subagente completou (background task); soma seu total ao off-book. */
+    private void captureSubagentUsage(JsonNode node) {
+        if (!"task_notification".equals(text(node, "subtype"))) {
+            return;
+        }
+        JsonNode usage = node.path("usage");
+        if (usage.isObject()) {
+            subagentTokens += intAt(usage, "total_tokens");
         }
     }
 

@@ -79,8 +79,18 @@ public interface AgentAdapter {
      * {@code costCents} NÃO vive aqui: no modelo de assinatura ele é sempre 0, então o executor
      * roteia cada emissão para {@code BudgetService.recordCost(..., costCents=0, ...)} — o hard-stop
      * de dólares (ADR-0006) fica inócuo, mas os tokens instrumentam o handoff a 50-60% (ADR-0015).
+     *
+     * <p>{@code offBook} (F-N5/ADR-0041, D5): gasto REAL de subagente, de OUTRA janela de contexto —
+     * visível/rotulado no ledger, mas EXCLUÍDO da soma que {@link com.orquestrador.handoff
+     * .HandoffThresholdDetector} faz para o turno principal (a janela do run que o causou não
+     * cresceu por isso). Default {@code false} preserva todo emissor existente (claude/codex do
+     * turno principal).
      */
-    record CostEmission(String provider, String model, int tokensInput, int tokensOutput) {
+    record CostEmission(String provider, String model, int tokensInput, int tokensOutput, boolean offBook) {
+
+        public CostEmission(String provider, String model, int tokensInput, int tokensOutput) {
+            this(provider, model, tokensInput, tokensOutput, false);
+        }
     }
 
     /**

@@ -91,8 +91,38 @@ class AdapterCostRoutingTest {
         assertThat(budgets.incidentsFor(companyId)).isEmpty();
     }
 
+    @Test
+    void emissaoOffBookChegaAoLedgerRotulada() {
+        // F-N5 (ADR-0041, D5): a SEGUNDA emissão (subagente) chega ao ledger com off_book=true —
+        // visível/rotulado, sem se misturar com o lançamento do turno principal.
+        UUID companyId = companies.create("C2", "co-" + UUID.randomUUID().toString().substring(0, 8),
+                UUID.randomUUID()).getId();
+        Agent agent = new Agent(UUID.randomUUID(), companyId, "Nix", "architect", null);
+        agent.configureRuntime("capturing-offbook", null, "LOCAL");
+        agent.configureEngine(null, "opus", "high");
+        UUID agentId = agents.save(agent).getId();
+        UUID issueId = issues.create(companyId, "delegar a subagente", null).getId();
+        UUID runId = wakeups.enqueue(companyId, agentId, issueId, "trabalhar").runId();
+
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        List<CostEvent> recorded = costs.findByRunId(runId).stream()
+                .filter(candidate -> candidate.getOrchestrationAction() == null)
+                .toList();
+        assertThat(recorded).hasSize(2);
+        assertThat(recorded.get(0).isOffBook()).isFalse();
+        CostEvent offBook = recorded.get(1);
+        assertThat(offBook.isOffBook()).isTrue();
+        assertThat(offBook.getTokensOutput()).isEqualTo(27347);
+    }
+
     @TestConfiguration
     static class CapturingAdapterConfig {
+        @Bean
+        CapturingOffBookAdapter capturingOffBookAdapter() {
+            return new CapturingOffBookAdapter();
+        }
+
         @Bean
         CapturingAdapter capturingAdapter() {
             return new CapturingAdapter();
@@ -118,6 +148,26 @@ class AdapterCostRoutingTest {
             this.lastContext = context;
             return Result.ok("sess-capturing",
                     List.of(new CostEmission("anthropic", "opus", 100, 40)));
+        }
+    }
+
+    /** F-N5: emite DUAS CostEmission — a do turno principal e uma off-book (subagente). */
+    static class CapturingOffBookAdapter implements AgentAdapter {
+        @Override
+        public String type() {
+            return "capturing-offbook";
+        }
+
+        @Override
+        public EngineContainer engineContainer() {
+            return EngineContainer.plainShell();
+        }
+
+        @Override
+        public Result execute(Context context, StepSink steps) {
+            return Result.ok("sess-offbook", List.of(
+                    new CostEmission("anthropic", "opus", 100, 40),
+                    new CostEmission("anthropic", "opus", 0, 27347, true)));
         }
     }
 }

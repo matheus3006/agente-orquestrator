@@ -4,6 +4,7 @@ import com.orquestrador.execution.runtime.ExecutionTarget;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -134,12 +135,23 @@ public class ClaudeCodeAdapter implements AgentAdapter {
         return Map.copyOf(envComToken);
     }
 
-    /** Uma emissão por Run, só se o stream trouxe usage; model REAL do stream, senão o pedido no motor. */
+    /**
+     * Uma emissão do turno principal (só se o stream trouxe usage) + uma SEGUNDA off-book (F-N5/
+     * ADR-0041, D5) se algum subagente rodou — {@code task_notification} soma tokens que o usage
+     * do turno NUNCA inclui (laudo, Sonda 1). Model REAL do stream, senão o pedido no motor.
+     */
     private static List<CostEmission> costEventsFrom(ClaudeStreamParser parser, String requestedModel) {
-        if (!parser.sawUsage()) {
-            return List.of();
-        }
+        List<CostEmission> emissions = new ArrayList<>();
         String model = parser.model() != null ? parser.model() : requestedModel;
-        return List.of(new CostEmission(PROVIDER, model, parser.tokensInput(), parser.tokensOutput()));
+        if (parser.sawUsage()) {
+            emissions.add(new CostEmission(PROVIDER, model, parser.tokensInput(), parser.tokensOutput()));
+        }
+        if (parser.subagentTokens() > 0) {
+            // claude só expõe o TOTAL do subagente (task_notification.usage.total_tokens) — sem
+            // quebra input/output nesse canal; o total inteiro entra em tokensOutput (convenção
+            // documentada, não é medição de output real) e offBook=true tira da conta do handoff.
+            emissions.add(new CostEmission(PROVIDER, model, 0, parser.subagentTokens(), true));
+        }
+        return emissions;
     }
 }

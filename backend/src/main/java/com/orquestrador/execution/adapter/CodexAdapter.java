@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -31,11 +32,28 @@ public class CodexAdapter implements AgentAdapter {
     private final int maxThreads;
     private final int maxDepth;
 
+    /**
+     * O side-channel do off-book (F-N5/ADR-0041, D5): lê o rollout dos subagentes em
+     * {@code ~/.codex/sessions}. Branco = default do host (LOCAL, v1); no DOCKER só resolve se o
+     * volume da sessão for visível deste path — se não, WARN tolerante (fail-soft já provado no
+     * CodexSubagentUsageReaderTest), nunca falha o run.
+     */
+    private final CodexSubagentUsageReader subagentUsage;
+
     public CodexAdapter(
             @Value("${orquestrador.ceiling.codex.max-threads:6}") int maxThreads,
-            @Value("${orquestrador.ceiling.codex.max-depth:3}") int maxDepth) {
+            @Value("${orquestrador.ceiling.codex.max-depth:3}") int maxDepth,
+            @Value("${orquestrador.engines.codex.sessions-dir:}") String sessionsDir) {
         this.maxThreads = maxThreads;
         this.maxDepth = maxDepth;
+        this.subagentUsage = new CodexSubagentUsageReader(resolveSessionsRoot(sessionsDir));
+    }
+
+    private static Path resolveSessionsRoot(String configured) {
+        if (configured != null && !configured.isBlank()) {
+            return Path.of(configured);
+        }
+        return Path.of(System.getProperty("user.home"), ".codex", "sessions");
     }
 
     @Override
@@ -136,11 +154,21 @@ public class CodexAdapter implements AgentAdapter {
         return remedy + " | sinal: \"" + credentialSignal + "\" | " + failure;
     }
 
-    private static List<CostEmission> costEventsFrom(CodexStreamParser parser, String requestedModel) {
-        if (!parser.sawUsage()) {
-            return List.of();
-        }
+    /**
+     * Uma emissão do turno principal (só se o stream trouxe usage) + uma SEGUNDA off-book (F-N5/
+     * ADR-0041, D5) se algum subagente foi spawnado — o stream do parent não traz o usage dele
+     * (laudo, Sonda 1); o side-channel lê o rollout de cada thread-filho.
+     */
+    private List<CostEmission> costEventsFrom(CodexStreamParser parser, String requestedModel) {
+        List<CostEmission> emissions = new ArrayList<>();
         String model = parser.model() != null ? parser.model() : requestedModel;
-        return List.of(new CostEmission(PROVIDER, model, parser.tokensInput(), parser.tokensOutput()));
+        if (parser.sawUsage()) {
+            emissions.add(new CostEmission(PROVIDER, model, parser.tokensInput(), parser.tokensOutput()));
+        }
+        if (!parser.childThreadIds().isEmpty()) {
+            CodexSubagentUsageReader.Usage usage = subagentUsage.read(parser.childThreadIds());
+            emissions.add(new CostEmission(PROVIDER, model, usage.tokensInput(), usage.tokensOutput(), true));
+        }
+        return emissions;
     }
 }

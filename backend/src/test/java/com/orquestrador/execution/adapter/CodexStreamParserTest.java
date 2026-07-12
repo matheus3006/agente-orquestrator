@@ -52,6 +52,29 @@ class CodexStreamParserTest {
     }
 
     @Test
+    void acumulaOsThreadIdsDosFilhosDoCollabToolCall() {
+        // F-N5 (ADR-0041, D5): o stream do parent NÃO traz o usage dos subagentes — só os
+        // receiver_thread_ids do collab_tool_call (spawn_agent/wait/close_agent, provado na sonda
+        // real 0.142.5). item.started traz a lista ainda vazia (thread pendente); dedup por Set.
+        CodexStreamParser parser = new CodexStreamParser();
+        parser.accept("{\"type\":\"item.started\",\"item\":{\"type\":\"collab_tool_call\",\"tool\":\"spawn_agent\","
+                + "\"receiver_thread_ids\":[]}}");
+        parser.accept("{\"type\":\"item.completed\",\"item\":{\"type\":\"collab_tool_call\",\"tool\":\"spawn_agent\","
+                + "\"receiver_thread_ids\":[\"019f54ae-b076-78c3-9725-6f18cbaad8e1\"]}}");
+        parser.accept("{\"type\":\"item.completed\",\"item\":{\"type\":\"collab_tool_call\",\"tool\":\"wait\","
+                + "\"receiver_thread_ids\":[\"019f54ae-b076-78c3-9725-6f18cbaad8e1\"]}}");
+
+        assertThat(parser.childThreadIds()).containsExactly("019f54ae-b076-78c3-9725-6f18cbaad8e1");
+    }
+
+    @Test
+    void semCollabToolCallChildThreadIdsFicaVazio() {
+        CodexStreamParser parser = new CodexStreamParser();
+        STREAM.forEach(parser::accept);
+        assertThat(parser.childThreadIds()).isEmpty();
+    }
+
+    @Test
     void linhaNaoJsonViraStdoutFailSoft() {
         CodexStreamParser parser = new CodexStreamParser();
         Step step = parser.accept("codex: warming up");

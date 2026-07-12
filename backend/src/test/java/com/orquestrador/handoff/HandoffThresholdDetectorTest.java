@@ -49,6 +49,20 @@ class HandoffThresholdDetectorTest {
     }
 
     @Test
+    void offBookNaoEntraNaSomaDoLimiar() {
+        // F-N5 (ADR-0041, D5): o gasto off-book (subagente) é REAL mas de OUTRA janela de contexto —
+        // não pode inflar o % do turno principal e disparar handoff falso. janela 1000, principal
+        // 400 (40%, abaixo do limiar) + off-book 30000 (que sozinho estouraria a janela) → não cruza.
+        engines.save(new EngineCatalog(UUID.randomUUID(), "claude-code", "det-offbook", "high",
+                1000, "det-offbook", true));
+        AgentAdapter.CostEmission principal = input(400);
+        AgentAdapter.CostEmission offBook = new AgentAdapter.CostEmission("anthropic", "m", 30_000, 0, true);
+
+        assertThat(detector.crossed("claude-code", "det-offbook", "high", List.of(principal, offBook)))
+                .isFalse();
+    }
+
+    @Test
     void failOpenQuandoOEngineNaoTemJanelaCatalogada() {
         // engine que NÃO existe no catálogo (janela desconhecida) → NÃO dispara e NÃO lança (D9),
         // mesmo com um volume de tokens que estouraria qualquer janela real.
