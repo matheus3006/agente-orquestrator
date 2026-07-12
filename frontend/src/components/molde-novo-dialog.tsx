@@ -23,8 +23,10 @@ import { queryKeys } from "@/lib/query-keys";
 import { pushToast } from "@/lib/toaster";
 
 // "Novo molde" (T.1-FE, ADR-0017): identidade (tipo de função + role específica) + preset v1.
-// Board-only e DIRETO no v1 (nasce APPROVED — propose-then-commit/drift-badge é governança futura,
-// residual 3 do handoff). O catálogo é GLOBAL: a criação vale para todas as companies do dono.
+// Este é o caminho DIRETO do dono (mão soberana, nasce APPROVED) — ele é o próprio aprovador. O
+// propose-then-commit (R10-A, ADR-0017 emendada) é o caminho do CEO: ele PROPÕE um molde novo pelo
+// gate de Approval e o dono aprova; o drift-badge (agente numa versão velha) mora no organograma.
+// O catálogo é GLOBAL: a criação vale para todas as companies do dono.
 
 export function MoldeNovoDialog({
   companyId,

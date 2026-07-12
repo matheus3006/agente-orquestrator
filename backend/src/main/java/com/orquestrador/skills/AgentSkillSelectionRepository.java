@@ -12,4 +12,7 @@ public interface AgentSkillSelectionRepository extends JpaRepository<AgentSkillS
 
     Optional<AgentSkillSelection> findByCompanyIdAndAgentIdAndCompanySkillId(
             UUID companyId, UUID agentId, UUID companySkillId);
+
+    /** Limpa as seleções base do agente — o re-pin SUBSTITUI o skillset (R10-A/D6). */
+    long deleteByCompanyIdAndAgentId(UUID companyId, UUID agentId);
 }

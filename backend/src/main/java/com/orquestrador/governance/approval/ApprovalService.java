@@ -18,6 +18,9 @@ import com.orquestrador.memory.RacionalTipo;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentHireService;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.roletemplate.RoleTemplate;
+import com.orquestrador.org.roletemplate.RoleTemplateService;
+import com.orquestrador.org.roletemplate.TipoFuncao;
 import com.orquestrador.org.team.Team;
 import com.orquestrador.org.team.TeamRepository;
 import com.orquestrador.org.team.TeamService;
@@ -30,9 +33,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -64,6 +69,7 @@ public class ApprovalService {
     private final AgentRepository agents;
     private final TeamService teamService;
     private final AbsorcaoDeIssueRouter absorcoes;
+    private final RoleTemplateService roleTemplates;
 
     public ApprovalService(ApprovalRepository approvals, RacionalPolicy racionalPolicy,
                            DecisionLog decisionLog, CompanyMemoryConsolidator consolidator,
@@ -71,7 +77,7 @@ public class ApprovalService {
                            IssueService issues, WakeupService wakeups,
                            SpawnLineageGuard lineageGuard, TeamRepository teams,
                            AgentRepository agents, TeamService teamService,
-                           AbsorcaoDeIssueRouter absorcoes) {
+                           AbsorcaoDeIssueRouter absorcoes, RoleTemplateService roleTemplates) {
         this.approvals = approvals;
         this.racionalPolicy = racionalPolicy;
         this.decisionLog = decisionLog;
@@ -85,6 +91,7 @@ public class ApprovalService {
         this.agents = agents;
         this.teamService = teamService;
         this.absorcoes = absorcoes;
+        this.roleTemplates = roleTemplates;
     }
 
     /**
@@ -286,7 +293,56 @@ public class ApprovalService {
                             approval.getConversationId(), time);
                 }
             }
+            case CREATE_ROLE_TEMPLATE -> {
+                // R10-A/D1-D3 (propose-then-commit de molde, ADR-0017 emendada): o molde é GLOBAL —
+                // o CEO PROPÔS, o dono APROVOU. A versão nasce só aqui (nada persiste enquanto PENDING,
+                // teto G5) com proposedBy=CEO (o proponente) / approvedBy=dono (o aprovador). Só CRIA
+                // (G6: editar molde existente segue mão-soberana-direta na tela). Elo vazio = 409
+                // acionável na tx do decide (segue PENDING).
+                TipoFuncao tipoFuncao = tipoFuncaoDoAlvo(approval, alvo);
+                String roleEspecifica = textOrNull(alvo, "roleEspecifica");
+                if (roleEspecifica == null) {
+                    throw new ConflictException("Proposta de molde sem roleEspecifica: " + approval.getId());
+                }
+                RoleTemplateService.Preset preset = new RoleTemplateService.Preset(
+                        textOrNull(alvo, "adapterType"), textOrNull(alvo, "model"),
+                        textOrNull(alvo, "effort"), stringListOf(alvo, "skillKeys"),
+                        textOrNull(alvo, "reportsToDefault"));
+                RoleTemplate molde = roleTemplates.createTemplate(tipoFuncao, roleEspecifica, preset,
+                        textOrNull(alvo, "changeDescription"),
+                        approval.getRequestedByAgentId(), actorId);
+                detail.put("roleTemplateId", molde.getId());
+            }
         }
+    }
+
+    /** O tipo de função do molde proposto (enum FIXO); ausente/inválido = 409 acionável (segue PENDING). */
+    private static TipoFuncao tipoFuncaoDoAlvo(Approval approval, JsonNode alvo) {
+        String text = textOrNull(alvo, "tipoFuncao");
+        if (text == null) {
+            throw new ConflictException("Proposta de molde sem tipoFuncao: " + approval.getId());
+        }
+        try {
+            return TipoFuncao.valueOf(text.strip().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException invalido) {
+            throw new ConflictException("tipoFuncao invalido na proposta de molde (" + text + "): "
+                    + approval.getId());
+        }
+    }
+
+    /** Um array JSON de strings do alvo (ex.: {@code skillKeys}); ausente/não-array = lista vazia. */
+    private static List<String> stringListOf(JsonNode node, String field) {
+        JsonNode array = node.path(field);
+        if (!array.isArray()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (JsonNode element : array) {
+            if (element.isTextual() && !element.asText().isBlank()) {
+                values.add(element.asText());
+            }
+        }
+        return List.copyOf(values);
     }
 
     /**

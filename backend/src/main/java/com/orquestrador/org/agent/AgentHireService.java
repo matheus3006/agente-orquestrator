@@ -88,6 +88,29 @@ public class AgentHireService {
         return saved;
     }
 
+    /**
+     * Re-pin COMPLETO (R10-A/D5-D6): re-aplica o preset da versão (motor + skillset) e move o pin.
+     * SUBSTITUI — a versão manda: o motor da versão sobrescreve o do agente (inclusive um override
+     * manual do operador) e o skillset é RESETADO para o da versão (as seleções atuais são limpas
+     * antes de re-aplicar). Sem isso, um botão "atualizar" que só movesse o ponteiro mentiria no
+     * drift-badge. NÃO é gate: é mão soberana do operador (ação LOCAL — um agente, uma company);
+     * espelha o hire (mesmo {@link #copySkillSet}), mas NÃO cobra AGENT_SPAWN (re-pin não é spawn).
+     */
+    @Transactional
+    public Agent repin(UUID companyId, UUID agentId, UUID versionId, ActorType actorType, UUID actorId) {
+        RoleTemplateService.Preset preset = roleTemplates.resolvePreset(versionId); // NotFound se sumiu
+        Agent agent = agents.findById(agentId).filter(candidate -> companyId.equals(candidate.getCompanyId()))
+                .orElseThrow(() -> new NotFoundException("Agente nao encontrado na company: " + agentId));
+        // Motor: a versão manda (configureEngine sobrescreve model/effort; adapterType não-branco troca o plano).
+        agent.configureEngine(preset.adapterType(), preset.model(), preset.effort());
+        agent.pinTemplateVersion(versionId);
+        agents.save(agent);
+        // Skillset SUBSTITUÍDO: limpa o set base atual e re-aplica exatamente o da versão.
+        skillSets.clearForAgent(companyId, agentId);
+        copySkillSet(companyId, agentId, preset, actorType, actorId);
+        return agent;
+    }
+
     /** Instala do catálogo GLOBAL e seleciona cada skill do preset; skill_key inexistente é pulado (T.1.b). */
     private void copySkillSet(UUID companyId, UUID agentId, RoleTemplateService.Preset preset,
                               ActorType actorType, UUID actorId) {

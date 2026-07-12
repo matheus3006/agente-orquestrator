@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Engine, RoleTemplate, RoleTemplateVersion } from "./api";
 import {
+  agenteEmDrift,
   isMoldeDeSistema,
   isTipoReservado,
   linhasDeConhecimento,
@@ -114,6 +115,36 @@ describe("versaoCorrente", () => {
     expect(versaoCorrente(template({ currentVersionId: "v-fantasma" }), savelog)).toBeNull();
     expect(versaoCorrente(template({ currentVersionId: null }), savelog)).toBeNull();
     expect(versaoCorrente(template(), [])).toBeNull();
+  });
+});
+
+describe("agenteEmDrift (drift-badge derivado na tela, R10-A/D4 — zero estado novo)", () => {
+  const molde = template({ id: "molde-1", currentVersionId: "v2" });
+
+  it("versão pinada ≠ corrente do molde → drift (o agente ficou pra trás numa versão velha)", () => {
+    expect(agenteEmDrift({ pinnedTemplateVersionId: "v1", pinnedTemplateId: "molde-1" }, [molde])).toBe(
+      true,
+    );
+  });
+
+  it("pinada = corrente → sem drift (o agente está na versão atual)", () => {
+    expect(agenteEmDrift({ pinnedTemplateVersionId: "v2", pinnedTemplateId: "molde-1" }, [molde])).toBe(
+      false,
+    );
+  });
+
+  it("agente sem molde (hire avulso) → sem drift", () => {
+    expect(agenteEmDrift({ pinnedTemplateVersionId: null, pinnedTemplateId: null }, [molde])).toBe(false);
+  });
+
+  it("molde da versão fora da lista, ou molde sem corrente → sem drift (não sabe, não alarma)", () => {
+    expect(
+      agenteEmDrift({ pinnedTemplateVersionId: "v1", pinnedTemplateId: "molde-fantasma" }, [molde]),
+    ).toBe(false);
+    const semCorrente = template({ id: "molde-2", currentVersionId: null });
+    expect(
+      agenteEmDrift({ pinnedTemplateVersionId: "v1", pinnedTemplateId: "molde-2" }, [semCorrente]),
+    ).toBe(false);
   });
 });
 

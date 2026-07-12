@@ -298,6 +298,25 @@ describe("acaoLegivel (o corpo do card é legível — o targetDetail nunca apar
 
     expect(acao).toEqual({ verbo: "Criar time", alvo: null });
   });
+
+  it("CREATE_ROLE_TEMPLATE vira 'Criar molde' com a role específica do preset (R10-A)", () => {
+    const acao = acaoLegivel(
+      approval({
+        actionType: "CREATE_ROLE_TEMPLATE",
+        targetDetail: '{"tipoFuncao": "REVISAO_QA", "roleEspecifica": "revisor-de-contratos"}',
+      }),
+    );
+
+    expect(acao).toEqual({ verbo: "Criar molde", alvo: "revisor-de-contratos" });
+  });
+
+  it("CREATE_ROLE_TEMPLATE sem roleEspecifica degrada para alvo null", () => {
+    const acao = acaoLegivel(
+      approval({ actionType: "CREATE_ROLE_TEMPLATE", targetDetail: '{"tipoFuncao": "EXECUCAO"}' }),
+    );
+
+    expect(acao).toEqual({ verbo: "Criar molde", alvo: null });
+  });
 });
 
 describe("destinoDaIssueProposta (ADR-0037/D2: o card do CREATE_ISSUE mostra o time-destino)", () => {

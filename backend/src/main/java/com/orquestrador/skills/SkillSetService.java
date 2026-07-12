@@ -78,6 +78,15 @@ public class SkillSetService {
     }
 
     /**
+     * Limpa TODAS as seleções BASE do agente (R10-A/D6: o re-pin SUBSTITUI o skillset pelo da versão).
+     * Não toca os anexos por-Issue (efêmeros, outro escopo) — só o set base pinado por-agente.
+     */
+    @Transactional
+    public void clearForAgent(UUID companyId, UUID agentId) {
+        selections.deleteByCompanyIdAndAgentId(companyId, agentId);
+    }
+
+    /**
      * Anexa a skill (identidade GLOBAL) à Issue para um agente, com INSTALL-ON-ATTACH (Fatia 7c, fold da 7a):
      * o servidor resolve o estado de install da skill — <b>INSTALLED</b> anexa a versão corrente da company
      * (1 evento {@code SKILL_ATTACHED}); <b>AVAILABLE</b> instala do catálogo global ({@code source=CATALOG},

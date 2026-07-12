@@ -122,3 +122,8 @@ SAÍDA, a dieta a ENTRADA.
   `ProposalDescarteNotice` fica como rede da transição (remoção = faxina futura).
 - **ADR-0038** (continuidade nativa): o schema (SAÍDA) convive com a dieta (ENTRADA); o schema é
   re-aplicado em todo turno (inclusive resume), a dieta reforça o contrato numa linha.
+- **R10-A** (propose-then-commit de molde, 2026-07-12): o `anyOf` do Executor ganhou a variante
+  `proposta`(CREATE_ROLE_TEMPLATE) — "blocos futuros nascem de graça" (a regra desta ADR) na prática:
+  variante no builder + `acao` no enum + rota no dispatch, zero mecânica nova. O alvo estreou o 1º
+  campo ARRAY em strict (`skillKeys`: `{type:array,items:{type:string}}`). O `scanStructured` roteia
+  sem tocar (só depende de `tipo=proposta` + `acao` no enum). Ver `handoff-grilling-propose-then-commit-molde.md`.

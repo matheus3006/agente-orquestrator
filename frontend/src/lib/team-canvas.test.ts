@@ -16,6 +16,7 @@ const agent = (o: Partial<AgentSummary> & { id: string; name: string }): AgentSu
   model: null,
   effort: null,
   pinnedTemplateVersionId: null,
+  pinnedTemplateId: null,
   teamId: null,
   createdAt: "2026-07-04T00:00:00Z",
   ...o,

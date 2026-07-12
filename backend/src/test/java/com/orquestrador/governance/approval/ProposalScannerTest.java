@@ -134,6 +134,27 @@ class ProposalScannerTest {
     }
 
     @Test
+    void scanStructuredColheMoldeComSkillKeysArrayCanonico() {
+        // R10-A/D1: proposta de molde estruturada — o alvo tem um campo ARRAY (skillKeys). O gate é
+        // genérico (só depende de tipo=proposta + acao no enum), mas o array precisa sobreviver à
+        // re-serialização canônica (chaves do objeto ordenadas; elementos do array na ordem original)
+        // pro fingerprint de dedupe ficar estável.
+        ProposalScanner.Scan scan = scanner.scanStructured(blocos(
+                "{\"tipo\":\"proposta\",\"acao\":\"CREATE_ROLE_TEMPLATE\",\"alvo\":{\"roleEspecifica\":"
+                        + "\"revisor-de-contratos\",\"tipoFuncao\":\"REVISAO_QA\",\"skillKeys\":[\"tdd\",\"diagnose\"]},"
+                        + "\"resumo\":\"Criar molde revisor\",\"area\":\"estrutura-org\"}"));
+
+        assertThat(scan.propostas()).hasSize(1);
+        assertThat(scan.propostas().get(0).actionType())
+                .isEqualTo(ApprovalActionType.CREATE_ROLE_TEMPLATE);
+        // Canônico: chaves do objeto ordenadas (roleEspecifica < skillKeys < tipoFuncao); o array intacto.
+        assertThat(scan.propostas().get(0).targetDetailJson()).isEqualTo(
+                "{\"roleEspecifica\":\"revisor-de-contratos\",\"skillKeys\":[\"tdd\",\"diagnose\"],"
+                        + "\"tipoFuncao\":\"REVISAO_QA\"}");
+        assertThat(scan.descartadas()).isZero();
+    }
+
+    @Test
     void scanStructuredVazioOuNuloNaoColhe() {
         assertThat(scanner.scanStructured(List.of()).propostas()).isEmpty();
         assertThat(scanner.scanStructured(null).propostas()).isEmpty();

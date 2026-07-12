@@ -30,6 +30,7 @@ const detalhe = (o: Partial<AgentSummary> & { id: string }): AgentSummary => ({
   model: null,
   effort: null,
   pinnedTemplateVersionId: null,
+  pinnedTemplateId: null,
   teamId: null,
   createdAt: "2026-07-01T00:00:00Z",
   ...o,

@@ -21,6 +21,8 @@ import com.orquestrador.memory.MemoryKind;
 import com.orquestrador.memory.RacionalTipo;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.roletemplate.RoleTemplate;
+import com.orquestrador.org.roletemplate.RoleTemplateVersion;
 import com.orquestrador.work.issue.IssueRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -67,6 +69,10 @@ class ApprovalGateTest {
     private ActivityLogRepository activities;
     @Autowired
     private com.orquestrador.org.team.TeamRepository teams;
+    @Autowired
+    private com.orquestrador.org.roletemplate.RoleTemplateRepository roleTemplates;
+    @Autowired
+    private com.orquestrador.org.roletemplate.RoleTemplateVersionRepository roleTemplateVersions;
 
     /** O wakeup aprovado enfileira sem despachar; não deixar QUEUED pros vizinhos de contexto. */
     @AfterEach
@@ -149,6 +155,41 @@ class ApprovalGateTest {
 
         assertThat(teams.findByCompanyIdAndDominioAndFoco(companyId, "Marketing", "Tráfego"))
                 .as("rollback total: o time acéfalo NÃO nasce").isEmpty();
+    }
+
+    /**
+     * R10-A/D1-D3-D7 (propose-then-commit de molde): a 5ª ação do gate — CREATE_ROLE_TEMPLATE. O
+     * molde é GLOBAL (o CEO mexe no catálogo → gate por ALCANCE, ADR-0017). A versão nasce só no
+     * APPROVE (teto D7: nada persiste enquanto PENDING) e carrega proposedBy=CEO / approvedBy=dono
+     * — a governança que o hardcode proposedBy=approvedBy=ator era um stand-in.
+     */
+    @Test
+    void createRoleTemplateAprovadoNasceGlobalComProposerDistintoDoApprover() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        UUID dono = UUID.randomUUID();
+        String role = "revisor-de-contratos-" + UUID.randomUUID().toString().substring(0, 8);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_ROLE_TEMPLATE,
+                        "{\"tipoFuncao\":\"REVISAO_QA\",\"roleEspecifica\":\"" + role + "\","
+                                + "\"adapterType\":\"claude-code\",\"model\":\"opus\",\"effort\":\"high\","
+                                + "\"skillKeys\":[\"tdd\"],\"reportsToDefault\":\"LIDERANCA\","
+                                + "\"changeDescription\":\"preset de revisor juridico\"}",
+                        "Criar molde revisor-de-contratos", null));
+
+        // teto D7 (G5): enquanto PENDING, NENHUM molde nasce — o gate É o teto.
+        assertThat(roleTemplates.findByCompanyIdIsNullAndRoleEspecifica(role)).isEmpty();
+
+        approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
+                "o time juridico precisa de um preset de revisor", null, ActorType.BOARD, dono);
+
+        RoleTemplate molde = roleTemplates.findByCompanyIdIsNullAndRoleEspecifica(role).orElseThrow();
+        assertThat(molde.getCompanyId()).as("molde é GLOBAL (company_id NULL)").isNull();
+        RoleTemplateVersion v1 = roleTemplateVersions.findById(molde.getCurrentVersionId()).orElseThrow();
+        assertThat(v1.getVersion()).isEqualTo(1);
+        assertThat(v1.getStatus()).isEqualTo("APPROVED");
+        assertThat(v1.getProposedBy()).as("o CEO propôs").isEqualTo(ceoId);
+        assertThat(v1.getApprovedBy()).as("o dono aprovou").isEqualTo(dono);
     }
 
     /**
