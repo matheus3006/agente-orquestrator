@@ -1,9 +1,12 @@
 "use client";
 
-import { X } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Square, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { AgentDot } from "@/components/agent-dot";
 import { fmtClock, shortId } from "@/lib/format";
+import { interruptRun } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 import { isTerminalRunStatus, lineKind } from "@/lib/transcript";
 import { useRunTranscript } from "@/lib/use-run-transcript";
 import { cn } from "@/lib/utils";
@@ -64,6 +67,19 @@ export function StepTraceDrawer({
   // completo". Modo agente (renderDrawerBody) mantém "issue · run xxx".
   const frozen = !request?.agentName;
 
+  // F-N4 (ADR-0040): o botão "parar" — kill controlado, sem confirm dialog
+  // (molde de stopPreviewServer: fogo direto, "parar run" → "parando…").
+  const queryClient = useQueryClient();
+  const interruptMutation = useMutation({
+    mutationFn: () => interruptRun(companyId as string, request?.runId as string, "interrompido pelo operador"),
+    onSuccess: () => {
+      if (companyId && request?.runId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.runSteps(companyId, request.runId) });
+      }
+    },
+  });
+  const podeParar = !!companyId && !!request?.runId && !frozen && !terminal;
+
   return (
     <>
       <div className={cn("drawer-scrim", open && "open")} onClick={onClose} />
@@ -90,6 +106,17 @@ export function StepTraceDrawer({
               </div>
               {transcript?.runStatus && (
                 <span className={`run-status ${transcript.runStatus}`}>{transcript.runStatus}</span>
+              )}
+              {podeParar && (
+                <button
+                  type="button"
+                  className="btn danger run-interrupt"
+                  disabled={interruptMutation.isPending}
+                  onClick={() => interruptMutation.mutate()}
+                >
+                  <Square size={12} strokeWidth={2} />
+                  {interruptMutation.isPending ? "parando…" : "parar run"}
+                </button>
               )}
               <button className="btn ghost drawer-close" onClick={onClose} aria-label="Fechar">
                 <X size={13} strokeWidth={2} />

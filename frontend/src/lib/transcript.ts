@@ -54,7 +54,12 @@ export function mergeStepsPage(prev: Transcript, page: RunStepsPage, pageLimit: 
 
 /** Terminal = o front PARA de pollar (o runStatus vem junto da página, F.0). */
 export function isTerminalRunStatus(status: RunStatus | null): boolean {
-  return status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED";
+  return (
+    status === "SUCCEEDED" ||
+    status === "FAILED" ||
+    status === "CANCELLED" ||
+    status === "INTERRUPTED"
+  );
 }
 
 export type LineKind = "error" | "warn" | "ok" | "meta" | "plain";

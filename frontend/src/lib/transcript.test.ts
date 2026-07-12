@@ -127,6 +127,7 @@ describe("isTerminalRunStatus (quando o poll do transcript PARA)", () => {
     ["SUCCEEDED", true],
     ["FAILED", true],
     ["CANCELLED", true],
+    ["INTERRUPTED", true], // F-N4 (ADR-0040): parada pelo operador tambem encerra o poll
     ["RUNNING", false],
     ["QUEUED", false],
     ["RECOVERING", false],

@@ -78,7 +78,7 @@ class ProcessAgentAdapterTest {
         }
 
         @Override
-        public Result run(Spec spec, Consumer<String> onStdoutLine) {
+        public Result run(Spec spec, UUID runId, Consumer<String> onStdoutLine) {
             this.spec = spec;
             List.of("oi").forEach(onStdoutLine);
             return new Result(0, null);

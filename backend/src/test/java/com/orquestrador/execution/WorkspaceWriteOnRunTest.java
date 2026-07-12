@@ -186,8 +186,8 @@ class WorkspaceWriteOnRunTest {
                 }
 
                 @Override
-                public Result run(Spec spec, Consumer<String> onStdoutLine) {
-                    return local.run(spec, onStdoutLine);
+                public Result run(Spec spec, UUID runId, Consumer<String> onStdoutLine) {
+                    return local.run(spec, runId, onStdoutLine);
                 }
 
                 @Override

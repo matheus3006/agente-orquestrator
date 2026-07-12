@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -37,9 +38,19 @@ public class DockerExecutionTarget implements ExecutionTarget {
         return IsolationPosture.EXTERNALLY_SANDBOXED;
     }
 
+    /**
+     * O nome DETERMINISTICO do container de um Run (F-N4/ADR-0040): endereca o {@code docker kill}/
+     * {@code rm -f} do interrupt sem depender de rastrear o processo do HOST (o cliente `docker run`
+     * ignora SIGKILL — nao repassa ao container; so o nome alcanca o container de verdade).
+     */
+    static String containerName(UUID runId) {
+        return "orq_run_" + runId;
+    }
+
     /** argv do `docker run` — puro e testavel sem executar o daemon. */
-    public List<String> buildArgs(Spec spec) {
-        List<String> argv = new ArrayList<>(List.of("docker", "run", "--rm", "-w", "/workspace"));
+    public List<String> buildArgs(Spec spec, UUID runId) {
+        List<String> argv = new ArrayList<>(
+                List.of("docker", "run", "--rm", "--name", containerName(runId), "-w", "/workspace"));
         argv.add("-v");
         argv.add(spec.volumeName() + ":/workspace");
         for (VolumeMount credentialMount : spec.credentialMounts()) {
@@ -509,9 +520,9 @@ public class DockerExecutionTarget implements ExecutionTarget {
     }
 
     @Override
-    public Result run(Spec spec, Consumer<String> onStdoutLine) {
+    public Result run(Spec spec, UUID runId, Consumer<String> onStdoutLine) {
         try {
-            ProcessBuilder dockerProcess = new ProcessBuilder(buildArgs(spec));
+            ProcessBuilder dockerProcess = new ProcessBuilder(buildArgs(spec, runId));
             dockerProcess.redirectErrorStream(true);
             Process process = dockerProcess.start();
             try (BufferedReader reader = new BufferedReader(
@@ -525,5 +536,23 @@ public class DockerExecutionTarget implements ExecutionTarget {
         } catch (Exception exception) {
             return new Result(-1, exception.getMessage());
         }
+    }
+
+    /**
+     * argv do interrupt (F-N4/ADR-0040) — molde EXATO de {@link #buildServerStopArgs}: {@code rm -f}
+     * mata (SIGKILL) e remove num so passo, idempotente ("no such container" tambem e OK). Nao
+     * precisa rastrear processo do HOST: o PID 1 do container e o proprio motor, entao a
+     * derrubada do container tira a namespace de PID inteira com ele — os filhos da tool call
+     * (o requisito duro da sonda R6-B) morrem juntos, sem precisar enumerar descendentes como o
+     * LOCAL faz.
+     */
+    public List<String> buildInterruptArgs(UUID runId) {
+        return List.of("docker", "rm", "-f", containerName(runId));
+    }
+
+    @Override
+    public boolean interrupt(UUID runId) {
+        Executed removal = exec(buildInterruptArgs(runId));
+        return removal.exitCode() == 0 || removal.output().contains("No such container");
     }
 }

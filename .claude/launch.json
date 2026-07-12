@@ -6,7 +6,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "cwd": "frontend",
-      "port": 3000
+      "port": 3000,
+      "env": { "BACKEND_ORIGIN": "http://localhost:18081" }
+    },
+    {
+      "name": "backend-vendo",
+      "runtimeExecutable": "mvn",
+      "runtimeArgs": [
+        "spring-boot:run",
+        "-Dspring-boot.run.arguments=--server.port=18081 --spring.datasource.url=jdbc:h2:mem:vendo18081;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1 --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=create-drop --spring.flyway.enabled=false --orquestrador.workspace.root=/private/tmp/claude-501/-Users-matheussouza-Pessoal-orquestrador-agentes/84a85419-7492-4ab2-8c58-e71833bc2c5e/scratchpad/vendo-18081-ws"
+      ],
+      "cwd": "backend",
+      "port": 18081
     }
   ]
 }

@@ -144,6 +144,11 @@ TODO Run dos adapters ricos (CEO/F-N1 e executores/F-N2).
   universal de executor (migração V28, §G.4 do ADR-0037); o F-N6 (hook PreToolUse — skills read-only
   + cinto de dir de sessão) devolvido como follow-up (subsistema de materialização de hooks próprio,
   com o gotcha de trust do codex — merece fatia dedicada).
+- **Forward-ref: ADR-0040 (F-N4, R8-A) consome esta continuidade.** A interrupção mid-run (o botão
+  "parar" do board) mata o processo do motor e resume o MESMO turno depois — só é barata (zero
+  checkpoint próprio) porque D1.4 já garante que um run que falha (kill incluso) nunca sobrescreve
+  o handle salvo (`AgentSessionStore.record` no-op em sessão nula). Nenhum código deste ADR mudou
+  para viabilizar aquela fatia — a garantia já estava aqui.
 
 ## Prova (TDD; piso 526 → 547)
 `NativeSessionContinuityTest` (9): turno-2 resume · conversa nova fresca · dieta · retry preserva

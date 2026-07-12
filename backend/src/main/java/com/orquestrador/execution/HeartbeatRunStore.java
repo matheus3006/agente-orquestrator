@@ -77,6 +77,24 @@ public class HeartbeatRunStore {
     }
 
     /**
+     * F-N4 (ADR-0040, D4): CAS RUNNING -> INTERRUPTED, guardado por dono (mesma disciplina de
+     * finalizeRun). Devolve true so quando ESTE chamador venceu o CAS — o RunInterruptService so
+     * mata o processo depois de vencer, nunca antes: o dispatcher, bloqueado dentro do run
+     * sincrono, so alcanca finishFailure DEPOIS que o processo morre, e por essa ordem o CAS
+     * deste metodo ja tera vencido por CONSTRUCAO (nao por timing) — finishFailure cai no vazio
+     * sob o guard, como o finalize do perdedor no LeaseRenewalTest.
+     */
+    @Transactional
+    public boolean interrupt(UUID runId, String owner, String reason) {
+        if (runs.finalizeRun(runId, RunStatus.RUNNING, RunStatus.INTERRUPTED, owner, Instant.now(), reason) == 1) {
+            recordEvent(runId, "RUN_INTERRUPTED", reason);
+            promoteIfNeeded(runId);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Pulso do worker (renovacao de lease, ADR-0005): CAS guardado por dono — so estende quem
      * ainda POSSUI o Run. true = lease esticado para now+lease. 0 linhas = posse perdida (reaper
      * requeou + outro claim levou, ou hard-stop cancelou em voo): grava RUN_LEASE_LOST no rastro

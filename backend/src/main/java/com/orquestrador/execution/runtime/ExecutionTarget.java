@@ -23,7 +23,20 @@ public interface ExecutionTarget {
         return IsolationPosture.HOST;
     }
 
-    Result run(Spec spec, Consumer<String> onStdoutLine);
+    Result run(Spec spec, UUID runId, Consumer<String> onStdoutLine);
+
+    /**
+     * MATA o Run em andamento (F-N4/ADR-0040, D4) — process GROUP, nao so o processo raiz: a
+     * sonda R6-B provou que os dois motores deixam o processo-filho de uma tool call (build,
+     * subprocesso do codex, servidor) ORFAO a um SIGKILL so-do-pai. Kill+resume nativo se sustenta
+     * sem checkpoint proprio (a sessao sobrevive no JSONL, ADR-0038) — este metodo so precisa
+     * garantir que NADA fica para tras. {@code true} = achou um Run vivo com este runId e matou;
+     * {@code false} = nao havia nada rodando (corrida terminou antes) ou o alvo nao participa
+     * (DEFAULT: fakes de teste seguem intactos — mudanca ADITIVA, molde de {@link #screenshotServer}).
+     */
+    default boolean interrupt(UUID runId) {
+        return false;
+    }
 
     /**
      * Le UM arquivo do workspace (F.9/ADR-0021) — o mesmo eixo de variacao do run: LOCAL le o

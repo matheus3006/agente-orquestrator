@@ -46,7 +46,8 @@ public class ProcessAgentAdapter implements AgentAdapter {
                 CONTAINER.image(),
                 context.volumeName(),
                 CONTAINER.credentialMounts());
-        ExecutionTarget.Result result = context.target().run(spec, line -> steps.emit("STDOUT", line));
+        ExecutionTarget.Result result = context.target().run(spec, context.runId(),
+                line -> steps.emit("STDOUT", line));
         if (result.exitCode() == 0) {
             return Result.ok(context.priorSession());
         }

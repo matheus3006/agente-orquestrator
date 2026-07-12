@@ -328,7 +328,7 @@ class ClaudeCodeAdapterTest {
         }
 
         @Override
-        public Result run(Spec spec, Consumer<String> onStdoutLine) {
+        public Result run(Spec spec, UUID runId, Consumer<String> onStdoutLine) {
             this.spec = spec;
             this.ran = true;
             lines.forEach(onStdoutLine);
