@@ -61,11 +61,48 @@ public class ProposalScanner {
         return new Scan(List.copyOf(proposals), descartadas);
     }
 
-    /** Bloco → Proposal; qualquer desvio (não-JSON, ação desconhecida) → null, contado no Scan. */
+    /**
+     * F-N3 (ADR-0039, D2): a entrada ESTRUTURADA — os {@code blocos[]} já validados pelo motor na
+     * fonte (schema nativo). Espelho do {@link #scan}: só o bloco {@code tipo=proposta} vira Approval
+     * (os demais são de outros roteadores); o resto do contrato do gate (alvo canônico, descarte
+     * CONTADO para o anti-silêncio) é IDÊNTICO — só o transporte mudou (JSON validado × regex).
+     */
+    public Scan scanStructured(List<JsonNode> blocos) {
+        if (blocos == null || blocos.isEmpty()) {
+            return new Scan(List.of(), 0);
+        }
+        List<Proposal> proposals = new ArrayList<>();
+        int descartadas = 0;
+        for (JsonNode bloco : blocos) {
+            if (!"proposta".equals(bloco.path("tipo").asText(""))) {
+                continue; // só proposta é do gate T3; handoff/absorcao/... seguem noutros roteadores
+            }
+            Proposal proposal = parseNode(bloco);
+            if (proposal != null) {
+                proposals.add(proposal);
+            } else {
+                descartadas++;
+            }
+        }
+        return new Scan(List.copyOf(proposals), descartadas);
+    }
+
+    /** Bloco cercado (regex) → Proposal; não-JSON → null, contado no Scan (fail-soft). */
     private static Proposal parseBlock(String block) {
+        JsonNode node;
         try {
-            JsonNode node = CANONICAL.readTree(block.strip());
-            if (!node.isObject()) {
+            node = CANONICAL.readTree(block.strip());
+        } catch (Exception naoJson) {
+            log.warn("proposta: bloco em coluna 0 descartado — não é JSON ({})", naoJson.getMessage());
+            return null;
+        }
+        return parseNode(node);
+    }
+
+    /** Nó JSON → Proposal; qualquer desvio (não-objeto, ação fora do enum) → null, contado no Scan. */
+    private static Proposal parseNode(JsonNode node) {
+        try {
+            if (node == null || !node.isObject()) {
                 return null;
             }
             ApprovalActionType action = ApprovalActionType.valueOf(
@@ -77,8 +114,7 @@ public class ProposalScanner {
             String area = node.path("area").isTextual() ? node.path("area").asText() : null;
             return new Proposal(action, targetDetail, resumo, area);
         } catch (Exception malformado) {
-            log.warn("proposta: bloco em coluna 0 descartado — fora do contrato ({})",
-                    malformado.getMessage());
+            log.warn("proposta: bloco descartado — fora do contrato ({})", malformado.getMessage());
             return null;
         }
     }

@@ -34,8 +34,14 @@ final class ClaudeArgv {
         return build(prompt, model, effort, priorSession, null);
     }
 
+    /** Sem schema: o caminho não-migrado (persona legada / etapa não ligada) e os testes de teto. */
     static List<String> build(String prompt, String model, String effort, String priorSession,
                               String disallowedTools) {
+        return build(prompt, model, effort, priorSession, disallowedTools, null);
+    }
+
+    static List<String> build(String prompt, String model, String effort, String priorSession,
+                              String disallowedTools, String outputSchema) {
         List<String> argv = new ArrayList<>();
         argv.add("claude");
         argv.add("-p");
@@ -43,6 +49,13 @@ final class ClaudeArgv {
         argv.add("--output-format");
         argv.add("stream-json");
         argv.add("--verbose");
+        // F-N3 (ADR-0039, D2): a saída estruturada nativa — o schema INLINE prende o {resposta,
+        // blocos[]} do turno (o JSON validado volta no campo `result` do stream, provado ao vivo).
+        // Convive com o stream-json (zero regressão de StepTrace). Vazio ⟹ turno não migrado, omite.
+        if (isPresent(outputSchema)) {
+            argv.add("--json-schema");
+            argv.add(outputSchema.trim());
+        }
         // Run headless (-p) nao tem quem aprovar permissao interativa — sem isto o agente nem
         // ESCREVE no proprio /workspace (provado no smoke F.9d: 3 Writes bloqueados). A fronteira
         // de seguranca e o CONTAINER (F.8/ADR-0016), nao o prompt do CLI.

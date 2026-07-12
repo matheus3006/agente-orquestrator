@@ -4,6 +4,9 @@ import com.orquestrador.execution.runtime.ExecutionTarget;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -57,8 +60,18 @@ public class CodexAdapter implements AgentAdapter {
             return Result.ok(context.priorSession()); // no-op verde; não gasta token
         }
 
+        // F-N3 (ADR-0039, D2): a saída estruturada nativa. O codex exige o schema num ARQUIVO
+        // (--output-schema <FILE>, diferente do claude inline) — grava-se em .orq/ do workspace, que
+        // é o cwd do processo no LOCAL (v1). Falha de I/O = falha LEGÍVEL do run (nunca schema mudo).
+        // Nulo ⟹ turno não migrado: sem arquivo, sem flag, saída em prosa (o caminho pré-F-N3).
+        String outputSchemaFile;
+        try {
+            outputSchemaFile = writeSchemaFile(context.workDir(), context.outputSchema());
+        } catch (IOException falhaAoGravar) {
+            return Result.fail("codex: falha ao gravar o schema de saída do turno: " + falhaAoGravar.getMessage());
+        }
         List<String> argv = CodexArgv.build(context.command(), context.model(), context.effort(),
-                context.target().posture(), context.priorSession(), maxThreads, maxDepth);
+                context.target().posture(), context.priorSession(), maxThreads, maxDepth, outputSchemaFile);
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,
@@ -87,6 +100,23 @@ public class CodexAdapter implements AgentAdapter {
             return Result.failSessionLost(remediado, costEvents);
         }
         return Result.fail(remediado, costEvents);
+    }
+
+    /**
+     * Grava o schema do turno em {@code .orq/turn-schema.json} do workspace e devolve o caminho
+     * absoluto para o {@code --output-schema}. O {@code .orq/} é protocolo do produto (fora do
+     * replace de materialização, ADR-0030/M6) e no LOCAL é o cwd do processo. Schema nulo/branco ⟹
+     * devolve null (turno não migrado): nenhum arquivo, nenhuma flag. (DOCKER: o arquivo precisa
+     * chegar ao volume — follow-up da fatia; no LOCAL do v1 o workDir É o workspace.)
+     */
+    private static String writeSchemaFile(Path workDir, String outputSchema) throws IOException {
+        if (outputSchema == null || outputSchema.isBlank()) {
+            return null;
+        }
+        Path schemaFile = workDir.resolve(".orq").resolve("turn-schema.json");
+        Files.createDirectories(schemaFile.getParent());
+        Files.writeString(schemaFile, outputSchema);
+        return schemaFile.toString();
     }
 
     /** Este run tentou religar uma sessão nativa (F-N2)? Só então o sinal de sessão perdida vale. */

@@ -100,6 +100,27 @@ class CodexArgvTest {
     }
 
     @Test
+    void outputSchemaViraFlagComCaminhoDeArquivo() {
+        // F-N3 (ADR-0039, D2): saída estruturada nativa. Diferente do claude (inline), o codex quer
+        // um ARQUIVO (--output-schema <FILE>) — o adapter grava o schema e passa o caminho. Global
+        // (funciona também com o subcomando resume, laudo X-8): entra entre os flags, ANTES do prompt.
+        assertThat(CodexArgv.build("faça X", "gpt-5.5", "high", IsolationPosture.HOST, null, 0, 0,
+                "/tmp/orq-schema.json"))
+                .containsSubsequence("--output-schema", "/tmp/orq-schema.json", "faça X");
+    }
+
+    @Test
+    void schemaNuloOmiteAFlagEConviveComResume() {
+        // Sem schema (turno não migrado): omite. Com schema E resume (turno 2+ migrado): coexistem —
+        // o --output-schema é global (antes do subcomando resume), a saída é validada na continuada.
+        assertThat(CodexArgv.build("t", "gpt-5.5", "high", IsolationPosture.HOST, null, 0, 0, null))
+                .doesNotContain("--output-schema");
+        assertThat(CodexArgv.build("grave", "gpt-5.5", "high", IsolationPosture.HOST, "sess-x", 6, 3,
+                "/tmp/s.json"))
+                .containsSubsequence("--output-schema", "/tmp/s.json", "resume", "sess-x", "grave");
+    }
+
+    @Test
     void externamenteSandboxadoGanhaSkipGitEBypassComPromptNoFim() {
         // F.11 (ADR-0025): o container E o sandbox externo — o codex roda sem self-sandbox.
         // Flags empiricamente confirmados contra o codex 0.142.5; prompt segue o ULTIMO.

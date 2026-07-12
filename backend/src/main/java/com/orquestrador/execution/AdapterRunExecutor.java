@@ -263,10 +263,13 @@ public class AdapterRunExecutor implements RunExecutor {
                 : issueConversationId != null
                         ? agentSessions.currentHandle(runContext.agentId(), issueConversationId).orElse(null)
                         : null;
+        // F-N3 (ADR-0039, D2): o schema de saída estruturada só existe em run de TURNO de persona
+        // migrada (o coordinator o construiu no claim); run de Issue e persona não migrada = null.
+        String outputSchema = turno != null ? turno.outputSchema() : null;
         AgentAdapter.Context adapterContext = new AgentAdapter.Context(
                 runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(), workDir,
                 command, env, target, volumeName, priorSession,
-                agent.getModel(), agent.getEffort());
+                agent.getModel(), agent.getEffort(), outputSchema);
 
         AgentAdapter.Result result;
         try {
@@ -281,9 +284,12 @@ public class AdapterRunExecutor implements RunExecutor {
                 if (replyCollector != null) {
                     replyCollector = new RunFinalOutput(); // a tentativa perdida não entra no reply
                 }
+                // O fresh start descarta o resume (priorSession=null) mas MANTÉM o schema — a saída
+                // do turno re-derivado ainda tem de ser validada (F-N3).
                 AgentAdapter.Context fresh = new AgentAdapter.Context(
                         runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(),
-                        workDir, command, env, target, volumeName, null, agent.getModel(), agent.getEffort());
+                        workDir, command, env, target, volumeName, null, agent.getModel(), agent.getEffort(),
+                        outputSchema);
                 result = adapter.execute(fresh, buildSink(runContext.runId(), replyCollector));
             }
         } catch (Exception exception) {

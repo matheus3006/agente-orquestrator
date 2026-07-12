@@ -1,5 +1,6 @@
 package com.orquestrador.conversation.persona;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
@@ -40,14 +41,27 @@ public class PersonaBatonRouter {
         this.absorcoes = absorcoes;
     }
 
+    /** Caminho regex (persona não migrada / fallback do malformado): as viradas saem da prosa. */
     public void afterCeoTurnAnswered(ConversationTurn turno, String reply) {
+        route(turno, scanner.scan(reply));
+    }
+
+    /**
+     * F-N3 (ADR-0039, D2): o caminho ESTRUTURADO — as viradas saem dos {@code blocos[]} já validados
+     * pelo motor na fonte (schema nativo), sem regex. Mesmo roteamento e mesmas restrições de emissor
+     * do regex (só o transporte mudou): o {@code PersonaHandoffScanner} despacha por {@code tipo}.
+     */
+    public void afterCeoTurnAnsweredStructured(ConversationTurn turno, List<JsonNode> blocos) {
+        route(turno, scanner.scanStructured(blocos));
+    }
+
+    private void route(ConversationTurn turno, List<PersonaHandoffScanner.Route> routes) {
         CeoPersona origem = agents.findById(turno.getAgentId())
                 .flatMap(agent -> CeoPersona.fromDbValue(agent.getPersona()))
                 .orElse(null);
         if (origem == null) {
             return; // CEO legado/agente comum: o fluxo de personas não existe para ele
         }
-        List<PersonaHandoffScanner.Route> routes = scanner.scan(reply);
         for (int i = 0; i < routes.size(); i++) {
             boolean posted = switch (routes.get(i)) {
                 case PersonaHandoffScanner.Handoff handoff ->

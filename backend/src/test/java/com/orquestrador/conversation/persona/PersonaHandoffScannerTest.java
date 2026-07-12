@@ -1,5 +1,7 @@
 package com.orquestrador.conversation.persona;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orquestrador.org.agent.CeoPersona;
 import org.junit.jupiter.api.Test;
 
@@ -146,6 +148,53 @@ class PersonaHandoffScannerTest {
         assertThat(scanner.scan("O formato é:\n  ```absorcao\n  {\"issue\": 7, \"dominio\": \"Dev\","
                 + " \"foco\": \"Landing\", \"racional\": \"r\"}\n  ```\n"))
                 .as("o exemplo INDENTADO no prompt do Planejador nunca dispara").isEmpty();
+    }
+
+    // ---- F-N3 (ADR-0039, D2): a entrada ESTRUTURADA — o motor validou o shape na fonte, os blocos
+    // chegam como JSON já parseado (campo `tipo` discrimina), sem regex. A validação de DOMÍNIO
+    // (persona conhecida, #N >= 1, campos presentes) segue viva — é a mesma dos parsers do regex.
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    private List<JsonNode> blocos(String... jsons) {
+        return java.util.Arrays.stream(jsons).map(json -> {
+            try {
+                return (JsonNode) mapper.readTree(json);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).toList();
+    }
+
+    @Test
+    void scanStructuredDespachaPorTipoNaOrdemDoArray() {
+        List<PersonaHandoffScanner.Route> routes = scanner.scanStructured(blocos(
+                "{\"tipo\":\"needs-grilling\",\"lacuna\":\"qual orçamento?\"}",
+                "{\"tipo\":\"handoff\",\"para\":\"executor\",\"bastao\":\"estrategia.md\",\"resumo\":\"ok\"}",
+                "{\"tipo\":\"absorcao\",\"issue\":7,\"dominio\":\"Dev\",\"foco\":\"Landing\",\"racional\":\"frontend\"}"));
+
+        assertThat(routes).hasSize(3);
+        assertThat(routes.get(0)).isInstanceOf(PersonaHandoffScanner.NeedsGrilling.class);
+        assertThat(((PersonaHandoffScanner.Handoff) routes.get(1)).para()).isEqualTo(CeoPersona.EXECUTOR);
+        assertThat(((PersonaHandoffScanner.Absorcao) routes.get(2)).foco()).isEqualTo("Landing");
+    }
+
+    @Test
+    void scanStructuredIgnoraPropostaEBlocoDeDominioInvalido() {
+        // proposta é do ProposalScanner (espelho do regex); persona desconhecida/campo faltando
+        // seguem fail-soft (a validação de domínio sobrevive à migração do transporte).
+        List<PersonaHandoffScanner.Route> routes = scanner.scanStructured(blocos(
+                "{\"tipo\":\"proposta\",\"acao\":\"HIRE_AGENT\",\"alvo\":{}}",
+                "{\"tipo\":\"handoff\",\"para\":\"tesoureiro\",\"bastao\":\"x\",\"resumo\":\"r\"}",
+                "{\"tipo\":\"correcao\",\"issue\":0}"));
+
+        assertThat(routes).isEmpty();
+    }
+
+    @Test
+    void scanStructuredVazioOuNuloNaoRoteia() {
+        assertThat(scanner.scanStructured(List.of())).isEmpty();
+        assertThat(scanner.scanStructured(null)).isEmpty();
     }
 
     @Test

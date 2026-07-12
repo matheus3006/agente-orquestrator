@@ -493,6 +493,67 @@ class PersonaBatonFlowTest {
                 .startsWith("[continuação — prossiga");
     }
 
+    // ---- F-N3 (ADR-0039, D2): a SAÍDA ESTRUTURADA nativa ponta a ponta. A persona emite o JSON
+    // validado {resposta, blocos[]} (o motor prende na fonte); o settle extrai `resposta` como a
+    // thread (mata o last-wins) e roteia `blocos[]` sem regex. Mesmo destino do fenced, sem a frágil.
+
+    @Test
+    void propostaEstruturadaDoExecutorViraApprovalComRespostaLimpa() {
+        UUID companyId = novaCompany();
+        // Curto de propósito: o runtime_command do process é VARCHAR(255) (o CLI real não tem esse
+        // teto — aqui o "motor" é um printf). O shape do bloco é o que importa: proposta validada.
+        String json = "{\"resposta\":\"Protocolei 1:1.\",\"blocos\":[{\"tipo\":\"proposta\",\"acao\":"
+                + "\"HIRE_AGENT\",\"alvo\":{\"name\":\"Dev Backend\",\"role\":\"exec\",\"racional\":"
+                + "\"tdd\"},\"resumo\":\"c\",\"area\":\"eng\"}]}";
+        UUID executorId = persona(companyId, "executor", "CEO Executor", "printf '%s' '" + json + "'");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        UUID turnId = turnoPara(companyId, negocio.getId(), executorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.PLANEJADOR, CeoPersona.EXECUTOR,
+                        ".orq/conversa/x/estrategia.md", "protocolar"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        // blocos[] validado → gate (sem regex): o Approval nasce igual ao mundo fenced.
+        List<Approval> pendentes = approvals.findByCompanyIdAndStatusOrderByRequestedAt(
+                companyId, ApprovalStatus.PENDING);
+        assertThat(pendentes).hasSize(1);
+        assertThat(pendentes.get(0).getTargetDetail()).contains("Dev Backend").contains("racional");
+        assertThat(pendentes.get(0).getRequestedByAgentId()).isEqualTo(executorId);
+        // o reply da thread é o CAMPO `resposta` — o JSON cru NÃO vaza (a extração estruturada).
+        ConversationTurn atendido = turns.findById(turnId).orElseThrow();
+        assertThat(atendido.getCeoReply()).isEqualTo("Protocolei 1:1.");
+        assertThat(atendido.getCeoReply()).doesNotContain("blocos").doesNotContain("HIRE_AGENT");
+    }
+
+    @Test
+    void handoffEstruturadoDoPlanejadorViraContinuacaoDoExecutor() {
+        UUID companyId = novaCompany();
+        String json = "{\"resposta\":\"Estratégia pronta em estrategia.md.\",\"blocos\":[{\"tipo\":"
+                + "\"handoff\",\"para\":\"executor\",\"bastao\":\".orq/conversa/x/estrategia.md\","
+                + "\"resumo\":\"protocolar as contratações\"}]}";
+        UUID planejadorId = persona(companyId, "planejador", "CEO Planejador", "printf '%s' '" + json + "'");
+        UUID executorId = persona(companyId, "executor", "CEO Executor", "printf '%s\\n' \"$ORQ_PROMPT\"");
+
+        Conversation negocio = conversations.open(companyId, "Novo negócio");
+        turnoPara(companyId, negocio.getId(), planejadorId,
+                PersonaContinuationSentinel.bastao(CeoPersona.QUESTIONADOR, CeoPersona.PLANEJADOR,
+                        ".orq/conversa/x/dossie.md", "gerar estratégia"));
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1); // o Planejador emite o handoff estruturado
+
+        // blocos[] → continuação do Executor (invisível), na ordem do baton — igual ao fenced.
+        List<ConversationTurn> doConv = thread(companyId, negocio.getId());
+        ConversationTurn continuacao = doConv.get(doConv.size() - 1);
+        assertThat(continuacao.getAgentId()).isEqualTo(executorId);
+        assertThat(continuacao.getStatus()).isEqualTo(TurnStatus.PENDING);
+        assertThat(continuacao.getOwnerMessage())
+                .startsWith("[continuação — bastão de planejador para executor")
+                .contains(".orq/conversa/x/estrategia.md");
+        // o reply do Planejador na sua trilha é o CAMPO resposta, limpo (não o JSON).
+        ConversationTurn atendido = doConv.stream().filter(t -> t.getAgentId().equals(planejadorId))
+                .findFirst().orElseThrow();
+        assertThat(atendido.getCeoReply()).isEqualTo("Estratégia pronta em estrategia.md.");
+    }
+
     /** D5: o confirma-antes fica IDLE — resposta sem bloco (a pergunta ao dono) não vira nada. */
     @Test
     void respostaSemBlocoNaoViraContinuacao_confirmaAntesIdle() {

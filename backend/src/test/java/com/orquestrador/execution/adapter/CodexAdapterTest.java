@@ -6,7 +6,9 @@ import com.orquestrador.execution.adapter.AgentAdapter.Result;
 import com.orquestrador.execution.adapter.AgentAdapter.StepSink;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -91,6 +93,37 @@ class CodexAdapterTest {
 
         assertThat(target.spec.command())
                 .containsSubsequence("-c", "agents.max_threads=6", "-c", "agents.max_depth=3");
+    }
+
+    @Test
+    void oSchemaDoTurnoEGravadoEmArquivoEPassadoPorCaminho(@TempDir Path workDir) {
+        // F-N3 (ADR-0039, D2): diferente do claude (inline), o codex exige um ARQUIVO — o adapter
+        // grava o schema no workspace (.orq/, cwd do processo no LOCAL) e passa o caminho. O JSON
+        // validado volta no agent_message (que o parser já promove a RESULT). Prova: flag + conteúdo.
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, STREAM);
+        String schema = "{\"type\":\"object\",\"additionalProperties\":false}";
+        Context comSchema = new Context(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), workDir, "faça X", Map.of(), target, "vol", null, "gpt-5.5", "high", schema);
+
+        adapter.execute(comSchema, sink);
+
+        Path schemaFile = workDir.resolve(".orq/turn-schema.json");
+        assertThat(target.spec.command()).containsSubsequence("--output-schema", schemaFile.toString());
+        assertThat(schemaFile).content().isEqualTo(schema);
+    }
+
+    @Test
+    void semSchemaNaoGravaArquivoNemPassaFlag(@TempDir Path workDir) {
+        RecordingSink sink = new RecordingSink();
+        FakeTarget target = new FakeTarget(0, STREAM);
+        Context semSchema = new Context(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), workDir, "faça X", Map.of(), target, "vol", null, "gpt-5.5", "high");
+
+        adapter.execute(semSchema, sink);
+
+        assertThat(target.spec.command()).doesNotContain("--output-schema");
+        assertThat(Files.exists(workDir.resolve(".orq/turn-schema.json"))).isFalse();
     }
 
     @Test
