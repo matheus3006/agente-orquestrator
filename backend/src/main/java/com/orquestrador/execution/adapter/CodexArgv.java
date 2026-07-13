@@ -57,9 +57,17 @@ final class CodexArgv {
         return build(prompt, model, effort, posture, priorSession, maxThreads, maxDepth, outputSchemaFile, false);
     }
 
+    /** Sem MCP: o caminho pré-F-AT2 e os testes de gramática pura anteriores ao servidor do KnowAll. */
     static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
                               String priorSession, int maxThreads, int maxDepth, String outputSchemaFile,
                               boolean hooksEnabled) {
+        return build(prompt, model, effort, posture, priorSession, maxThreads, maxDepth, outputSchemaFile,
+                hooksEnabled, null);
+    }
+
+    static List<String> build(String prompt, String model, String effort, IsolationPosture posture,
+                              String priorSession, int maxThreads, int maxDepth, String outputSchemaFile,
+                              boolean hooksEnabled, McpServerSpec mcpServer) {
         List<String> argv = new ArrayList<>();
         argv.add("codex");
         argv.add("exec");
@@ -90,6 +98,18 @@ final class CodexArgv {
             argv.add("-c");
             argv.add("agents.max_depth=" + maxDepth);
         }
+        // F-AT2 (grill agente-como-tool D2, laudo sonda MCP-consume R12-B): o servidor MCP-stdio do
+        // KnowAll entra por pares -c GLOBAIS (mcp_servers.<name>.command/.args), agrupados com os
+        // outros -c ANTES do subcomando resume. Sem flag de bypass de aprovação: a sonda provou que a
+        // anotação readOnlyHint:true na própria tool (verdade — a leitura É read-only) já satisfaz o
+        // gate próprio do codex no headless (`destructive_hint.unwrap_or(true)`, rust-v0.142.5). Nulo ⟹
+        // run sem MCP (persona/etapa não-migrada), omite — o caminho pré-F-AT2.
+        if (mcpServer != null && isPresent(mcpServer.command())) {
+            argv.add("-c");
+            argv.add("mcp_servers." + mcpServer.name() + ".command=" + tomlString(mcpServer.command()));
+            argv.add("-c");
+            argv.add("mcp_servers." + mcpServer.name() + ".args=" + tomlStringArray(mcpServer.args()));
+        }
         argv.add("--skip-git-repo-check");
         if (posture == IsolationPosture.EXTERNALLY_SANDBOXED) {
             argv.add("--dangerously-bypass-approvals-and-sandbox");
@@ -119,5 +139,19 @@ final class CodexArgv {
 
     private static boolean isPresent(String value) {
         return value != null && !value.isBlank();
+    }
+
+    /** Um valor string do config do codex (TOML via -c): aspas duplas com escape de {@code \} e {@code "}. */
+    private static String tomlString(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    /** Um array TOML de strings — {@code ["a","b"]} — para o {@code mcp_servers.<name>.args}. */
+    private static String tomlStringArray(List<String> values) {
+        List<String> quoted = new ArrayList<>();
+        for (String value : values) {
+            quoted.add(tomlString(value));
+        }
+        return "[" + String.join(",", quoted) + "]";
     }
 }

@@ -114,4 +114,32 @@ class ClaudeArgvTest {
         assertThat(ClaudeArgv.build("t", "opus", "high", "sess-x", null, "{\"type\":\"object\"}"))
                 .contains("--json-schema", "--resume", "sess-x");
     }
+
+    @Test
+    void mcpConfigViraMcpConfigMaisStrict() {
+        // F-AT2 (grill agente-como-tool D2, laudo sonda MCP-consume R12-B): o servidor MCP do KnowAll
+        // entra por --mcp-config <arquivo> + --strict-mcp-config (isola o run para ver SÓ este servidor).
+        List<String> argv = ClaudeArgv.build("faça X", "opus", "high", null, null, null,
+                "/x/.orq/mcp/claude-mcp.json");
+        int i = argv.indexOf("--mcp-config");
+        assertThat(i).isPositive();
+        assertThat(argv.get(i + 1)).isEqualTo("/x/.orq/mcp/claude-mcp.json");
+        assertThat(argv).contains("--strict-mcp-config");
+    }
+
+    @Test
+    void semMcpConfigOmiteAsFlags() {
+        assertThat(ClaudeArgv.build("t", "opus", "high", null, null, null, null))
+                .doesNotContain("--mcp-config", "--strict-mcp-config");
+        assertThat(ClaudeArgv.build("t", "opus", "high", null, null, null, "  "))
+                .doesNotContain("--mcp-config", "--strict-mcp-config");
+    }
+
+    @Test
+    void mcpConviveComSchemaEResumeCirurgico() {
+        List<String> argv = ClaudeArgv.build("destile", "opus", "high", "sess-x", null,
+                "{\"type\":\"object\"}", "/x/mcp.json");
+        assertThat(argv).contains("--mcp-config", "/x/mcp.json", "--strict-mcp-config",
+                "--json-schema", "--resume", "sess-x");
+    }
 }

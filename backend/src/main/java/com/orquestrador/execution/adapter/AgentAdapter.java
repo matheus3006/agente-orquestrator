@@ -59,18 +59,32 @@ public interface AgentAdapter {
      * {@code {resposta, blocos[]}} — o adapter rico o entrega ao seu CLI (claude {@code --json-schema}
      * inline · codex grava um arquivo e passa {@code --output-schema}). Nulo ⟹ turno não migrado
      * (persona legada / etapa não ligada): saída em prosa, o caminho pré-F-N3.
+     *
+     * <p>{@code mcpServer} (F-AT2/grill agente-como-tool D2): o servidor MCP-stdio do KnowAll que ESTE
+     * run deve enxergar (só run de EXECUTOR LOCAL — personas fora, D6). O adapter rico o materializa no
+     * argv do seu CLI (claude {@code --mcp-config} · codex {@code -c mcp_servers}). Nulo ⟹ run sem MCP
+     * (persona / etapa não-migrada / alvo docker), o caminho pré-F-AT2.
      */
     record Context(UUID companyId, UUID agentId, UUID runId, UUID issueId, Path workDir,
                    String command, Map<String, String> env, ExecutionTarget target,
                    String volumeName, String priorSession,
-                   String model, String effort, String outputSchema) {
+                   String model, String effort, String outputSchema, McpServerSpec mcpServer) {
 
-        /** Sem schema de saída: o caminho não-migrado e as redes (resume-cirúrgico, fresh start). */
+        /** Sem servidor MCP: o caminho pré-F-AT2 (persona/turno migrado com schema, mas sem MCP). */
+        public Context(UUID companyId, UUID agentId, UUID runId, UUID issueId, Path workDir,
+                       String command, Map<String, String> env, ExecutionTarget target,
+                       String volumeName, String priorSession, String model, String effort,
+                       String outputSchema) {
+            this(companyId, agentId, runId, issueId, workDir, command, env, target, volumeName,
+                    priorSession, model, effort, outputSchema, null);
+        }
+
+        /** Sem schema de saída nem MCP: o caminho não-migrado e as redes (resume-cirúrgico, fresh start). */
         public Context(UUID companyId, UUID agentId, UUID runId, UUID issueId, Path workDir,
                        String command, Map<String, String> env, ExecutionTarget target,
                        String volumeName, String priorSession, String model, String effort) {
             this(companyId, agentId, runId, issueId, workDir, command, env, target, volumeName,
-                    priorSession, model, effort, null);
+                    priorSession, model, effort, null, null);
         }
     }
 
