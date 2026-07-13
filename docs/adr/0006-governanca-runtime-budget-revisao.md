@@ -43,6 +43,18 @@ As duas juntas fecham a janela de corrida; os contadores denormalizados são só
   **approval-de-ação** (pré-hoc, autoriza a ação antes de executá-la). Só o **review** foi construído. A
   **Approval-de-ação genérica** (config-change, agente-tool) **continua adiada** — nasce com o agente-como-tool
   (dois consumidores reais para desenhar a interface).
+
+## Revisão 2026-07-12 (F-AT1, grill agente-como-tool)
+- **A Approval-de-ação-de-agente ganhou o 1º consumidor real.** F-AT1 (`SKILL_INSTALL_REQUEST`, ADR-0003
+  emendada): o EXECUTOR de uma Issue pede uma skill fora do seu set → o pedido nasce Approval PENDING com
+  `requested_by_agent_id` = o próprio AGENTE (não o CEO/board) → o dono decide (racional arrancado por
+  grill, ADR-0020) → **APPROVE** dispara a ação real com **ator=aprovador** (o mesmo invariante desta ADR:
+  "ação delegada = UM evento com ator=aprovador e `detail.requested_by_agent`", já citado no comentário do
+  `ActivityAction`/ADR-0009). Reusa o MESMO pipeline `propose`/`decide`/`dispatchAction` das 5 ações
+  anteriores (todas CEO-originadas) — nenhuma máquina de estados nova, nenhum gate paralelo.
+- **O 2º consumidor (config-change) segue não construído.** F-AT2 (KnowAll body inline) é leitura SÍNCRONA
+  — não passa pelo Approval (D5 do grill: cost-neutral, sem gate de escrita); a fatia própria segue gateada
+  pela sonda MCP-consume.
 - **Fonte do risco no v1 = humano** (o operador seta o `risk_level` por-Issue). A avaliação de risco do
   agente-arquiteto é advisory (conteúdo do plano); quando o número do agente fluir (futuro), a regra é
   **escala-só-pra-cima acima de um piso humano** (nunca de-escala) — para não reintroduzir o "o agente pulou".
