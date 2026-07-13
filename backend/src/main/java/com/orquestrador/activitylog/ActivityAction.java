@@ -56,5 +56,11 @@ public enum ActivityAction {
     // Absorcao de issue do board (ADR-0037): o Planejador triou a issue orfa do dono e o sistema
     // resolveu time→arquiteto e atribuiu. Ator = AGENTE (o Planejador do turno); detail so-IDs
     // {teamId, arquitetoAgentId} — o racional (texto de LLM) vive na Decision, NUNCA aqui (ADR-0009).
-    ISSUE_ABSORVIDA
+    ISSUE_ABSORVIDA,
+    // Pedido de skill do EXECUTOR de uma Issue (F-AT1, grill agente-como-tool): o bloco
+    // `pedido-skill` na saida do Run virou Approval PENDING. Ator = AGENTE (quem pediu);
+    // detail.approvalId + requestedByAgentId (ADR-0009) — a decisao do dono segue o padrao
+    // generico (APPROVAL_APPROVED/APPROVAL_REJECTED); o attach real emite SKILL_ATTACHED (ja
+    // existente) no dispatch do APPROVE.
+    SKILL_INSTALL_REQUESTED
 }

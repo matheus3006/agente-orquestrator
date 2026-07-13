@@ -42,6 +42,7 @@ public class RacionalPolicy {
             case HIRE_AGENT, CREATE_TEAM, CREATE_ROLE_TEMPLATE -> "estrutura-org";
             case CREATE_ISSUE -> "backlog";
             case WAKEUP_AGENT -> "operacao";
+            case SKILL_INSTALL_REQUEST -> "skills";
         };
     }
 

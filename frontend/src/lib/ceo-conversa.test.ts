@@ -317,6 +317,25 @@ describe("acaoLegivel (o corpo do card é legível — o targetDetail nunca apar
 
     expect(acao).toEqual({ verbo: "Criar molde", alvo: null });
   });
+
+  it("SKILL_INSTALL_REQUEST vira 'Pedir skill' com a skillKey pedida (F-AT1)", () => {
+    const acao = acaoLegivel(
+      approval({
+        actionType: "SKILL_INSTALL_REQUEST",
+        targetDetail: '{"issueId": "issue-1", "skillKey": "tdd"}',
+      }),
+    );
+
+    expect(acao).toEqual({ verbo: "Pedir skill", alvo: "tdd" });
+  });
+
+  it("SKILL_INSTALL_REQUEST sem skillKey degrada para alvo null", () => {
+    const acao = acaoLegivel(
+      approval({ actionType: "SKILL_INSTALL_REQUEST", targetDetail: '{"issueId": "issue-1"}' }),
+    );
+
+    expect(acao).toEqual({ verbo: "Pedir skill", alvo: null });
+  });
 });
 
 describe("destinoDaIssueProposta (ADR-0037/D2: o card do CREATE_ISSUE mostra o time-destino)", () => {

@@ -41,3 +41,20 @@ O diferencial central do produto é resolver a poluição de contexto: cada Agen
   — **fold** do endpoint da 7a (`companySkillId` sai do contrato). O servidor resolve o install-state:
   **INSTALLED** → anexa a versão corrente (1 evento `SKILL_ATTACHED`); **AVAILABLE** → **instala** (copia a
   versão corrente global, `source=CATALOG`, `SKILL_INSTALLED`) **+** anexa (`SKILL_ATTACHED`), na MESMA tx.
+
+## Revisão 2026-07-12 (F-AT1, grill agente-como-tool)
+- **O caveat "estado-alvo FUTURO" da revisão 2026-07-01 se ENCERRA para a metade agente-pede.** O item
+  congelado desde a 7c (nota acima: *"install novo por agente → Approval"*, *"install/attach acontece via
+  board REST, apenas"*) desconge­lou (grill R11-A) e a **(i)** entrou no v1: o **EXECUTOR** de uma Issue
+  pede uma skill fora do seu set pelo canal de **SAÍDA** (`` ```pedido-skill ``, decisão-a interina —
+  o Run de Issue não tem `outputSchema`/ADR-0039, ver §D2 do handoff do grill) → vira **Approval PENDING**
+  (`SKILL_INSTALL_REQUEST`, 6ª ação do gate ADR-0018/0020) → **APPROVE** chama o MESMO
+  `SkillSetService.attachToIssue` desta ADR (install-on-attach **reuso puro**, zero mecanismo novo).
+- **O que NÃO mudou:** o attach efetivo continua **board-gated** — a (i) relaxa a 7a **só** para permitir
+  que o PEDIDO nasça PENDING a partir de um ator `AGENT`; quem materializa a skill (aprova) segue sendo o
+  dono, 1 clique na fila madura (ADR-0018). Nenhuma rota REST nova, nenhuma credencial nova no `env` do
+  agente (#3 intacto) — o transporte é o `StepTrace`/StdOut que o core já lê (D2 do grill).
+  `install/attach direto por agente` (sem gate) **continua NÃO existindo** — só o **pedido** é do agente.
+- **O que ainda é FUTURO:** a **(ii)** — KnowAll body inline pro agente NA HORA (leitura síncrona via
+  MCP-stdio) — segue **fora do v1** até a sonda MCP-consume confirmar o transporte (F-AT2, fatia própria).
+- Ver `docs/handoff-grilling-agente-como-tool.md` (D1–D6) e ADR-0006 (o gate ganha seu 1º consumidor real).

@@ -23,13 +23,22 @@ import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.roletemplate.RoleTemplate;
 import com.orquestrador.org.roletemplate.RoleTemplateVersion;
+import com.orquestrador.skills.CompanySkill;
+import com.orquestrador.skills.CompanySkillRepository;
+import com.orquestrador.skills.Skill;
+import com.orquestrador.skills.SkillIndexer;
+import com.orquestrador.skills.SkillSetService;
 import com.orquestrador.work.issue.IssueRepository;
+import com.orquestrador.work.issue.IssueService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
@@ -73,6 +82,19 @@ class ApprovalGateTest {
     private com.orquestrador.org.roletemplate.RoleTemplateRepository roleTemplates;
     @Autowired
     private com.orquestrador.org.roletemplate.RoleTemplateVersionRepository roleTemplateVersions;
+    @Autowired
+    private IssueService issueService;
+    @Autowired
+    private SkillIndexer skillIndexer;
+    @Autowired
+    private SkillSetService skillSets;
+    @Autowired
+    private CompanySkillRepository companySkills;
+    @Autowired
+    private com.orquestrador.skills.SkillRepository skillsCatalog;
+
+    @TempDir
+    Path skillsRoot;
 
     /** O wakeup aprovado enfileira sem despachar; não deixar QUEUED pros vizinhos de contexto. */
     @AfterEach
@@ -96,6 +118,27 @@ class ApprovalGateTest {
     private ProposalScanner.Proposal hireNix() {
         return new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
                 "{\"name\":\"Nix\",\"role\":\"executor\"}", "Contratar Nix executor", null);
+    }
+
+    /** Um executor comum (não-CEO) — quem trabalha Issues e pede skill mid-run (F-AT1). */
+    private UUID contrataExecutor(UUID companyId) {
+        Agent executor = new Agent(UUID.randomUUID(), companyId, "Vega", "executor", null);
+        executor.configureRuntime("process", null, "LOCAL");
+        return agents.save(executor).getId();
+    }
+
+    /** Skill só no catálogo GLOBAL (etapa A do indexer) — AINDA não instalada em nenhuma company. */
+    private Skill skillGlobalDisponivel(String skillKey) throws java.io.IOException {
+        Path dir = Files.createDirectories(skillsRoot.resolve(skillKey));
+        Files.writeString(dir.resolve("SKILL.md"), "---\nname: " + skillKey + "\ndescription: d\n---\n# corpo\n");
+        skillIndexer.syncGlobalCatalog(skillsRoot);
+        return skillsCatalog.findBySkillKey(skillKey).orElseThrow();
+    }
+
+    private ProposalScanner.Proposal pedidoSkill(String skillKey, UUID issueId) {
+        return new ProposalScanner.Proposal(ApprovalActionType.SKILL_INSTALL_REQUEST,
+                "{\"issueId\":\"" + issueId + "\",\"skillKey\":\"" + skillKey + "\"}",
+                "Pedido de skill: " + skillKey, "skills");
     }
 
     /** Um time (dominio/foco) com arquiteto designado — o alvo da corrente time→arquiteto. */
@@ -499,5 +542,73 @@ class ApprovalGateTest {
 
         assertThat(runs.findByAgentAndStatuses(echoId,
                 List.of(RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.RECOVERING))).hasSize(1);
+    }
+
+    /**
+     * F-AT1 (grill agente-como-tool, D5): o pedido de skill do EXECUTOR audita distinto do
+     * CEO_PROPOSED genérico — SKILL_INSTALL_REQUESTED, ator=AGENTE (quem pediu).
+     */
+    @Test
+    void pedidoDeSkillAuditaSkillInstallRequestedNaoCeoProposed() {
+        UUID companyId = novaCompany();
+        UUID executorId = contrataExecutor(companyId);
+        UUID issueId = issueService.create(companyId, "tarefa", null).getId();
+
+        Approval pedido = approvals.propose(companyId, executorId, null, null,
+                pedidoSkill("tdd-" + UUID.randomUUID(), issueId));
+
+        assertThat(pedido.getActionType()).isEqualTo(ApprovalActionType.SKILL_INSTALL_REQUEST);
+        assertThat(activities.findByCompanyIdOrderByCreatedAtDesc(companyId))
+                .anySatisfy(entry -> {
+                    assertThat(entry.getAction()).isEqualTo(ActivityAction.SKILL_INSTALL_REQUESTED.name());
+                    assertThat(entry.getActorType()).isEqualTo(ActorType.AGENT.name());
+                    assertThat(entry.getActorId()).isEqualTo(executorId);
+                })
+                .noneSatisfy(entry -> assertThat(entry.getAction()).isEqualTo(ActivityAction.CEO_PROPOSED.name()));
+    }
+
+    /**
+     * F-AT1 (D2/D3): a 6ª ação do gate — SKILL_INSTALL_REQUEST. APPROVE dispara
+     * {@code SkillSetService.attachToIssue} (reuso puro, install-on-attach ADR-0003 já cobre o
+     * AVAILABLE) no escopo da Issue, para o AGENTE que pediu — nunca o aprovador.
+     */
+    @Test
+    void skillInstallRequestAprovadoAnexaASkillNaIssueParaOAgenteQuePediu() throws Exception {
+        UUID companyId = novaCompany();
+        UUID executorId = contrataExecutor(companyId);
+        UUID issueId = issueService.create(companyId, "tarefa", null).getId();
+        String skillKey = "tdd-" + UUID.randomUUID();
+        Skill skill = skillGlobalDisponivel(skillKey); // AINDA não instalada nesta company
+
+        Approval pedido = approvals.propose(companyId, executorId, null, null, pedidoSkill(skillKey, issueId));
+
+        assertThat(companySkills.findByCompanyIdAndSkillId(companyId, skill.getId()))
+                .as("teto D7-like: nada instala enquanto PENDING").isEmpty();
+
+        approvals.decide(companyId, pedido.getId(), ApprovalDecision.APPROVE,
+                "o executor bateu na parede sem essa skill", null, ActorType.BOARD, UUID.randomUUID());
+
+        assertThat(companySkills.findByCompanyIdAndSkillId(companyId, skill.getId()))
+                .as("install-on-attach: AVAILABLE instalou na company").isPresent();
+        assertThat(skillSets.resolveForRun(companyId, executorId, issueId))
+                .as("a união efetiva do executor pra esta Issue já inclui a skill pedida")
+                .anySatisfy(version -> assertThat(version.getName()).isEqualTo(skillKey));
+    }
+
+    /** Elo vazio (skillKey some do catálogo entre o pedido e a decisão) → 409 acionável, PENDING intacta. */
+    @Test
+    void skillKeyDesconhecidoNoAproveE409EPropostaSeguePending() {
+        UUID companyId = novaCompany();
+        UUID executorId = contrataExecutor(companyId);
+        UUID issueId = issueService.create(companyId, "tarefa", null).getId();
+        Approval pedido = approvals.propose(companyId, executorId, null, null,
+                pedidoSkill("fantasma-" + UUID.randomUUID(), issueId));
+
+        assertThatThrownBy(() -> approvals.decide(companyId, pedido.getId(), ApprovalDecision.APPROVE,
+                "aprovado sem checar", null, ActorType.BOARD, UUID.randomUUID()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("catalogo global");
+        assertThat(approvalRepo.findById(pedido.getId()).orElseThrow().getStatus())
+                .isEqualTo(ApprovalStatus.PENDING);
     }
 }
