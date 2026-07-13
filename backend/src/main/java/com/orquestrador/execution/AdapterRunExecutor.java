@@ -7,6 +7,7 @@ import com.orquestrador.execution.adapter.WorkspaceConvention;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTargets;
 import com.orquestrador.execution.runtime.WorkspaceResolver;
+import com.orquestrador.governance.approval.SkillRequestGate;
 import com.orquestrador.governance.budget.BudgetService;
 import com.orquestrador.handoff.ContextHandoffLoop;
 import com.orquestrador.handoff.DistillationSkill;
@@ -69,6 +70,7 @@ public class AdapterRunExecutor implements RunExecutor {
     private final PreviewServerSupervisor previewServers;
     private final DistillationSkill distillationSkill;
     private final ContextHandoffLoop handoffLoop;
+    private final SkillRequestGate skillRequestGate;
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
@@ -78,7 +80,7 @@ public class AdapterRunExecutor implements RunExecutor {
                               CompanyMemoryMaterializer memoryMaterializer, PreviewArtifactCapturer previews,
                               PreviewServerManifestRegistrar serverManifests,
                               PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
-                              ContextHandoffLoop handoffLoop) {
+                              ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate) {
         this.agents = agents;
         this.issues = issues;
         this.workspaces = workspaces;
@@ -97,6 +99,7 @@ public class AdapterRunExecutor implements RunExecutor {
         this.previewServers = previewServers;
         this.distillationSkill = distillationSkill;
         this.handoffLoop = handoffLoop;
+        this.skillRequestGate = skillRequestGate;
     }
 
     @Override
@@ -205,7 +208,11 @@ public class AdapterRunExecutor implements RunExecutor {
                 : null;
         String command = agent.getRuntimeCommand();
         Map<String, String> env = Map.of();
-        RunFinalOutput replyCollector = null;
+        // F-AT1 (grill agente-como-tool): SEMPRE coletado (não só em turno) — o Run de Issue não
+        // tem saída "em forma de turno" (sem outputSchema), então o pedido-skill do executor é
+        // lido do MESMO texto reconstruído que já serve o reply de turno e o report-por-Issue
+        // (RunFinalOutput, a regra única do ADR-0010; ver IssueLedger). Custo é só memória.
+        RunFinalOutput replyCollector = new RunFinalOutput();
         if (turno != null) {
             // A carta corrente vira o memoryFile da convenção do adapter — .claude/CLAUDE.md no
             // Claude Code, AGENTS.md no codex (ADR-0018/0019/0032): memória durável pelo canal
@@ -229,7 +236,6 @@ public class AdapterRunExecutor implements RunExecutor {
             if (adapter.acceptsPromptAsCommand()) {
                 command = turno.prompt();
             }
-            replyCollector = new RunFinalOutput();
         }
 
         // Escritor de workspace (par do leitor F.9/ADR-0021): a arvore que os materializers
@@ -357,6 +363,14 @@ public class AdapterRunExecutor implements RunExecutor {
             // record() no-op ⟹ o handle anterior sobrevive (mesma semântica de retry, task #3).
             agentSessions.record(runContext.companyId(), runContext.agentId(), issueConversationId,
                     agent.getAdapterType(), result.session(), runContext.runId());
+        }
+
+        // F-AT1 (grill agente-como-tool, D6): o EXECUTOR de uma Issue (turno==null) pede skill fora
+        // do set pelo canal de SAÍDA — mesmo espírito do ```proposta``` do CEO, só que sobre o texto
+        // cru (sem outputSchema neste caminho). Só em SUCESSO (espelha entregarPropostasAoGate).
+        if (turno == null && runContext.issueId() != null && result.succeeded()) {
+            skillRequestGate.handle(runContext.companyId(), runContext.agentId(), runContext.issueId(),
+                    runContext.runId(), replyCollector.text());
         }
 
         if (!result.succeeded()) {

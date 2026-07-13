@@ -24,6 +24,10 @@ import com.orquestrador.org.roletemplate.TipoFuncao;
 import com.orquestrador.org.team.Team;
 import com.orquestrador.org.team.TeamRepository;
 import com.orquestrador.org.team.TeamService;
+import com.orquestrador.skills.IssueSkillAttachment;
+import com.orquestrador.skills.Skill;
+import com.orquestrador.skills.SkillRepository;
+import com.orquestrador.skills.SkillSetService;
 import com.orquestrador.work.issue.AbsorcaoDeIssueRouter;
 import com.orquestrador.work.issue.Issue;
 import com.orquestrador.work.issue.IssueService;
@@ -70,6 +74,8 @@ public class ApprovalService {
     private final TeamService teamService;
     private final AbsorcaoDeIssueRouter absorcoes;
     private final RoleTemplateService roleTemplates;
+    private final SkillRepository skills;
+    private final SkillSetService skillSets;
 
     public ApprovalService(ApprovalRepository approvals, RacionalPolicy racionalPolicy,
                            DecisionLog decisionLog, CompanyMemoryConsolidator consolidator,
@@ -77,7 +83,8 @@ public class ApprovalService {
                            IssueService issues, WakeupService wakeups,
                            SpawnLineageGuard lineageGuard, TeamRepository teams,
                            AgentRepository agents, TeamService teamService,
-                           AbsorcaoDeIssueRouter absorcoes, RoleTemplateService roleTemplates) {
+                           AbsorcaoDeIssueRouter absorcoes, RoleTemplateService roleTemplates,
+                           SkillRepository skills, SkillSetService skillSets) {
         this.approvals = approvals;
         this.racionalPolicy = racionalPolicy;
         this.decisionLog = decisionLog;
@@ -92,6 +99,8 @@ public class ApprovalService {
         this.teamService = teamService;
         this.absorcoes = absorcoes;
         this.roleTemplates = roleTemplates;
+        this.skills = skills;
+        this.skillSets = skillSets;
     }
 
     /**
@@ -115,7 +124,12 @@ public class ApprovalService {
         Approval approval = approvals.save(new Approval(UUID.randomUUID(), companyId, requestedByAgentId,
                 conversationId, runId, proposal.actionType(), proposal.targetDetailJson(), fingerprint,
                 area, proposal.resumo(), racionalPolicy.deriveTipo(area)));
-        activityLog.record(companyId, ActorType.AGENT, requestedByAgentId, ActivityAction.CEO_PROPOSED,
+        // F-AT1 (grill agente-como-tool): o pedido de skill do EXECUTOR não é uma proposta do CEO —
+        // audita sob o próprio nome (D5), mesmo passando pelo MESMO propose()/dedupe/fingerprint.
+        ActivityAction auditado = proposal.actionType() == ApprovalActionType.SKILL_INSTALL_REQUEST
+                ? ActivityAction.SKILL_INSTALL_REQUESTED
+                : ActivityAction.CEO_PROPOSED;
+        activityLog.record(companyId, ActorType.AGENT, requestedByAgentId, auditado,
                 "approval", approval.getId(), Map.of("runId", runId != null ? runId : ""));
         return approval;
     }
@@ -312,6 +326,23 @@ public class ApprovalService {
                         textOrNull(alvo, "changeDescription"),
                         approval.getRequestedByAgentId(), actorId);
                 detail.put("roleTemplateId", molde.getId());
+            }
+            case SKILL_INSTALL_REQUEST -> {
+                // F-AT1 (grill agente-como-tool, D2/D3): reuso PURO do install-on-attach (ADR-0003)
+                // — o AVAILABLE já instala do catálogo global na MESMA tx do attach. O agente que
+                // RECEBE é sempre quem PEDIU (requestedByAgentId), nunca o aprovador (ator≠alvo).
+                String skillKey = textOrNull(alvo, "skillKey");
+                UUID issueId = uuidOrNull(alvo, "issueId");
+                if (skillKey == null || issueId == null) {
+                    throw new ConflictException("Pedido de skill sem skillKey/issueId: " + approval.getId());
+                }
+                Skill skill = skills.findBySkillKey(skillKey)
+                        .orElseThrow(() -> new ConflictException("Skill '" + skillKey
+                                + "' nao existe mais no catalogo global — rejeite e peça reemissao: "
+                                + approval.getId()));
+                IssueSkillAttachment attachment = skillSets.attachToIssue(approval.getCompanyId(), issueId,
+                        approval.getRequestedByAgentId(), skill.getId(), actorType, actorId, approval.getRunId());
+                detail.put("issueSkillAttachmentId", attachment.getId());
             }
         }
     }

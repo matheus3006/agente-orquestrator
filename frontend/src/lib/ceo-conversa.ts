@@ -109,6 +109,7 @@ const VERBO_POR_ACAO: Record<Approval["actionType"], string> = {
   WAKEUP_AGENT: "Acordar agente",
   CREATE_TEAM: "Criar time",
   CREATE_ROLE_TEMPLATE: "Criar molde",
+  SKILL_INSTALL_REQUEST: "Pedir skill",
 };
 
 /** Parse fail-soft do targetDetail — espelha o ProposalScanner: quebrado nunca derruba a tela. */
@@ -156,6 +157,9 @@ export function acaoLegivel(approval: Approval): AcaoLegivel {
     case "CREATE_ROLE_TEMPLATE":
       // R10-A: o card mostra a role específica do preset proposto (o molde é GLOBAL).
       return { verbo, alvo: typeof alvo.roleEspecifica === "string" ? alvo.roleEspecifica : null };
+    case "SKILL_INSTALL_REQUEST":
+      // F-AT1: o card mostra a skill que o executor bateu na parede sem ter.
+      return { verbo, alvo: typeof alvo.skillKey === "string" ? alvo.skillKey : null };
   }
 }
 

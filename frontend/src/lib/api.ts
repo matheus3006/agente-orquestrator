@@ -996,12 +996,15 @@ export function listTurns(companyId: string, conversationId: string): Promise<Co
 
 // CREATE_TEAM (ADR-0037/D7): time + arquiteto atômico — o time do gate nasce com arquiteto.
 // CREATE_ROLE_TEMPLATE (R10-A): o CEO propõe um molde (preset de cargo GLOBAL) — o dono aprova.
+// SKILL_INSTALL_REQUEST (F-AT1, grill agente-como-tool): o EXECUTOR de uma Issue pede uma skill
+// fora do seu set — o APPROVE anexa via install-on-attach (ADR-0003).
 export type ApprovalActionType =
   | "HIRE_AGENT"
   | "CREATE_ISSUE"
   | "WAKEUP_AGENT"
   | "CREATE_TEAM"
-  | "CREATE_ROLE_TEMPLATE";
+  | "CREATE_ROLE_TEMPLATE"
+  | "SKILL_INSTALL_REQUEST";
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
 
