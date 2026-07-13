@@ -89,9 +89,11 @@ public class CodexAdapter implements AgentAdapter {
             return Result.fail("codex: falha ao gravar o schema de saída do turno: " + falhaAoGravar.getMessage());
         }
         // F-N6 (ADR-0042): hooks materializam em TODO run (junto das skills, HookMaterializer),
-        // então o bypass de trust é sempre necessário — nunca condicional aqui.
+        // então o bypass de trust é sempre necessário — nunca condicional aqui. F-AT2 (D2): o servidor
+        // MCP do KnowAll vira pares -c mcp_servers (nulo ⟹ run sem MCP, omitido — pré-F-AT2).
         List<String> argv = CodexArgv.build(context.command(), context.model(), context.effort(),
-                context.target().posture(), context.priorSession(), maxThreads, maxDepth, outputSchemaFile, true);
+                context.target().posture(), context.priorSession(), maxThreads, maxDepth, outputSchemaFile, true,
+                context.mcpServer());
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,

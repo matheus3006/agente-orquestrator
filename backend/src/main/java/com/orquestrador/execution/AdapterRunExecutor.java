@@ -3,6 +3,7 @@ package com.orquestrador.execution;
 import com.orquestrador.conversation.ConversationTurnCoordinator;
 import com.orquestrador.execution.adapter.AdapterRegistry;
 import com.orquestrador.execution.adapter.AgentAdapter;
+import com.orquestrador.execution.adapter.McpServerSpec;
 import com.orquestrador.execution.adapter.WorkspaceConvention;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTargets;
@@ -22,6 +23,10 @@ import com.orquestrador.skills.CompanySkillVersion;
 import com.orquestrador.skills.HookMaterializer;
 import com.orquestrador.skills.SkillMaterializer;
 import com.orquestrador.skills.SkillSetService;
+import com.orquestrador.skills.mcp.KnowAllMcpBridge;
+import com.orquestrador.skills.mcp.KnowAllMcpMaterializer;
+import com.orquestrador.skills.mcp.McpCallbackAddress;
+import com.orquestrador.skills.mcp.McpRunScope;
 import com.orquestrador.work.issue.CheckoutResult;
 import com.orquestrador.work.issue.IssueService;
 import org.springframework.stereotype.Component;
@@ -71,6 +76,9 @@ public class AdapterRunExecutor implements RunExecutor {
     private final DistillationSkill distillationSkill;
     private final ContextHandoffLoop handoffLoop;
     private final SkillRequestGate skillRequestGate;
+    private final KnowAllMcpMaterializer mcpMaterializer;
+    private final KnowAllMcpBridge mcpBridge;
+    private final McpCallbackAddress mcpAddress;
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
@@ -80,7 +88,9 @@ public class AdapterRunExecutor implements RunExecutor {
                               CompanyMemoryMaterializer memoryMaterializer, PreviewArtifactCapturer previews,
                               PreviewServerManifestRegistrar serverManifests,
                               PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
-                              ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate) {
+                              ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate,
+                              KnowAllMcpMaterializer mcpMaterializer, KnowAllMcpBridge mcpBridge,
+                              McpCallbackAddress mcpAddress) {
         this.agents = agents;
         this.issues = issues;
         this.workspaces = workspaces;
@@ -100,6 +110,9 @@ public class AdapterRunExecutor implements RunExecutor {
         this.distillationSkill = distillationSkill;
         this.handoffLoop = handoffLoop;
         this.skillRequestGate = skillRequestGate;
+        this.mcpMaterializer = mcpMaterializer;
+        this.mcpBridge = mcpBridge;
+        this.mcpAddress = mcpAddress;
     }
 
     @Override
@@ -297,10 +310,29 @@ public class AdapterRunExecutor implements RunExecutor {
         // F-N3 (ADR-0039, D2): o schema de saída estruturada só existe em run de TURNO de persona
         // migrada (o coordinator o construiu no claim); run de Issue e persona não migrada = null.
         String outputSchema = turno != null ? turno.outputSchema() : null;
+        // F-AT2 (grill agente-como-tool D2/D6): SÓ o run de EXECUTOR (turno==null && issueId!=null) em
+        // alvo LOCAL ganha o servidor MCP-stdio do KnowAll — personas FORA (D6), docker é v1.1 (D7). O
+        // baseUrl loopback vem do servidor web ligado; ausente (WebEnvironment.MOCK, ou docker) ⟹ sem
+        // MCP e o run segue normal (o caminho pré-F-AT2). O token efêmero liga o servidor ao bridge.
+        McpServerSpec mcpServer = null;
+        String mcpToken = null;
+        if (turno == null && runContext.issueId() != null
+                && target.type() == ExecutionTarget.Type.LOCAL && mcpAddress.baseUrl() != null) {
+            try {
+                mcpMaterializer.materialize(workDir);
+            } catch (RuntimeException exception) {
+                return RunOutcome.failure("falha ao materializar o servidor MCP do KnowAll: " + exception.getMessage());
+            }
+            mcpToken = mcpBridge.open(new McpRunScope(runContext.companyId(), runContext.agentId(),
+                    runContext.issueId(), runContext.runId()));
+            String scriptPath = workDir.resolve(KnowAllMcpMaterializer.SCRIPT_RELATIVE_PATH).toString();
+            mcpServer = new McpServerSpec(KnowAllMcpMaterializer.SERVER_NAME, "node",
+                    List.of(scriptPath, mcpAddress.baseUrl(), mcpToken));
+        }
         AgentAdapter.Context adapterContext = new AgentAdapter.Context(
                 runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(), workDir,
                 command, env, target, volumeName, priorSession,
-                agent.getModel(), agent.getEffort(), outputSchema);
+                agent.getModel(), agent.getEffort(), outputSchema, mcpServer);
 
         AgentAdapter.Result result;
         try {
@@ -320,7 +352,7 @@ public class AdapterRunExecutor implements RunExecutor {
                 AgentAdapter.Context fresh = new AgentAdapter.Context(
                         runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(),
                         workDir, command, env, target, volumeName, null, agent.getModel(), agent.getEffort(),
-                        outputSchema);
+                        outputSchema, mcpServer);
                 result = adapter.execute(fresh, buildSink(runContext.runId(), replyCollector));
             }
         } catch (Exception exception) {
@@ -328,6 +360,11 @@ public class AdapterRunExecutor implements RunExecutor {
                 turnCoordinator.settleFailed(turno.turnId());
             }
             return RunOutcome.failure("falha no adapter: " + exception.getMessage());
+        } finally {
+            // F-AT2: fecha a sessão MCP assim que o CLI (e o subprocesso MCP filho) terminou — o token
+            // vira inválido, nenhum callback tardio é servido (leitura efêmera, D5). Idempotente/no-op
+            // se nunca abriu (persona / docker / MOCK).
+            mcpBridge.close(mcpToken);
         }
 
         // Motor (ADR-0014/0006, Q7): roteia os tokens REAIS emitidos pelo adapter para o ledger com

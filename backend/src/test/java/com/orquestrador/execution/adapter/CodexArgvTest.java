@@ -3,6 +3,8 @@ package com.orquestrador.execution.adapter;
 import com.orquestrador.execution.runtime.ExecutionTarget.IsolationPosture;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -141,6 +143,40 @@ class CodexArgvTest {
         // "Sem teto" / "sem schema": os testes de gramática pura não precisam pensar em hooks.
         assertThat(CodexArgv.build("faça X", "gpt-5.5", "high", IsolationPosture.HOST))
                 .doesNotContain("--dangerously-bypass-hook-trust");
+    }
+
+    @Test
+    void mcpServerViraParDeCMcpServersAntesDoPrompt() {
+        // F-AT2 (grill agente-como-tool D2, laudo sonda MCP-consume R12-B): o servidor MCP do KnowAll
+        // vira pares -c GLOBAIS (command + args como array TOML de strings), agrupados antes do prompt.
+        McpServerSpec spec = new McpServerSpec("knowall", "node",
+                List.of("/x/server.js", "http://127.0.0.1:18081", "tok-123"));
+        List<String> argv = CodexArgv.build("faça X", "gpt-5.5", "high", IsolationPosture.HOST,
+                null, 0, 0, null, false, spec);
+        assertThat(argv).containsSubsequence(
+                "-c", "mcp_servers.knowall.command=\"node\"",
+                "-c", "mcp_servers.knowall.args=[\"/x/server.js\",\"http://127.0.0.1:18081\",\"tok-123\"]");
+        assertThat(argv.indexOf("mcp_servers.knowall.command=\"node\""))
+                .isLessThan(argv.indexOf("faça X"));
+    }
+
+    @Test
+    void semMcpServerOmiteOsPares() {
+        assertThat(CodexArgv.build("t", "gpt-5.5", "high", IsolationPosture.HOST, null, 0, 0, null, false, null))
+                .noneMatch(argument -> argument.startsWith("mcp_servers."));
+    }
+
+    @Test
+    void mcpServerConviveComTetoHooksEResumeAntesDoSubcomando() {
+        // Os pares -c do MCP são globais ⟹ antes do subcomando resume, junto do teto e do bypass de hook.
+        McpServerSpec spec = new McpServerSpec("knowall", "node",
+                List.of("/x/s.js", "http://127.0.0.1:18081", "tok"));
+        List<String> argv = CodexArgv.build("grave", "gpt-5.5", "high", IsolationPosture.HOST,
+                "sess-x", 6, 3, null, true, spec);
+        assertThat(argv).containsSubsequence(
+                "mcp_servers.knowall.command=\"node\"",
+                "mcp_servers.knowall.args=[\"/x/s.js\",\"http://127.0.0.1:18081\",\"tok\"]",
+                "--dangerously-bypass-hook-trust", "resume", "sess-x", "grave");
     }
 
     @Test

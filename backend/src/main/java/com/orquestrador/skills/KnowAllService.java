@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -20,10 +21,35 @@ public class KnowAllService {
 
     private final SkillSearch skillSearch;
     private final CompanySkillRepository companySkills;
+    private final SkillRepository skills;
+    private final SkillVersionRepository skillVersions;
 
-    public KnowAllService(SkillSearch skillSearch, CompanySkillRepository companySkills) {
+    public KnowAllService(SkillSearch skillSearch, CompanySkillRepository companySkills,
+                          SkillRepository skills, SkillVersionRepository skillVersions) {
         this.skillSearch = skillSearch;
         this.companySkills = companySkills;
+        this.skills = skills;
+        this.skillVersions = skillVersions;
+    }
+
+    /**
+     * Devolve o CORPO redigido (SKILL.md, Camada 1) da versão-base corrente de uma skill do catálogo
+     * GLOBAL pela {@code skillKey} (F-AT2, grill agente-como-tool D5) — a leitura síncrona que o
+     * servidor MCP do KnowAll expõe ao EXECUTOR para se autossuficientar mid-run. Read-only (o
+     * teto/dedup do #1 é enforcement do {@code KnowAllMcpBridge}, não desta leitura crua). {@code Optional
+     * .empty()} quando a chave não existe no catálogo ou não tem versão-base corrente — o servidor MCP
+     * traduz isso numa resposta "não encontrada", nunca num erro fatal do run (anti-silêncio).
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> fetchBody(String skillKey) {
+        if (skillKey == null || skillKey.isBlank()) {
+            return Optional.empty();
+        }
+        return skills.findBySkillKey(skillKey.strip())
+                .map(Skill::getCurrentVersionId)
+                .filter(Objects::nonNull)
+                .flatMap(skillVersions::findById)
+                .map(SkillVersion::getBody);
     }
 
     @Transactional(readOnly = true)

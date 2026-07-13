@@ -40,8 +40,14 @@ final class ClaudeArgv {
         return build(prompt, model, effort, priorSession, disallowedTools, null);
     }
 
+    /** Sem MCP: o caminho pré-F-AT2 e os testes de gramática pura anteriores ao servidor do KnowAll. */
     static List<String> build(String prompt, String model, String effort, String priorSession,
                               String disallowedTools, String outputSchema) {
+        return build(prompt, model, effort, priorSession, disallowedTools, outputSchema, null);
+    }
+
+    static List<String> build(String prompt, String model, String effort, String priorSession,
+                              String disallowedTools, String outputSchema, String mcpConfigFile) {
         List<String> argv = new ArrayList<>();
         argv.add("claude");
         argv.add("-p");
@@ -61,6 +67,17 @@ final class ClaudeArgv {
         // de seguranca e o CONTAINER (F.8/ADR-0016), nao o prompt do CLI.
         argv.add("--permission-mode");
         argv.add("bypassPermissions");
+        // F-AT2 (grill agente-como-tool D2, laudo sonda MCP-consume R12-B): o servidor MCP-stdio do
+        // KnowAll entra por --mcp-config <arquivo> (o adapter grava o JSON ad-hoc, com command+args
+        // do McpServerSpec). --strict-mcp-config ISOLA o run para enxergar SÓ este servidor, ignorando
+        // qualquer .mcp.json/conector do host (recomendação do laudo). Sob bypassPermissions a tool MCP
+        // não pede aprovação (assimetria com o codex, que exige readOnlyHint na própria tool). Vazio ⟹
+        // run sem MCP (persona/etapa não-migrada), omite as duas flags — o caminho pré-F-AT2.
+        if (isPresent(mcpConfigFile)) {
+            argv.add("--mcp-config");
+            argv.add(mcpConfigFile.trim());
+            argv.add("--strict-mcp-config");
+        }
         // D6 (ADR-0038): o teto de subagentes do claude. O aninhamento já é capado NATIVAMENTE em
         // profundidade 5 (laudo [C-3]); esta é a regra de PRODUTO que nega tools específicas por nome
         // (`Agent(...)`/`Task(...)`). Default vazio ⟹ só o cap nativo vale (a fatia não rebaixa a barra).

@@ -1,9 +1,13 @@
 package com.orquestrador.execution.adapter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -67,11 +71,19 @@ public class ClaudeCodeAdapter implements AgentAdapter {
             return Result.ok(context.priorSession());
         }
 
+        // F-AT2 (grill agente-como-tool D2): o servidor MCP do KnowAll vira um --mcp-config <arquivo>
+        // ad-hoc no .orq/ do workspace (cwd no LOCAL, v1). Nulo ⟹ run sem MCP, sem arquivo, sem flag.
+        String mcpConfigFile;
+        try {
+            mcpConfigFile = writeMcpConfigFile(context.workDir(), context.mcpServer());
+        } catch (IOException falhaAoGravar) {
+            return Result.fail("claude: falha ao gravar o config MCP do KnowAll: " + falhaAoGravar.getMessage());
+        }
         // F-N3 (ADR-0039, D2): a saída estruturada nativa entra INLINE (--json-schema); o JSON
         // validado do turno volta no campo `result` do stream (que o parser já captura). Nulo ⟹
         // turno não migrado, o argv omite a flag e a saída segue em prosa (o caminho pré-F-N3).
         List<String> argv = ClaudeArgv.build(context.command(), context.model(), context.effort(),
-                context.priorSession(), disallowedTools, context.outputSchema());
+                context.priorSession(), disallowedTools, context.outputSchema(), mcpConfigFile);
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),
                 argv,
@@ -122,6 +134,27 @@ public class ClaudeCodeAdapter implements AgentAdapter {
     /** Este run tentou religar uma sessão nativa (F-N2)? Só então o sinal de sessão perdida vale. */
     private static boolean resumed(Context context) {
         return context.priorSession() != null && !context.priorSession().isBlank();
+    }
+
+    private static final ObjectMapper MCP_JSON = new ObjectMapper();
+
+    /**
+     * Grava o config MCP do KnowAll em {@code .orq/mcp/claude-mcp.json} (formato {@code {"mcpServers":
+     * {"<name>":{"command":...,"args":[...]}}}}, mínimo confirmado na sonda R12-B — sem campo "type", o
+     * claude infere stdio pela presença de {@code command}) e devolve o caminho absoluto p/ o
+     * {@code --mcp-config}. O {@code .orq/} é protocolo do produto (fora do replace, ADR-0030/M6) e no
+     * LOCAL (v1) É o cwd. {@code mcpServer} nulo ⟹ devolve null: nenhum arquivo, nenhuma flag.
+     */
+    private static String writeMcpConfigFile(Path workDir, McpServerSpec mcpServer) throws IOException {
+        if (mcpServer == null) {
+            return null;
+        }
+        Map<String, Object> config = Map.of("mcpServers", Map.of(mcpServer.name(),
+                Map.of("command", mcpServer.command(), "args", mcpServer.args())));
+        Path configFile = workDir.resolve(".orq").resolve("mcp").resolve("claude-mcp.json");
+        Files.createDirectories(configFile.getParent());
+        Files.writeString(configFile, MCP_JSON.writeValueAsString(config));
+        return configFile.toString();
     }
 
     /** Preserva o env do executor (ORQ_PROMPT) e soma o setup-token quando configurado. */

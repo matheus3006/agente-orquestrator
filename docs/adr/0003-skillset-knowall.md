@@ -58,3 +58,35 @@ O diferencial central do produto é resolver a poluição de contexto: cada Agen
 - **O que ainda é FUTURO:** a **(ii)** — KnowAll body inline pro agente NA HORA (leitura síncrona via
   MCP-stdio) — segue **fora do v1** até a sonda MCP-consume confirmar o transporte (F-AT2, fatia própria).
 - Ver `docs/handoff-grilling-agente-como-tool.md` (D1–D6) e ADR-0006 (o gate ganha seu 1º consumidor real).
+
+## Revisão 2026-07-13 (F-AT2, grill agente-como-tool)
+- **O caveat "estado-alvo FUTURO" se ENCERRA também para a metade (ii) — o body inline síncrono.** A
+  revisão anterior deixou pendente: *"a (ii) segue fora do v1 até a sonda MCP-consume confirmar o
+  transporte"*. A sonda (R12-B, `docs/laudo-sonda-mcp-consume.md`) deu **PASS nos 2 motores** e a
+  **(ii)-LOCAL entrou no v1** (D3 revisada pelo dono): o **EXECUTOR** de uma Issue busca o **corpo** de
+  uma skill fora do seu set **NA HORA, mid-run**, e **termina a task no MESMO run** — a autossuficiência
+  mid-task que é o norte (não "operador anexa → próximo run"). Os dois caminhos CONVIVEM: o `fetch_body`
+  é **leitura efêmera** livre; o **attach persistente** continua sendo o caminho da (i)/F-AT1.
+- **Transporte (D2):** um **servidor MCP-stdio do KnowAll** (subprocesso do CLI, script Node único
+  materializado por-run em `.orq/mcp/knowall-server.js`), com a **identidade do produto** — tools
+  `knowall_search` + `knowall_fetch_body`, ambas `readOnlyHint:true` (requisito do gate próprio do codex
+  no headless, laudo). O servidor faz **callback loopback** pro core com um **token efêmero por-run**
+  (NÃO credencial de agente) no header `X-Orq-Mcp-Token`; o `KnowAllMcpBridge` resolve token→escopo do
+  run. **Nenhuma credencial no `env` do agente** (`env=Map.of()` intacto, #3), **nenhum endpoint ator-
+  AGENT** — a rota `/internal/mcp/**` é interna/loopback, mediada pelo produto, e **NÃO** a superfície
+  `REST agente→core` (credencial + rota + endpoint ator AGENT) que a 7c rejeitou. Endurecer o bind a
+  loopback + a fronteira do container = **(ii)-docker, v1.1, D7**.
+- **Teto do #1 (D4), enforcement de PRIMEIRA CLASSE (aqui NÃO há clique do dono):** o `KnowAllMcpBridge`
+  capa **3 corpos DISTINTOS por run** + **dedup por skill** (mesmo corpo 2× = 1 leitura, não consome o
+  teto); estourou → `fetch_body` **recusa COM MOTIVO** (evento `SKILL_BODY_FETCH_REFUSED`), **não-fatal**
+  — volta como resposta da tool e o agente **segue com o que tem**. Mais apertado que o cap de PEDIDOS da
+  (i) (5, higiene de fila com gate) porque o corpo cai **DIRETO no contexto** sem clique — é o cinto
+  literal do #1 (re-poluição). Mesmo espírito do 6/3: um número pequeno, embutido, provado por teste.
+- **Auditoria (D5):** `SKILL_BODY_FETCHED` (rastro leve) — a (ii) é leitura efêmera (o attach persistente
+  é da (i)). **Zero migração** (o servidor MCP é código novo; V29 livre) e **sem ADR nova** (dentro de
+  "campo→rota"; ADR-0043 livre).
+- **O que ainda é FUTURO:** a **(ii)-docker** (canal MCP alcançável do container, sequenciado com o D7) e
+  a **(iii)** (expor agente DURÁVEL como tool) — épicos v1.1 próprios; persona-self-fetch idem (D6, só com
+  demanda de domínio).
+- Ver `docs/handoff-grilling-agente-como-tool.md` (§3 F-AT2, §5) e `docs/laudo-sonda-mcp-consume.md`
+  (gramática exata por motor + o requisito `readOnlyHint`).
