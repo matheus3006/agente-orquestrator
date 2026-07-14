@@ -1,5 +1,8 @@
 package com.orquestrador.memory;
 
+import com.orquestrador.common.error.ConflictException;
+import com.orquestrador.common.error.NotFoundException;
+import com.orquestrador.identity.company.CompanyRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +16,8 @@ import java.util.UUID;
  * O Decision-log (ADR-0019): a escrita única das Decisões (o gate é a FÁBRICA, D5) + o "Log de
  * Decisões filtrável" (data/área/tipo). Invariante de PRESENÇA (D6): não existe Decisão sem
  * racional — o grill acontece no gate (ADR-0020); aqui é o backstop que nenhum caller pode pular.
+ * O endereço humano {@code #N} (C4, clone da ADR-0033) nasce AQUI, no chokepoint único: MAX+1
+ * serializado no lock da linha da company — denso, imutável, nunca reusado; a unique é backstop.
  *
  * <p>O filtro roda em memória sobre o log da company (ordenado mais-recente-primeiro): Decisões
  * têm o volume de GATES, não de runs — se um dia virar fleet, o índice
@@ -22,9 +27,11 @@ import java.util.UUID;
 public class DecisionLog {
 
     private final DecisionRepository decisions;
+    private final CompanyRepository companies;
 
-    public DecisionLog(DecisionRepository decisions) {
+    public DecisionLog(DecisionRepository decisions, CompanyRepository companies) {
         this.decisions = decisions;
+        this.companies = companies;
     }
 
     @Transactional
@@ -33,7 +40,23 @@ public class DecisionLog {
             throw new IllegalArgumentException(
                     "Decisao sem racional nao existe (ADR-0019/D6 — regime de presenca)");
         }
-        return decisions.save(decision);
+        companies.findByIdForUpdate(decision.getCompanyId())
+                .orElseThrow(() -> new NotFoundException(
+                        "Company nao encontrada: " + decision.getCompanyId()));
+        return decisions.save(decision.enderecada(decisions.maxSeqByCompany(decision.getCompanyId()) + 1));
+    }
+
+    /**
+     * Resolve o endereço humano {@code #N} (C4) pro id de máquina — a perna de escrita do D11:
+     * o CEO cita "#7", o dono sela, o link entra como UUID. {@code #N} inexistente NESTA company
+     * → 409 acionável (endereço citado errado se conserta re-emitindo, nunca meio-commitando).
+     */
+    @Transactional(readOnly = true)
+    public UUID idDoEndereco(UUID companyId, int seq) {
+        return decisions.findByCompanyIdAndSeq(companyId, seq)
+                .map(Decision::getId)
+                .orElseThrow(() -> new ConflictException("Decisao #" + seq
+                        + " nao existe nesta company — confira o endereco citado"));
     }
 
     @Transactional(readOnly = true)

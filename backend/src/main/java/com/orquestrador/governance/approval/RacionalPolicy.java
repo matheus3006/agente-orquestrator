@@ -76,6 +76,20 @@ public class RacionalPolicy {
                 + "O que voce notou que o agente nao viu?";
     }
 
+    /**
+     * C14 (triviabilidade = silêncio-após-perguntado): a pergunta NÃO-bloqueante do approve na
+     * review — "perguntar sempre, bloquear nunca" (D6, as duas metades). A política é dona das
+     * PALAVRAS; a UI é dona do MOMENTO. No criativo é a própria maiêutica (D10); no não-criativo
+     * pesca o "risco aceito-sem-mudar" (D5) — o registro que evapora primeiro por inércia.
+     * Pulou a pergunta → sem Decisão (a regra mora na {@code GateDecisionFactory}).
+     */
+    public String reviewProbe(RacionalTipo tipo) {
+        return tipo == RacionalTipo.INTUICAO
+                ? maieuticProbe()
+                : "Alguma ressalva ou risco que valha registrar? (nao bloqueia o approve; "
+                        + "sem resposta, nada vira memoria)";
+    }
+
     private static String normalize(String text) {
         String lower = (text == null ? "" : text).toLowerCase(Locale.ROOT);
         return Normalizer.normalize(lower, Normalizer.Form.NFD).replaceAll("\\p{M}", "");

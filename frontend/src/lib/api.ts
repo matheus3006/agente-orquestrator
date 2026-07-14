@@ -715,6 +715,12 @@ export interface ReviewSummary {
   decisionReason: string | null;
   requestedAt: string;
   decidedAt: string | null;
+  /** F-C1 (C11/C14): a área do ARTEFATO (time do assignee) — null se a issue sumiu (degrada). */
+  area: string | null;
+  /** LOGICO | INTUICAO, derivado da área (D9) — decide as palavras da pergunta. */
+  racionalTipo: string | null;
+  /** A pergunta NÃO-bloqueante do approve, nas palavras da POLÍTICA (a UI é dona do momento). */
+  racionalProbe: string | null;
 }
 
 /** Fila por status (default PENDING no server), ordem de CHEGADA (requestedAt asc). */
@@ -726,11 +732,15 @@ export type ReviewDecision = "APPROVE" | "REJECT";
 
 // A decisão é SEMPRE ancorada no reviewId do card (R.3): âncora ≠ ciclo aberto →
 // 409 no server (decisão stale não aprova ciclo novo). Devolve a issue já no
-// estado final (DONE no APPROVE, BLOCKED no REJECT).
+// estado final (DONE no APPROVE, BLOCKED no REJECT). reason é o racional da
+// Decisão fabricada (F-C1/C14): obrigatório no REJECT; opcional no APPROVE —
+// em silêncio commita sem fabricar memória. supersedesSeq (D11): o #N citado
+// que esta decisão supersede.
 export interface ReviewDecisionInput {
   decision: ReviewDecision;
   reason?: string;
   reviewId: string;
+  supersedesSeq?: number;
 }
 
 export function decideReview(
@@ -1055,6 +1065,9 @@ export type ApprovalDecisionInput = {
   adapterType?: string;
   model?: string;
   effort?: string;
+  // F-C1 (D11): o #N citado pelo CEO que esta decisão supersede — o dono sela;
+  // a carta se auto-cura. #N fantasma → 409 (a Approval segue PENDING).
+  supersedesSeq?: number;
 };
 
 // O espelho do DecideOutcome selado do backend: o 422 do grill NÃO é falha —

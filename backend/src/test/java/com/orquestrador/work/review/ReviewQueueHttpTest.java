@@ -104,6 +104,35 @@ class ReviewQueueHttpTest {
                 .andExpect(status().isBadRequest());
     }
 
+    /**
+     * F-C1 (C14): o card da fila carrega ÁREA do artefato + tipo derivado + o {@code racionalProbe}
+     * — a pergunta não-bloqueante do approve nas palavras da POLÍTICA (a UI só escolhe o momento).
+     */
+    @Test
+    void cardDaFilaCarregaAreaEProbeNasPalavrasDaPolitica() throws Exception {
+        UUID board = UUID.randomUUID();
+        String slug = "co-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID companyId = idFrom(mvc.perform(post("/api/companies")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"A\",\"role\":\"worker\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        parkForReview(companyId, agentId, board);
+
+        JsonNode card = om.readTree(mvc.perform(get("/api/companies/" + companyId + "/reviews")
+                        .header("X-Board-User", board.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get(0);
+
+        assertThat(card.get("area").asText()).isEqualTo("operacao"); // agente sem time → fallback
+        assertThat(card.get("racionalTipo").asText()).isEqualTo("LOGICO");
+        assertThat(card.get("racionalProbe").asText()).contains("ressalva"); // as palavras da política
+    }
+
     private UUID parkForReview(UUID companyId, UUID agentId, UUID board) throws Exception {
         UUID issueId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/issues")
                         .header("X-Board-User", board.toString())

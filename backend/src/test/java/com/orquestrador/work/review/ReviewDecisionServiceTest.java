@@ -3,6 +3,7 @@ package com.orquestrador.work.review;
 import com.orquestrador.activitylog.ActivityAction;
 import com.orquestrador.activitylog.ActivityLog;
 import com.orquestrador.activitylog.ActivityLogRepository;
+import com.orquestrador.common.error.BadRequestException;
 import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.HeartbeatDispatcher;
@@ -12,8 +13,14 @@ import com.orquestrador.execution.RunOutcome;
 import com.orquestrador.execution.RunStatus;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.identity.company.CompanyService;
+import com.orquestrador.memory.Decision;
+import com.orquestrador.memory.DecisionOrigem;
+import com.orquestrador.memory.DecisionRepository;
+import com.orquestrador.memory.RacionalTipo;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.team.Team;
+import com.orquestrador.org.team.TeamRepository;
 import com.orquestrador.work.issue.IssueService;
 import com.orquestrador.work.issue.IssueStatus;
 import com.orquestrador.work.issue.UnblockDecision;
@@ -54,6 +61,10 @@ class ReviewDecisionServiceTest {
     private WakeupService wakeups;
     @Autowired
     private HeartbeatDispatcher dispatcher;
+    @Autowired
+    private DecisionRepository decisions;
+    @Autowired
+    private TeamRepository teams;
 
     private UUID newCompany() {
         return companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8), UUID.randomUUID()).getId();
@@ -125,6 +136,140 @@ class ReviewDecisionServiceTest {
         assertThat(events).hasSize(1);
         // Regra PII (ADR-0009): o texto do motivo NUNCA aparece no evento.
         assertThat(events.get(0).getDetail()).doesNotContain("rollback");
+    }
+
+    /** Um agente DENTRO de um time (dominio = a área do artefato que ele entrega, C11). */
+    private UUID newAgentInTeam(UUID companyId, String dominio) {
+        Team time = teams.save(new Team(UUID.randomUUID(), companyId, dominio, "foco"));
+        Agent agent = new Agent(UUID.randomUUID(), companyId, "A", "worker", null);
+        agent.configureRuntime("process", "echo ok", "LOCAL");
+        agent.assignTeam(time.getId());
+        return agents.save(agent).getId();
+    }
+
+    /**
+     * F-C1 (C11 — writer D5 ACESO): a review é fábrica de Decisões. APPROVE com racional →
+     * Decisão ancorada no ciclo ({@code review_id} deixa de ser sempre-NULL) com a ÁREA DO
+     * ARTEFATO (o time do assignee) — nunca um default fixo, senão todo review vira LOGICO
+     * e a maiêutica (D10) continua morta.
+     */
+    @Test
+    void approveComRacionalFabricaDecisaoAncoradaNaReviewComAreaDaIssue() {
+        UUID companyId = newCompany();
+        UUID issueId = parkForReview(companyId, newAgentInTeam(companyId, "growth"));
+
+        issues.review(companyId, issueId, ReviewDecision.APPROVE,
+                "entrega ok; risco aceito: sem teste de carga ainda", null,
+                ActorType.BOARD, UUID.randomUUID());
+
+        Review decided = singleReview(companyId, issueId);
+        List<Decision> log = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId);
+        assertThat(log).hasSize(1);
+        Decision decisao = log.get(0);
+        assertThat(decisao.getReviewId()).as("a coluna morta da V18 acorda").isEqualTo(decided.getId());
+        assertThat(decisao.getIssueId()).isEqualTo(issueId);
+        assertThat(decisao.getArea()).as("área do ARTEFATO = time do assignee (C11)").isEqualTo("growth");
+        assertThat(decisao.getOrigem()).isEqualTo(DecisionOrigem.DONO_NO_GATE);
+        assertThat(decisao.getRacional()).contains("risco aceito");
+        assertThat(decisao.getOQueMudou()).contains("#1"); // aponta o artefato pelo endereço humano
+    }
+
+    /**
+     * F-C1 (C14 — triviabilidade = silêncio-após-perguntado): approve EM SILÊNCIO commita e a
+     * HISTÓRIA fica ({@code REVIEW_APPROVED} no activity_log), mas memória durável NÃO nasce do
+     * nada — zero Decision. Não-gameável: quem não diz nada não ganha memória.
+     */
+    @Test
+    void approveEmSilencioCommitaSemFabricarDecisao() {
+        UUID companyId = newCompany();
+        UUID issueId = parkForReview(companyId, newAgentInTeam(companyId, "growth"));
+
+        issues.review(companyId, issueId, ReviewDecision.APPROVE, null, null,
+                ActorType.BOARD, UUID.randomUUID());
+
+        assertThat(issues.get(companyId, issueId).getStatus()).isEqualTo(IssueStatus.DONE);
+        assertThat(entriesOf(companyId, ActivityAction.REVIEW_APPROVED)).hasSize(1);
+        assertThat(decisions.findByCompanyIdOrderByDecidedAtDesc(companyId))
+                .as("memória durável não nasce do nada").isEmpty();
+    }
+
+    /**
+     * F-C1 (C13 — achado do grill): a review é onde o dono julga ARTEFATO, e artefato é onde
+     * mora o gosto — time criativo → INTUICAO → a maiêutica (D10) dispara pela 1ª vez, como
+     * evidência da Decisão (acompanha, nunca bloqueia).
+     */
+    @Test
+    void reviewDeArtefatoCriativoDisparaAMaieutica() {
+        UUID companyId = newCompany();
+        UUID issueId = parkForReview(companyId, newAgentInTeam(companyId, "design"));
+
+        issues.review(companyId, issueId, ReviewDecision.APPROVE, "me agradou o tom leve da home",
+                null, ActorType.BOARD, UUID.randomUUID());
+
+        Decision decisao = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).get(0);
+        assertThat(decisao.getRacionalTipo()).isEqualTo(RacionalTipo.INTUICAO); // derivada da área (D9)
+        assertThat(decisao.getEvidencia()).as("D10 vivo pela 1ª vez").contains("maieutico");
+    }
+
+    /** F-C1 (C14): REJECT bloqueia SEM motivo — o motivo é a Decisão do registro; nada muda sem ele. */
+    @Test
+    void rejectSemMotivoEBloqueadoAntesDeQualquerEfeito() {
+        UUID companyId = newCompany();
+        UUID issueId = parkForReview(companyId, newAgent(companyId));
+
+        assertThatThrownBy(() -> issues.review(companyId, issueId, ReviewDecision.REJECT, "  ", null,
+                ActorType.BOARD, UUID.randomUUID()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("motivo");
+
+        assertThat(issues.get(companyId, issueId).getStatus())
+                .as("nenhum efeito: segue estacionada").isEqualTo(IssueStatus.PENDING_REVIEW);
+        assertThat(singleReview(companyId, issueId).getStatus()).isEqualTo(ReviewStatus.PENDING);
+        assertThat(decisions.findByCompanyIdOrderByDecidedAtDesc(companyId)).isEmpty();
+    }
+
+    /** F-C1 (C11): REJECT com motivo fabrica a Decisão — problema apontado vira registro datado (D5). */
+    @Test
+    void rejectComMotivoFabricaDecisao() {
+        UUID companyId = newCompany();
+        UUID issueId = parkForReview(companyId, newAgentInTeam(companyId, "growth"));
+
+        issues.review(companyId, issueId, ReviewDecision.REJECT, "faltou validar o rollback", null,
+                ActorType.BOARD, UUID.randomUUID());
+
+        List<Decision> log = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId);
+        assertThat(log).hasSize(1);
+        assertThat(log.get(0).getRacional()).isEqualTo("faltou validar o rollback");
+        assertThat(log.get(0).getReviewId()).isNotNull();
+    }
+
+    /**
+     * F-C1 (C12 — writer D11 na porta pós-hoc): o dono sela o supersede citado também na review;
+     * endereço fantasma → 409 acionável, decisão não commitada.
+     */
+    @Test
+    void reviewSelaSupersedeCitadoEEnderecoFantasmaE409() {
+        UUID companyId = newCompany();
+        UUID agenteGrowth = newAgentInTeam(companyId, "growth");
+        UUID primeira = parkForReview(companyId, agenteGrowth);
+        issues.review(companyId, primeira, ReviewDecision.APPROVE, "risco aceito: sem cache", null,
+                ActorType.BOARD, UUID.randomUUID());
+        Decision alvo = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).get(0);
+
+        UUID segunda = parkForReview(companyId, agenteGrowth);
+        assertThatThrownBy(() -> issues.review(companyId, segunda, ReviewDecision.APPROVE,
+                "agora com cache", null, ActorType.BOARD, UUID.randomUUID(), 99))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("#99");
+        assertThat(issues.get(companyId, segunda).getStatus())
+                .as("409 antes de qualquer efeito").isEqualTo(IssueStatus.PENDING_REVIEW);
+
+        issues.review(companyId, segunda, ReviewDecision.APPROVE,
+                "agora com cache — a ressalva anterior caiu", null,
+                ActorType.BOARD, UUID.randomUUID(), alvo.getSeq());
+        Decision nova = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).stream()
+                .filter(decision -> decision.getSupersedesId() != null).findFirst().orElseThrow();
+        assertThat(nova.getSupersedesId()).isEqualTo(alvo.getId());
     }
 
     @Test

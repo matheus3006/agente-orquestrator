@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -23,7 +24,8 @@ import java.util.UUID;
  * no Postgres (não em company_memory — a carta é PROJEÇÃO sobre estas linhas, tier acima).
  */
 @Entity
-@Table(name = "decision")
+@Table(name = "decision", uniqueConstraints =
+        @UniqueConstraint(name = "uq_decision_company_seq", columnNames = {"company_id", "seq"}))
 public class Decision {
 
     @Id
@@ -31,6 +33,17 @@ public class Decision {
 
     @Column(name = "company_id", nullable = false)
     private UUID companyId;
+
+    // O endereço humano #N (C4, clone da ADR-0033): denso por company, imutável, começa em 1.
+    // Alocado em DecisionLog.record sob o lock da linha da company; a unique é backstop.
+    @Column(nullable = false)
+    private int seq;
+
+    // O eixo do ALCANCE (C3): ortogonal ao tipo (ASSUNTO). Todo writer de F-C1 grava DECISAO;
+    // PRINCIPIO entra junto do ritual de graduação (F-C2).
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DecisionGrau grau = DecisionGrau.DECISAO;
 
     @Column(name = "decided_at", nullable = false)
     private Instant decidedAt = Instant.now();
@@ -108,6 +121,27 @@ public class Decision {
         return this;
     }
 
+    /** O eixo do ALCANCE vindo da PORTA (C3) — nunca julgado, sempre derivado de quem fabrica. */
+    public Decision comGrau(DecisionGrau grau) {
+        this.grau = grau;
+        return this;
+    }
+
+    /**
+     * A linhagem D11: esta Decisão SUPERSEDE a apontada (revisar = nova Decisão, nunca UPDATE).
+     * O leitor da carta já filtra as supersedidas — apontar aqui as tira da projeção sozinho.
+     */
+    public Decision superseding(UUID supersedesId) {
+        this.supersedesId = supersedesId;
+        return this;
+    }
+
+    /** O endereço #N — chamado UMA vez, pelo chokepoint {@code DecisionLog.record} (C4). */
+    Decision enderecada(int seq) {
+        this.seq = seq;
+        return this;
+    }
+
     public Decision withEvidencia(String evidencia) {
         this.evidencia = evidencia;
         return this;
@@ -119,6 +153,14 @@ public class Decision {
 
     public UUID getCompanyId() {
         return companyId;
+    }
+
+    public int getSeq() {
+        return seq;
+    }
+
+    public DecisionGrau getGrau() {
+        return grau;
     }
 
     public Instant getDecidedAt() {

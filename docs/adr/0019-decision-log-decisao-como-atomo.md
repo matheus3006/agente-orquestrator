@@ -79,8 +79,9 @@ agente). É o `CompanyMemoryConsolidator` do ADR-0018.
 
 ## Nota de reconciliação (2026-07-10 — divergências MÉDIAS D5/D11 da auditoria doc×código de 2026-07-07)
 
-**Status: RESIDUAL ABERTO — decisão do Matheus (H) pendente.** Esta nota REGISTRA os seams
-mortos; não decide o destino deles ("puxar fatia para ligar" × "aceitar como está").
+**Status: FECHADA (2026-07-14, F-C1 — os dois writers ACESOS; ver Revisão abaixo).** Decisão do
+grill da Frente C (C11/C12): "puxar fatia para ligar" venceu — os seams mortos registrados aqui
+eram exatamente a doença que a frente curou. Texto original preservado como história:
 
 - **D5 — a passagem pela review NÃO fabrica Decision.** Das duas portas do gate, só a
   `approval` emite: `ApprovalService.decide → recordGateDecision`. A `review` (ADR-0012),
@@ -95,6 +96,39 @@ mortos; não decide o destino deles ("puxar fatia para ligar" × "aceitar como e
 
 Nos dois casos o desenho acima segue válido como intenção; o que falta é o elo de escrita.
 Inventário: `docs/roadmap-interno.md §Divergências`.
+
+## Revisão 2026-07-14 (F-C1 "o átomo completo" — grill da Frente C, C3/C4/C11/C12/C15)
+
+> Detalhe/porquê (alternativas rejeitadas inclusas): `docs/handoff-grilling-frente-c-memoria.md`.
+
+- **O schema do D4 ganha DOIS eixos novos (V29 — a única migração da Frente C inteira):**
+  - **`seq` — o endereço humano `#N` (C4), clone exato do V23/ADR-0033:** por company, denso,
+    imutável, nunca reusado; alocado MAX+1 no chokepoint único (`DecisionLog.record`) sob o lock
+    da linha da company. Era a **perna 1 do método de findability que não existia no código**:
+    sem endereço estável, o D11 é impossível (o CEO não cita o que supersede), o `memory_fetch`
+    (F-C3) não tem chave e a linhagem de um princípio não tem o que citar. O `render()` da carta
+    passa a emitir o `#N` (`"- #7 [data] (área) o_que_mudou — …"`). *Rejeitado:* UUID como
+    endereço citável (36 chars = convite a alucinação; a casa já escolheu `#N`).
+  - **`grau: DECISAO | PRINCIPIO` — o eixo do ALCANCE (C3), ortogonal ao `tipo` (ASSUNTO):**
+    resolve *um* caso × governa *casos futuros*. `grau` é derivado da PORTA, `tipo` da ÁREA —
+    nenhum é julgado (D9 se estende de graça). *Rejeitados:* `tipo=PRINCIPIO` (erro de categoria
+    — o Log filtrável passaria a MENTIR: `?tipo=TECNICA` perderia todo princípio técnico) e
+    tabela `principle` própria (dois espaços de endereço; trai o D4). O valor `PRINCIPIO` entra
+    JUNTO do writer de graduação (F-C2) — enum com o consumidor, nunca antes.
+- **D5 FECHADO — a review é fábrica de Decisões (C11):** `IssueService.review` fabrica;
+  `Decision.anchoredToReview` ganhou caller; `review_id` (V18, sempre-NULL desde que nasceu)
+  acordou. **Requisito duro cumprido:** a `area` vem do ARTEFATO (o time do assignee) — nunca
+  default fixo, senão todo review viraria LOGICO e o D10 continuaria morto. O regime do racional
+  nesta porta é o C14 (triviabilidade — ver ADR-0020, Revisão 2026-07-14).
+- **D11 FECHADO — `supersedes` ganhou caminho de escrita nas DUAS portas (C12):** `supersedesSeq`
+  opcional no decide (approval) e na review — o CEO propõe citando o `#N`, o dono sela; o leitor
+  já filtrava supersedidas → a carta se **auto-cura** na hora. Zero migração (a coluna existia).
+- **A fábrica é ÚNICA e extraída (C15):** o `recordGateDecision` (privado do `ApprovalService`)
+  virou `memory/GateDecisionFactory.fabricate(GatePassage)` — módulo profundo colado no
+  `DecisionLog.record`; as portas são adapters finos (approval + review hoje; caso B amanhã).
+  Moram DENTRO da fábrica: a regra C14 "sem substância → sem Decisão", a maiêutica D10 como
+  evidência e a consolidação da carta na MESMA tx. *Rejeitado:* espelhar a fábrica no
+  `IssueService` (duas fábricas = o drift que criou os seams mortos que esta frente curou).
 
 ## Relaciona
 `docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D1–D12, schema, findability); ADR-0018 (carta/

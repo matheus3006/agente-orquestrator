@@ -2,12 +2,24 @@ package com.orquestrador.work.issue;
 
 import com.orquestrador.activitylog.ActivityAction;
 import com.orquestrador.activitylog.ActivityLogService;
+import com.orquestrador.common.error.BadRequestException;
 import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.governance.approval.RacionalPolicy;
 import com.orquestrador.identity.company.CompanyRepository;
 import com.orquestrador.execution.RunOutcome;
+import com.orquestrador.memory.DecisionGrau;
+import com.orquestrador.memory.DecisionLog;
+import com.orquestrador.memory.DecisionOrigem;
+import com.orquestrador.memory.GateDecisionFactory;
+import com.orquestrador.memory.GateDecisionFactory.Anchor;
+import com.orquestrador.memory.GateDecisionFactory.GatePassage;
+import com.orquestrador.org.agent.Agent;
+import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.team.Team;
+import com.orquestrador.org.team.TeamRepository;
 import com.orquestrador.work.review.Review;
 import com.orquestrador.work.review.ReviewDecision;
 import com.orquestrador.work.review.ReviewRepository;
@@ -18,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -28,10 +41,17 @@ public class IssueService {
     private final ReviewRepository reviews;
     private final HeartbeatRunRepository heartbeatRuns;
     private final ActivityLogService activityLog;
+    private final AgentRepository agents;
+    private final TeamRepository teams;
+    private final RacionalPolicy racionalPolicy;
+    private final GateDecisionFactory gateDecisions;
+    private final DecisionLog decisionLog;
     private final int reviewRiskThreshold;
 
     public IssueService(IssueRepository issues, CompanyRepository companies, ReviewRepository reviews,
                         HeartbeatRunRepository heartbeatRuns, ActivityLogService activityLog,
+                        AgentRepository agents, TeamRepository teams, RacionalPolicy racionalPolicy,
+                        GateDecisionFactory gateDecisions, DecisionLog decisionLog,
                         @Value("${orquestrador.review.risk-threshold:5}") int reviewRiskThreshold) {
         // Fora da escala 1-5 o gate desligaria SILENCIOSAMENTE (limiar 6 nunca é atingível) —
         // fail-open de mecanismo de segurança. Melhor derrubar o boot com mensagem clara.
@@ -45,6 +65,11 @@ public class IssueService {
         this.reviews = reviews;
         this.heartbeatRuns = heartbeatRuns;
         this.activityLog = activityLog;
+        this.agents = agents;
+        this.teams = teams;
+        this.racionalPolicy = racionalPolicy;
+        this.gateDecisions = gateDecisions;
+        this.decisionLog = decisionLog;
         this.reviewRiskThreshold = reviewRiskThreshold;
     }
 
@@ -206,6 +231,30 @@ public class IssueService {
     @Transactional
     public void review(UUID companyId, UUID issueId, ReviewDecision decision, String reason,
                        UUID expectedReviewId, ActorType actorType, UUID actorId) {
+        review(companyId, issueId, decision, reason, expectedReviewId, actorType, actorId, null);
+    }
+
+    /**
+     * A review é FÁBRICA DE DECISÕES (F-C1 — writer D5 aceso, ADR-0019 emendada): o commit do
+     * dono nesta porta também fabrica o átomo de memória, pela fábrica única (C15). O regime é
+     * o C14 ("perguntar sempre, bloquear nunca"): REJECT exige motivo (bloqueia sem ele — o
+     * motivo É a Decisão); APPROVE com racional fabrica; APPROVE em silêncio commita e fica SÓ
+     * o {@code REVIEW_APPROVED} no activity_log — memória durável não nasce do nada (a regra
+     * "sem substância → sem Decisão" mora na fábrica). A pergunta não-bloqueante é da UI
+     * (momento) com as palavras da política ({@code RacionalPolicy.reviewProbe}).
+     *
+     * <p>{@code supersedesSeq} (opcional) é a linhagem D11 nesta porta: o dono sela o {@code #N}
+     * citado; endereço fantasma → 409 acionável antes de qualquer efeito.
+     */
+    @Transactional
+    public void review(UUID companyId, UUID issueId, ReviewDecision decision, String reason,
+                       UUID expectedReviewId, ActorType actorType, UUID actorId, Integer supersedesSeq) {
+        if (decision == ReviewDecision.REJECT && (reason == null || reason.isBlank())) {
+            throw new BadRequestException("REJECT exige o motivo — ele bloqueia a entrega e vira a"
+                    + " Decisao do registro (C14/ADR-0020): diga o que barrou");
+        }
+        UUID supersedesId = supersedesSeq != null
+                ? decisionLog.idDoEndereco(companyId, supersedesSeq) : null;
         int rows = switch (decision) {
             case APPROVE -> issues.tryApprove(issueId, companyId);
             case REJECT -> issues.tryReject(issueId, companyId);
@@ -230,6 +279,41 @@ public class IssueService {
                 ? ActivityAction.REVIEW_APPROVED : ActivityAction.REVIEW_REJECTED;
         activityLog.record(companyId, actorType, actorId, action, "issue", issueId,
                 Map.of("reviewId", cycle.getId()));
+        fabricaDecisaoDaReview(get(companyId, issueId), cycle, decision, reason, supersedesId);
+    }
+
+    /**
+     * A porta pós-hoc como adapter FINO da fábrica única (C15): monta a passagem e entrega —
+     * a área é a do ARTEFATO (C11) e o tipo do racional é DERIVADO dela (D9): artefato criativo
+     * → INTUICAO → a maiêutica (D10) acompanha a Decisão como evidência.
+     */
+    private void fabricaDecisaoDaReview(Issue issue, Review cycle, ReviewDecision decision,
+                                        String reason, UUID supersedesId) {
+        String area = areaDaIssue(issue);
+        String oQueMudou = "[" + decision.name() + " REVIEW] #" + issue.getSeq() + " " + issue.getTitle();
+        gateDecisions.fabricate(new GatePassage(issue.getCompanyId(), area,
+                DecisionOrigem.DONO_NO_GATE, oQueMudou, reason, racionalPolicy.deriveTipo(area),
+                false, supersedesId, DecisionGrau.DECISAO,
+                new Anchor.NaReview(cycle.getId(), issue.getId())));
+    }
+
+    /**
+     * A ÁREA do artefato da Issue (C11): a proveniência é o TIME do assignee — o {@code dominio}
+     * do time é a área do trabalho que ele entrega (time de design → área criativa → INTUICAO →
+     * D10 vivo). NUNCA um default fixo para todo review (senão tudo vira LOGICO e a maiêutica
+     * morre de novo); "operacao" é só o fallback do caso sem assignee/time.
+     */
+    @Transactional(readOnly = true)
+    public String areaDaIssue(Issue issue) {
+        if (issue.getAssigneeAgentId() == null) {
+            return "operacao";
+        }
+        return agents.findById(issue.getAssigneeAgentId())
+                .map(Agent::getTeamId)
+                .filter(Objects::nonNull)
+                .flatMap(teamId -> teams.findByIdAndCompanyId(teamId, issue.getCompanyId()))
+                .map(Team::getDominio)
+                .orElse("operacao");
     }
 
     /**

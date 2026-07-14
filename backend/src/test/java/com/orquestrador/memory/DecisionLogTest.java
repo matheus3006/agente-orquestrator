@@ -59,6 +59,52 @@ class DecisionLogTest {
         assertThat(decisionLog.query(novaCompany(), null, null, null, null)).isEmpty();
     }
 
+    /**
+     * F-C1 (C4, clone da ADR-0033): toda Decisão nasce com endereço humano {@code #N} — denso
+     * por company (1, 2, 3…), alocado no chokepoint único ({@code record}) sob o lock da linha
+     * da company. Sem endereço estável, D11 (citar o que supersede) e o fetch JIT são impossíveis.
+     */
+    @Test
+    void enderecoSequencialNasceDensoPorCompanyNoChokepoint() {
+        UUID companyId = novaCompany();
+        Decision primeira = decisionLog.record(decisao(companyId, "a", DecisionTipo.OPERACIONAL, "r1"));
+        Decision segunda = decisionLog.record(decisao(companyId, "b", DecisionTipo.TECNICA, "r2"));
+        Decision terceira = decisionLog.record(decisao(companyId, "c", DecisionTipo.DIRECAO, "r3"));
+
+        assertThat(primeira.getSeq()).isEqualTo(1);
+        assertThat(segunda.getSeq()).isEqualTo(2);
+        assertThat(terceira.getSeq()).isEqualTo(3);
+
+        // O #N é POR COMPANY (espaço de endereços próprio — nunca vaza entre companies).
+        UUID outraCompany = novaCompany();
+        assertThat(decisionLog.record(decisao(outraCompany, "a", DecisionTipo.OPERACIONAL, "r1"))
+                .getSeq()).isEqualTo(1);
+    }
+
+    /** F-C1 (C3): o eixo do ALCANCE nasce em todo registro — o default do átomo é DECISAO. */
+    @Test
+    void grauDefaultDoAtomoEDecisao() {
+        UUID companyId = novaCompany();
+        Decision registrada = decisionLog.record(decisao(companyId, "a", DecisionTipo.OPERACIONAL, "r1"));
+        assertThat(registrada.getGrau()).isEqualTo(DecisionGrau.DECISAO);
+    }
+
+    /** F-C1 (C4/C12): o endereço #N citado resolve pro id de máquina; #N fantasma → 409 acionável. */
+    @Test
+    void enderecoCitadoResolveProIdEEnderecoFantasmaE409() {
+        UUID companyId = novaCompany();
+        Decision alvo = decisionLog.record(decisao(companyId, "a", DecisionTipo.OPERACIONAL, "r1"));
+
+        assertThat(decisionLog.idDoEndereco(companyId, 1)).isEqualTo(alvo.getId());
+        assertThatThrownBy(() -> decisionLog.idDoEndereco(companyId, 99))
+                .isInstanceOf(com.orquestrador.common.error.ConflictException.class)
+                .hasMessageContaining("#99");
+        // Endereço de OUTRA company não resolve aqui (espaço de endereços é company-scoped).
+        UUID outraCompany = novaCompany();
+        assertThatThrownBy(() -> decisionLog.idDoEndereco(outraCompany, 1))
+                .isInstanceOf(com.orquestrador.common.error.ConflictException.class);
+    }
+
     @Test
     void decisaoSemRacionalERejeitada() {
         UUID companyId = novaCompany();

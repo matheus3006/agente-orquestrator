@@ -9,12 +9,12 @@ import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.execution.lineage.SpawnLineageGuard;
-import com.orquestrador.memory.CompanyMemoryConsolidator;
-import com.orquestrador.memory.Decision;
+import com.orquestrador.memory.DecisionGrau;
 import com.orquestrador.memory.DecisionLog;
 import com.orquestrador.memory.DecisionOrigem;
-import com.orquestrador.memory.DecisionTipo;
-import com.orquestrador.memory.RacionalTipo;
+import com.orquestrador.memory.GateDecisionFactory;
+import com.orquestrador.memory.GateDecisionFactory.Anchor;
+import com.orquestrador.memory.GateDecisionFactory.GatePassage;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentHireService;
 import com.orquestrador.org.agent.AgentRepository;
@@ -63,7 +63,7 @@ public class ApprovalService {
     private final ApprovalRepository approvals;
     private final RacionalPolicy racionalPolicy;
     private final DecisionLog decisionLog;
-    private final CompanyMemoryConsolidator consolidator;
+    private final GateDecisionFactory gateDecisions;
     private final ActivityLogService activityLog;
     private final AgentHireService hires;
     private final IssueService issues;
@@ -78,7 +78,7 @@ public class ApprovalService {
     private final SkillSetService skillSets;
 
     public ApprovalService(ApprovalRepository approvals, RacionalPolicy racionalPolicy,
-                           DecisionLog decisionLog, CompanyMemoryConsolidator consolidator,
+                           DecisionLog decisionLog, GateDecisionFactory gateDecisions,
                            ActivityLogService activityLog, AgentHireService hires,
                            IssueService issues, WakeupService wakeups,
                            SpawnLineageGuard lineageGuard, TeamRepository teams,
@@ -88,7 +88,7 @@ public class ApprovalService {
         this.approvals = approvals;
         this.racionalPolicy = racionalPolicy;
         this.decisionLog = decisionLog;
-        this.consolidator = consolidator;
+        this.gateDecisions = gateDecisions;
         this.activityLog = activityLog;
         this.hires = hires;
         this.issues = issues;
@@ -143,18 +143,30 @@ public class ApprovalService {
     @Transactional
     public DecideOutcome decide(UUID companyId, UUID approvalId, ApprovalDecision decision,
                                 String racional, String reason, ActorType actorType, UUID actorId) {
-        return decide(companyId, approvalId, decision, racional, reason, actorType, actorId, null);
+        return decide(companyId, approvalId, decision, racional, reason, actorType, actorId, null, null);
+    }
+
+    @Transactional
+    public DecideOutcome decide(UUID companyId, UUID approvalId, ApprovalDecision decision,
+                                String racional, String reason, ActorType actorType, UUID actorId,
+                                EngineOverride engineOverride) {
+        return decide(companyId, approvalId, decision, racional, reason, actorType, actorId,
+                engineOverride, null);
     }
 
     /**
      * O commit com a MÃO SOBERANA no motor (A4, adendo ADR-0031): no menu do hire as skills são
      * somente-leitura, mas o TRIO do motor é livremente editável pelo dono — o override vence o
      * motor protocolado no alvo, sem rejeitar nem devolver ao Planejador.
+     *
+     * <p>{@code supersedesSeq} (opcional) é a linhagem D11 na porta pré-hoc: o CEO propõe o link
+     * citando o {@code #N}, o dono sela aqui — a Decisão fabricada aponta a supersedida e a carta
+     * se auto-cura (o leitor já filtra). {@code #N} inexistente → 409 acionável, nada commitado.
      */
     @Transactional
     public DecideOutcome decide(UUID companyId, UUID approvalId, ApprovalDecision decision,
                                 String racional, String reason, ActorType actorType, UUID actorId,
-                                EngineOverride engineOverride) {
+                                EngineOverride engineOverride, Integer supersedesSeq) {
         Approval approval = approvals.findByIdAndCompanyId(approvalId, companyId)
                 .orElseThrow(() -> new NotFoundException("Approval nao encontrada: " + approvalId));
         if (approval.getStatus() != ApprovalStatus.PENDING) {
@@ -167,6 +179,9 @@ public class ApprovalService {
             approvals.save(approval);
             return new DecideOutcome.Grilled(probe.get(), approval.getGrillRounds());
         }
+        // A linhagem resolve ANTES de qualquer efeito: #N fantasma → 409 e a Approval segue PENDING.
+        UUID supersedesId = supersedesSeq != null
+                ? decisionLog.idDoEndereco(companyId, supersedesSeq) : null;
 
         approval.decide(decision, actorType, actorId, racional.strip(), reason);
 
@@ -181,7 +196,7 @@ public class ApprovalService {
                 ? ActivityAction.APPROVAL_APPROVED : ActivityAction.APPROVAL_REJECTED;
         activityLog.record(companyId, actorType, actorId, action, "approval", approval.getId(), detail);
 
-        recordGateDecision(approval, decision);
+        fabricaDecisaoDoGate(approval, decision, supersedesId);
         return new DecideOutcome.Committed(approval);
     }
 
@@ -195,25 +210,21 @@ public class ApprovalService {
         return approvals.findByCompanyIdAndConversationIdOrderByRequestedAt(companyId, conversationId);
     }
 
-    /** A fábrica de Decisões do gate (ADR-0019/D5): todo commit vira registro datado + endereçável. */
-    private void recordGateDecision(Approval approval, ApprovalDecision decision) {
-        DecisionTipo tipo = DecisionLog.tipoFor(approval.getArea());
+    /**
+     * A porta pré-hoc como adapter FINO da fábrica única (C15 — a fiação de fabricar mora na
+     * {@link GateDecisionFactory}, nunca aqui): monta a passagem e entrega. O racional já passou
+     * pelo grill (presença garantida) — a Decisão desta porta sempre nasce.
+     */
+    private void fabricaDecisaoDoGate(Approval approval, ApprovalDecision decision, UUID supersedesId) {
         DecisionOrigem origem = decision == ApprovalDecision.APPROVE
                 ? DecisionOrigem.PROPOSTA_CEO   // conteúdo do CEO, selado pelo dono
                 : DecisionOrigem.DONO_NO_GATE;  // o dono barrou/redirecionou
         String oQueMudou = "[" + decision.name() + " " + approval.getActionType().name() + "] "
                 + (approval.getResumo() != null ? approval.getResumo() : approval.getTargetDetail());
-        Decision decisao = new Decision(UUID.randomUUID(), approval.getCompanyId(), approval.getArea(),
-                tipo, origem, oQueMudou, approval.getRacional(), approval.getRacionalTipo(),
-                approval.isRacionalArrancado())
-                .anchoredToApproval(approval.getId());
-        if (approval.getRacionalTipo() == RacionalTipo.INTUICAO) {
-            decisao.withEvidencia(racionalPolicy.maieuticProbe()); // D10: acompanha, nunca bloqueia
-        }
-        decisionLog.record(decisao);
-        if (tipo == DecisionTipo.DIRECAO) {
-            consolidator.refresh(approval.getCompanyId()); // a carta é projeção — mesma tx do gate
-        }
+        gateDecisions.fabricate(new GatePassage(approval.getCompanyId(), approval.getArea(), origem,
+                oQueMudou, approval.getRacional(), approval.getRacionalTipo(),
+                approval.isRacionalArrancado(), supersedesId, DecisionGrau.DECISAO,
+                new Anchor.NaApproval(approval.getId())));
     }
 
     /** APPROVE dispara a ação REAL com ator=aprovador (ADR-0018); os IDs criados vão no detail. */

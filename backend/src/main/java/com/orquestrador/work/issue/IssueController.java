@@ -92,7 +92,7 @@ public class IssueController {
         guard.assertMember(companyId);
         Actor board = requireBoard("Apenas o operador (board) decide uma revisao");
         issues.review(companyId, issueId, request.decision(), request.reason(), request.reviewId(),
-                board.type(), board.id());
+                board.type(), board.id(), request.supersedesSeq());
         return respond(issues.get(companyId, issueId));
     }
 
@@ -140,10 +140,13 @@ public class IssueController {
     public record UnblockRequest(@NotNull UnblockDecision decision) {
     }
 
-    // reason é opcional e vive na tabela review (nunca no activity_log — ADR-0009). reviewId
-    // (opcional) ancora a decisão no ciclo visto pelo revisor: ciclo aberto diferente → 409.
+    // reason é opcional no APPROVE (C14: em silêncio commita SEM fabricar Decisão) e obrigatório
+    // no REJECT (o motivo É a Decisão); vive na tabela review (nunca no activity_log — ADR-0009)
+    // e é o racional da Decisão fabricada (writer D5). reviewId (opcional) ancora a decisão no
+    // ciclo visto pelo revisor: ciclo aberto diferente → 409. supersedesSeq (opcional, D11) é o
+    // #N citado que esta decisão supersede — o dono sela; #N fantasma → 409.
     public record ReviewRequest(@NotNull ReviewDecision decision, @Size(max = 2000) String reason,
-                                UUID reviewId) {
+                                UUID reviewId, Integer supersedesSeq) {
     }
 
     public record CheckoutResponse(IssueResponse issue, UUID runId) {

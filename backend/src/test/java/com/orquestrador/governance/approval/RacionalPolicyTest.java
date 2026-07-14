@@ -42,6 +42,16 @@ class RacionalPolicyTest {
         assertThat(policy.grillProbe(RacionalTipo.INTUICAO, "porque eu quis")).isPresent();
     }
 
+    /**
+     * F-C1 (C14): a pergunta não-bloqueante da review nas palavras da POLÍTICA — criativo é a
+     * própria maiêutica (D10); não-criativo pesca o "risco aceito-sem-mudar" (D5).
+     */
+    @Test
+    void reviewProbeEDaPoliticaEDiferePorTipo() {
+        assertThat(policy.reviewProbe(RacionalTipo.INTUICAO)).isEqualTo(policy.maieuticProbe());
+        assertThat(policy.reviewProbe(RacionalTipo.LOGICO)).contains("ressalva").contains("risco");
+    }
+
     @Test
     void logicoExigeSubstanciaIntuicaoCommitaComPreferencia() {
         assertThat(policy.grillProbe(RacionalTipo.LOGICO,

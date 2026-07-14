@@ -223,6 +223,7 @@ export default function ReviewsPage() {
                       title: card.title,
                       runId: card.runId,
                       decision: "APPROVE" satisfies ReviewDecision,
+                      racionalProbe: card.racionalProbe,
                     })
                   }
                 >
@@ -238,6 +239,7 @@ export default function ReviewsPage() {
                       title: card.title,
                       runId: card.runId,
                       decision: "REJECT" satisfies ReviewDecision,
+                      racionalProbe: card.racionalProbe,
                     })
                   }
                 >
