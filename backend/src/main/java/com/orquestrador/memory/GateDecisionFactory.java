@@ -53,24 +53,33 @@ public class GateDecisionFactory {
             case Anchor.NaApproval aprovacao -> decisao.anchoredToApproval(aprovacao.approvalId());
             case Anchor.NaReview review -> decisao.anchoredToReview(review.reviewId(), review.issueId());
         }
+        if (passage.evidencia() != null && !passage.evidencia().isBlank()) {
+            decisao.withEvidencia(passage.evidencia()); // F-C2: a linhagem da graduação (C5)
+        }
         if (passage.racionalTipo() == RacionalTipo.INTUICAO) {
-            decisao.withEvidencia(racionalPolicy.maieuticProbe()); // D10: acompanha, nunca bloqueia
+            // D10: acompanha, nunca bloqueia — soma-se à evidência da porta quando ambas existem
+            decisao.withEvidencia(decisao.getEvidencia() == null
+                    ? racionalPolicy.maieuticProbe()
+                    : decisao.getEvidencia() + "\n" + racionalPolicy.maieuticProbe());
         }
         decisionLog.record(decisao);
-        if (tipo == DecisionTipo.DIRECAO) {
-            consolidator.refresh(passage.companyId()); // a carta é projeção — mesma tx do gate
-        }
+        // TODA passagem re-projeta na MESMA tx (ADR-0018/0019): direção muda a carta, princípio
+        // muda o playbook — e o detector C5 anda de CARONA aqui (qualquer área pode acender ou
+        // apagar a nudge de candidata). Idempotente por conteúdo: sem mudança, sem versão nova.
+        consolidator.refresh(passage.companyId());
         return Optional.of(decisao);
     }
 
     /**
      * O seam da passagem (C15): tudo que uma porta sabe sobre o commit do dono. {@code area} é a
      * do ARTEFATO decidido (C11 — na review, a área da Issue; nunca default fixo). {@code grau}
-     * vem da PORTA (C3); {@code supersedesId} é a linhagem D11 já resolvida de {@code #N} pra id.
+     * vem da PORTA (C3); {@code supersedesId} é a linhagem D11 já resolvida de {@code #N} pra id;
+     * {@code evidencia} é a evidência que a porta anexa (F-C2: a linhagem da graduação, C5) —
+     * a maiêutica D10 se SOMA a ela, nunca a substitui.
      */
     public record GatePassage(UUID companyId, String area, DecisionOrigem origem, String oQueMudou,
                               String racional, RacionalTipo racionalTipo, boolean racionalArrancado,
-                              UUID supersedesId, DecisionGrau grau, Anchor anchor) {
+                              UUID supersedesId, DecisionGrau grau, String evidencia, Anchor anchor) {
     }
 
     /** A proveniência da Decisão no gate que a fabricou (D5): qual porta, apontando o quê. */

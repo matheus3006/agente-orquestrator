@@ -110,6 +110,7 @@ const VERBO_POR_ACAO: Record<Approval["actionType"], string> = {
   CREATE_TEAM: "Criar time",
   CREATE_ROLE_TEMPLATE: "Criar molde",
   SKILL_INSTALL_REQUEST: "Pedir skill",
+  GRADUATE_PRINCIPLE: "Graduar princípio",
 };
 
 /** Parse fail-soft do targetDetail — espelha o ProposalScanner: quebrado nunca derruba a tela. */
@@ -160,7 +161,30 @@ export function acaoLegivel(approval: Approval): AcaoLegivel {
     case "SKILL_INSTALL_REQUEST":
       // F-AT1: o card mostra a skill que o executor bateu na parede sem ter.
       return { verbo, alvo: typeof alvo.skillKey === "string" ? alvo.skillKey : null };
+    case "GRADUATE_PRINCIPLE":
+      // F-C2: o alvo do card É a frase proposta — a entrada do Playbook é autorada (C2).
+      return { verbo, alvo: typeof alvo.frase === "string" ? alvo.frase : null };
   }
+}
+
+/** A proposta de graduação como o card a lê (F-C2/C2): frase EDITÁVEL + linhagem em #N. */
+export interface PrincipioProposto {
+  /** A frase proposta pelo CEO — prefill do campo editável; o texto FINAL é o do dono. */
+  frase: string | null;
+  /** Os #N citados como linhagem (C5) — leitura no card; viram evidência da Decisão. */
+  graduadaDe: number[];
+}
+
+export function principioDaProposta(approval: Approval): PrincipioProposto | null {
+  if (approval.actionType !== "GRADUATE_PRINCIPLE") {
+    return null;
+  }
+  const alvo = alvoDe(approval);
+  const frase = alvo && typeof alvo.frase === "string" && alvo.frase.trim() !== "" ? alvo.frase : null;
+  const graduadaDe = Array.isArray(alvo?.graduadaDe)
+    ? alvo.graduadaDe.filter((seq): seq is number => typeof seq === "number" && Number.isInteger(seq))
+    : [];
+  return { frase, graduadaDe };
 }
 
 /**

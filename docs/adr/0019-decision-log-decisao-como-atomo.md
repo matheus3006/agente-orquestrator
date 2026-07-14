@@ -71,8 +71,11 @@ agente). É o `CompanyMemoryConsolidator` do ADR-0018.
    concluinte do agente dela (read-model `IssueLedger` sobre o StepTrace via `RunFinalOutput` —
    nada duplicado em storage, D1); o CEO gradua para cima, nunca escreve no Ledger.
    `GET /issues/{id}/report` (capado/datado).
-2. **"ADR da Empresa" vs "Princípios/Playbook"** — segue aberto (tier durável sem consumidor no
-   v1; `MemoryKind` só tem CARTA — cresce quando a graduação D12 for construída).
+2. **"ADR da Empresa" vs "Princípios/Playbook"** — **FECHADO (2026-07-14, F-C2/C1): UM tier
+   durável só, `MemoryKind.PLAYBOOK`** (ver Revisão F-C2 abaixo). O durável-PONTUAL já É o
+   Decision-log — uma Decisão é o registro datado e endereçável; um tier "ADR-da-Empresa"
+   duplicaria a tabela `decision`. O que faltava era só o DESTILADO (o degrau
+   episódico→semântico).
 3. **Onde o Decision-log mora** — **FECHADO**: tabela própria `decision` (V18) + Log filtrável
    `GET /decisions?area=&tipo=&from=&to=` (board-only). A carta é projeção SOBRE estas linhas
    (`CompanyMemoryConsolidator`, determinística, na MESMA tx do gate).
@@ -129,6 +132,37 @@ Inventário: `docs/roadmap-interno.md §Divergências`.
   Moram DENTRO da fábrica: a regra C14 "sem substância → sem Decisão", a maiêutica D10 como
   evidência e a consolidação da carta na MESMA tx. *Rejeitado:* espelhar a fábrica no
   `IssueService` (duas fábricas = o drift que criou os seams mortos que esta frente curou).
+
+## Revisão 2026-07-14 (F-C2 "a assinatura: graduação + cap" — grill da Frente C, C1/C2/C5/C7/C8)
+
+> Detalhe/porquê (alternativas rejeitadas inclusas): `docs/handoff-grilling-frente-c-memoria.md`.
+> O RITUAL da graduação (7ª ação do gate) é a ADR-0020, Revisão F-C2.
+
+- **Residual 2 FECHADO — o tier durável é UM: `MemoryKind.PLAYBOOK` (C1).** Projeção
+  determinística GÊMEA da carta (`CompanyMemoryConsolidator`): `grau=PRINCIPIO` → corpo
+  versionado em `company_memory`, zero-LLM no caminho de escrita, supersedidas fora (a
+  auto-cura D11 vale aqui também). A ENTRADA é autorada (C2): o CEO propõe a frase, o dono
+  sela pelo gate — a materialização projeta só princípios JÁ SELADOS, então o caminho
+  automático continua zero-LLM (o invariante anti-poisoning fica intacto).
+- **Cap por PROJEÇÃO, hard por construção (C7): carta=12 · playbook=12** (constantes no
+  consolidator, provadas por teste). Capa-se a PROJEÇÃO, **nunca o log** (história
+  append-only — o anti-padrão "compactar = deletar" segue proibido): a janela é das N mais
+  recentes por `#N`; o excedente segue no log, endereçável, e vira **nudge de estouro** com
+  os `#N` (C8: **graduar ou cair-pra-JIT** — nunca descartar, nunca comprimir por LLM).
+- **Detector de graduação determinístico (C5, `memory/GraduationDetector`):** N=3 decisões
+  numa área DESDE o último princípio daquela área — função pura sobre o log (área, ordem do
+  `#N`), zero-LLM, idempotente, de CARONA no commit do gate (toda passagem re-projeta; sem
+  mudança, sem versão nova). O resultado é só a **nudge de candidata na carta**, citando os
+  `#N` — a linhagem que o CEO copia na proposta. *Rejeitada:* tabela de linhagem
+  (`principle_source`) — não paga o custo; a linhagem vai em `evidencia`
+  ("Graduado de #2, #3, #4"), documentação resolvível pelos `#N`, nunca FK.
+- **`grau` filtra a SUPERFÍCIE:** a carta projeta direção `grau=DECISAO`; princípio mora no
+  playbook — duplicar nas duas inflaria o sempre-on que o cap protege (C9 recebe as duas
+  separadas na F-C3).
+- **Decisões de kickoff (registradas):** a 2ª projeção roda na MESMA tx do `refresh` (espelha
+  o contrato da fábrica da F-C1) · a nudge de estouro cita os `#N` do excedente (torna o
+  "cair-pra-JIT" concreto já nesta fatia) · projeção que JÁ EXISTE re-renderiza até vazia —
+  a auto-cura D11 vale para a ÚLTIMA direção supersedida (só o NASCIMENTO exige vigência).
 
 ## Relaciona
 `docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D1–D12, schema, findability); ADR-0018 (carta/

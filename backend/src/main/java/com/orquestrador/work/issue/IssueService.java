@@ -293,7 +293,7 @@ public class IssueService {
         String oQueMudou = "[" + decision.name() + " REVIEW] #" + issue.getSeq() + " " + issue.getTitle();
         gateDecisions.fabricate(new GatePassage(issue.getCompanyId(), area,
                 DecisionOrigem.DONO_NO_GATE, oQueMudou, reason, racionalPolicy.deriveTipo(area),
-                false, supersedesId, DecisionGrau.DECISAO,
+                false, supersedesId, DecisionGrau.DECISAO, null,
                 new Anchor.NaReview(cycle.getId(), issue.getId())));
     }
 

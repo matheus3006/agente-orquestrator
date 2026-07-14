@@ -8,6 +8,7 @@ import {
   hireDaProposta,
   issueDaApproval,
   pendentesPorConversa,
+  principioDaProposta,
   projetarThread,
   racionalDoTimeProposto,
   splitReply,
@@ -335,6 +336,53 @@ describe("acaoLegivel (o corpo do card é legível — o targetDetail nunca apar
     );
 
     expect(acao).toEqual({ verbo: "Pedir skill", alvo: null });
+  });
+
+  it("GRADUATE_PRINCIPLE vira 'Graduar princípio' com a frase proposta (F-C2)", () => {
+    const acao = acaoLegivel(
+      approval({
+        actionType: "GRADUATE_PRINCIPLE",
+        targetDetail: '{"frase": "Toda campanha nasce com CAC alvo", "graduadaDe": [2, 5, 9]}',
+      }),
+    );
+
+    expect(acao).toEqual({ verbo: "Graduar princípio", alvo: "Toda campanha nasce com CAC alvo" });
+  });
+});
+
+describe("principioDaProposta (F-C2/C2: o card lê a frase EDITÁVEL e a linhagem)", () => {
+  it("expõe a frase proposta e os #N da linhagem (graduadaDe)", () => {
+    const principio = principioDaProposta(
+      approval({
+        actionType: "GRADUATE_PRINCIPLE",
+        targetDetail: '{"frase": "Toda campanha nasce com CAC alvo", "graduadaDe": [2, 5, 9]}',
+      }),
+    );
+
+    expect(principio).toEqual({
+      frase: "Toda campanha nasce com CAC alvo",
+      graduadaDe: [2, 5, 9],
+    });
+  });
+
+  it("degrada fail-soft: sem frase → frase null; linhagem ausente/suja → só os números", () => {
+    expect(
+      principioDaProposta(
+        approval({
+          actionType: "GRADUATE_PRINCIPLE",
+          targetDetail: '{"graduadaDe": [1, "x", 3]}',
+        }),
+      ),
+    ).toEqual({ frase: null, graduadaDe: [1, 3] });
+    expect(
+      principioDaProposta(
+        approval({ actionType: "GRADUATE_PRINCIPLE", targetDetail: "{quebrado" }),
+      ),
+    ).toEqual({ frase: null, graduadaDe: [] });
+  });
+
+  it("outra ação → null (o card comum não ganha campo de frase)", () => {
+    expect(principioDaProposta(approval())).toBeNull();
   });
 });
 

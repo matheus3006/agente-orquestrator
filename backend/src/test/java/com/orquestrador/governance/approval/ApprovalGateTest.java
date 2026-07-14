@@ -14,6 +14,7 @@ import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.memory.CompanyMemory;
 import com.orquestrador.memory.CompanyMemoryRepository;
 import com.orquestrador.memory.Decision;
+import com.orquestrador.memory.DecisionGrau;
 import com.orquestrador.memory.DecisionOrigem;
 import com.orquestrador.memory.DecisionRepository;
 import com.orquestrador.memory.DecisionTipo;
@@ -649,6 +650,131 @@ class ApprovalGateTest {
         assertThat(skillSets.resolveForRun(companyId, executorId, issueId))
                 .as("a união efetiva do executor pra esta Issue já inclui a skill pedida")
                 .anySatisfy(version -> assertThat(version.getName()).isEqualTo(skillKey));
+    }
+
+    /**
+     * F-C2 (C6): a 7ª ação do gate — GRADUATE_PRINCIPLE. O CEO propõe a FRASE (C2: a entrada do
+     * Playbook é AUTORADA), o dono sela; o dispatch fabrica a Decisão {@code grau=PRINCIPIO} pela
+     * fábrica única (approval_id NOT NULL de graça) com a linhagem C5 em evidência — e ela é a
+     * ÚNICA Decisão da passagem (o princípio É o registro do gate; não nasce uma irmã DECISAO).
+     */
+    @Test
+    void graduatePrincipleAprovadoFabricaOPrincipioComoUnicaDecisaoDaPassagem() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.GRADUATE_PRINCIPLE,
+                        "{\"frase\":\"Toda campanha nasce com meta de CAC explicita\","
+                                + "\"graduadaDe\":[1,2,3]}",
+                        "Graduar principio de growth", "growth"));
+
+        approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
+                "3 decisoes de growth repetiram o mesmo criterio", null,
+                ActorType.BOARD, UUID.randomUUID());
+
+        List<Decision> daPassagem = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).stream()
+                .filter(decision -> proposta.getId().equals(decision.getApprovalId()))
+                .toList();
+        assertThat(daPassagem).as("uma passagem, UMA Decisão — o princípio É o registro").hasSize(1);
+        Decision principio = daPassagem.get(0);
+        assertThat(principio.getGrau()).isEqualTo(DecisionGrau.PRINCIPIO);
+        assertThat(principio.getOQueMudou())
+                .isEqualTo("Toda campanha nasce com meta de CAC explicita"); // a frase, não [APPROVE …]
+        assertThat(principio.getOrigem()).isEqualTo(DecisionOrigem.PROPOSTA_CEO);
+        assertThat(principio.getEvidencia()).contains("#1").contains("#2").contains("#3"); // C5
+
+        String playbook = memories
+                .findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, MemoryKind.PLAYBOOK)
+                .orElseThrow().getBody();
+        assertThat(playbook).contains("Toda campanha nasce com meta de CAC explicita");
+    }
+
+    /**
+     * F-C2 (prova extra, deriva do C2): a frase EDITADA pelo dono no card VENCE a proposta do CEO
+     * — writer-of-record de verdade (mão soberana, padrão A4). E o supersede selado (D11) aponta
+     * DO princípio: graduar já pode aposentar a direção que ele destila — a carta se auto-cura e
+     * o playbook nasce na MESMA passagem.
+     */
+    @Test
+    void fraseEditadaPeloDonoVenceAPropostaEOSupersedeSelaDoPrincipio() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        timeComArquiteto(companyId, "Produto", "Nicho", "Ana Arquiteta");
+        Approval direcao = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
+                        "{\"dominio\":\"Produto\",\"foco\":\"Nicho\",\"title\":\"Focar no nicho dental\"}",
+                        "Focar no nicho dental", "direcao-roadmap"));
+        approvals.decide(companyId, direcao.getId(), ApprovalDecision.APPROVE,
+                "dor aguda e ticket alto", null, ActorType.BOARD, UUID.randomUUID());
+        Decision direcaoAntiga = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).get(0);
+
+        Approval graduacao = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.GRADUATE_PRINCIPLE,
+                        "{\"frase\":\"Nicho dental primeiro\",\"graduadaDe\":["
+                                + direcaoAntiga.getSeq() + "]}",
+                        "Graduar principio do nicho", "direcao-roadmap"));
+        approvals.decide(companyId, graduacao.getId(), ApprovalDecision.APPROVE,
+                "a direcao virou padrao de decisao", null, ActorType.BOARD, UUID.randomUUID(),
+                null, direcaoAntiga.getSeq(),
+                "Nicho dental sempre — so sair com dado de saturacao");
+
+        Decision principio = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).stream()
+                .filter(decision -> graduacao.getId().equals(decision.getApprovalId()))
+                .findFirst().orElseThrow();
+        assertThat(principio.getOQueMudou())
+                .as("a frase final é a do dono, não a proposta")
+                .isEqualTo("Nicho dental sempre — so sair com dado de saturacao");
+        assertThat(principio.getSupersedesId()).isEqualTo(direcaoAntiga.getId());
+
+        String carta = memories.findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, MemoryKind.CARTA)
+                .orElseThrow().getBody();
+        assertThat(carta).as("a direção destilada saiu da carta (auto-cura D11, mesmo sendo a última)")
+                .doesNotContain("Focar no nicho dental");
+        assertThat(carta).as("princípio NÃO polui a carta — a superfície dele é o playbook (C9)")
+                .doesNotContain("Nicho dental sempre");
+        assertThat(memories.findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, MemoryKind.PLAYBOOK)
+                .orElseThrow().getBody()).contains("Nicho dental sempre");
+    }
+
+    /** REJECT de graduação não nasce princípio: registra a recusa como Decisão comum (grau=DECISAO). */
+    @Test
+    void graduatePrincipleRejeitadoRegistraRecusaSemPrincipio() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.GRADUATE_PRINCIPLE,
+                        "{\"frase\":\"Todo copy fala com dono de clinica, nunca com dentista\"}",
+                        "Graduar principio de copy", "growth"));
+
+        approvals.decide(companyId, proposta.getId(), ApprovalDecision.REJECT,
+                "dois dos tres casos sao a mesma campanha — padrao ainda nao existe",
+                "espere mais evidencia", ActorType.BOARD, UUID.randomUUID());
+
+        Decision registro = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).stream()
+                .filter(decision -> proposta.getId().equals(decision.getApprovalId()))
+                .findFirst().orElseThrow();
+        assertThat(registro.getGrau()).isEqualTo(DecisionGrau.DECISAO); // recusa não é princípio
+        assertThat(memories.findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, MemoryKind.PLAYBOOK))
+                .as("playbook não nasce de recusa").isEmpty();
+    }
+
+    /** Alvo sem a frase (C2: a entrada é AUTORADA) → 409 acionável no decide; segue PENDING. */
+    @Test
+    void graduatePrincipleSemFraseE409EPropostaSeguePending() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.GRADUATE_PRINCIPLE,
+                        "{\"graduadaDe\":[1,2]}", "Graduar principio", "growth"));
+
+        assertThatThrownBy(() -> approvals.decide(companyId, proposta.getId(),
+                ApprovalDecision.APPROVE, "padrao claro em growth", null,
+                ActorType.BOARD, UUID.randomUUID()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("frase");
+        assertThat(approvalRepo.findById(proposta.getId()).orElseThrow().getStatus())
+                .isEqualTo(ApprovalStatus.PENDING);
+        assertThat(decisions.findByCompanyIdOrderByDecidedAtDesc(companyId)).isEmpty();
     }
 
     /** Elo vazio (skillKey some do catálogo entre o pedido e a decisão) → 409 acionável, PENDING intacta. */
