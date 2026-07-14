@@ -13,6 +13,7 @@ import com.orquestrador.governance.budget.BudgetService;
 import com.orquestrador.handoff.ContextHandoffLoop;
 import com.orquestrador.handoff.DistillationSkill;
 import com.orquestrador.memory.CompanyMemoryMaterializer;
+import com.orquestrador.memory.MemoryAudience;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
@@ -27,6 +28,7 @@ import com.orquestrador.skills.mcp.KnowAllMcpBridge;
 import com.orquestrador.skills.mcp.KnowAllMcpMaterializer;
 import com.orquestrador.skills.mcp.McpCallbackAddress;
 import com.orquestrador.skills.mcp.McpRunScope;
+import com.orquestrador.skills.mcp.McpToolProfile;
 import com.orquestrador.work.issue.CheckoutResult;
 import com.orquestrador.work.issue.IssueService;
 import org.springframework.stereotype.Component;
@@ -226,25 +228,35 @@ public class AdapterRunExecutor implements RunExecutor {
         // lido do MESMO texto reconstruído que já serve o reply de turno e o report-por-Issue
         // (RunFinalOutput, a regra única do ADR-0010; ver IssueLedger). Custo é só memória.
         RunFinalOutput replyCollector = new RunFinalOutput();
-        if (turno != null) {
-            // A carta corrente vira o memoryFile da convenção do adapter — .claude/CLAUDE.md no
-            // Claude Code, AGENTS.md no codex (ADR-0018/0019/0032): memória durável pelo canal
-            // nativo de cada CLI; o prompt carrega só o estado VIVO. Falha de I/O aqui liquida o
-            // turno (o claim já ocorreu — FAILED visível > PENDING pendurado).
-            try {
-                memoryMaterializer.materialize(workDir, convention.memoryFile(), runContext.companyId());
-                // Faxina permanente (D6), lado da carta: o memoryFile das convenções INATIVAS some
-                // — só em run de TURNO (quem materializou faxina; em run de Issue um AGENTS.md ou
-                // CLAUDE.md que o agente escreveu no próprio workspace nunca é tocado).
-                for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
-                    if (!inactive.equals(convention)) {
-                        faxinaConvencaoInativa(workDir, inactive.memoryFile());
-                    }
+
+        // F-C3 (C9): o SPLIT do sempre-on. A dieta durável vira o memoryFile da convenção do adapter
+        // — .claude/CLAUDE.md no Claude Code, AGENTS.md no codex (ADR-0018/0019/0032): memória pelo
+        // canal NATIVO de cada CLI; o prompt carrega só o estado VIVO. AS DUAS PONTAS materializam:
+        // o turno do CEO recebe carta+princípios; o run de EXECUTOR recebe os PRINCÍPIOS (o índice
+        // enxuto, com os #N que abrem o memory_fetch) e NUNCA a carta — direção do dono não é
+        // material de executor. Antes da F-C3 o executor não recebia memória nenhuma (D12 letra
+        // morta + cegueira-de-retrieval). Falha de I/O no turno liquida o turno (o claim já ocorreu
+        // — FAILED visível > PENDING pendurado); no executor vira falha do run como qualquer outra.
+        MemoryAudience audience = turno != null ? MemoryAudience.CEO : MemoryAudience.EXECUTOR;
+        try {
+            memoryMaterializer.materialize(workDir, convention.memoryFile(), runContext.companyId(), audience);
+            // Faxina permanente (ADR-0032/D6), lado da memória: o memoryFile das convenções INATIVAS
+            // some. A regra é "QUEM MATERIALIZA, FAXINA" — e agora o executor também materializa, então
+            // ele também varre (o mesmo movimento que o F-N6 fez pelos hooks). Troca de motor nunca
+            // deixa cérebro velho no chão: o memoryFile das duas convenções é canal do PRODUTO.
+            for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
+                if (!inactive.equals(convention)) {
+                    faxinaConvencaoInativa(workDir, inactive.memoryFile());
                 }
-            } catch (RuntimeException exception) {
-                turnCoordinator.settleFailed(turno.turnId());
-                return RunOutcome.failure("falha ao materializar a carta: " + exception.getMessage());
             }
+        } catch (RuntimeException exception) {
+            if (turno != null) {
+                turnCoordinator.settleFailed(turno.turnId());
+            }
+            return RunOutcome.failure("falha ao materializar a memória durável: " + exception.getMessage());
+        }
+
+        if (turno != null) {
             env = Map.of(PROMPT_ENV, turno.prompt());
             if (adapter.acceptsPromptAsCommand()) {
                 command = turno.prompt();
@@ -277,10 +289,11 @@ public class AdapterRunExecutor implements RunExecutor {
             materializedSubtrees.add(known.hooksFile());
             materializedSubtrees.add(known.hooksScript());
         }
-        if (turno != null) {
-            for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
-                materializedSubtrees.add(known.memoryFile());
-            }
+        // F-C3 (C9): o memoryFile entra INCONDICIONAL — as duas pontas materializam a dieta durável
+        // (era gated por turno, quando só o CEO a recebia). Sem isto, sob Docker os princípios não
+        // atravessariam o seam e o executor rodaria cego no volume.
+        for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
+            materializedSubtrees.add(known.memoryFile());
         }
         ExecutionTarget.WorkspaceFilesWrite workspaceWrite = target.writeWorkspaceFiles(
                 new ExecutionTarget.Spec(workDir, List.of(), Map.of(),
@@ -310,24 +323,33 @@ public class AdapterRunExecutor implements RunExecutor {
         // F-N3 (ADR-0039, D2): o schema de saída estruturada só existe em run de TURNO de persona
         // migrada (o coordinator o construiu no claim); run de Issue e persona não migrada = null.
         String outputSchema = turno != null ? turno.outputSchema() : null;
-        // F-AT2 (grill agente-como-tool D2/D6): SÓ o run de EXECUTOR (turno==null && issueId!=null) em
-        // alvo LOCAL ganha o servidor MCP-stdio do KnowAll — personas FORA (D6), docker é v1.1 (D7). O
-        // baseUrl loopback vem do servidor web ligado; ausente (WebEnvironment.MOCK, ou docker) ⟹ sem
-        // MCP e o run segue normal (o caminho pré-F-AT2). O token efêmero liga o servidor ao bridge.
+        // F-AT2 (D2/D6) + F-C3 (C10): o trilho MCP-stdio abre nas DUAS PONTAS em alvo LOCAL — o run de
+        // EXECUTOR (turno==null && issueId!=null) e o TURNO DO CEO, que é o consumidor primário da
+        // memória ("por que decidimos #7?"). Docker segue v1.1 (D7). O PERFIL diz quais tools cada
+        // ponta enxerga: o corpo de skill do KnowAll continua EXCLUSIVO do executor (F-AT2/D6 —
+        // "personas FORA"), a memória serve as duas. O baseUrl loopback vem do servidor web ligado;
+        // ausente (WebEnvironment.MOCK, ou docker) ⟹ sem MCP e o run segue normal (o caminho pré-F-AT2).
+        // O token efêmero liga o servidor ao bridge; o issueId é NULO na ponta do CEO (não há Issue).
         McpServerSpec mcpServer = null;
         String mcpToken = null;
-        if (turno == null && runContext.issueId() != null
+        boolean pontaDoCeo = turno != null;
+        boolean pontaDoExecutor = turno == null && runContext.issueId() != null;
+        if ((pontaDoCeo || pontaDoExecutor)
                 && target.type() == ExecutionTarget.Type.LOCAL && mcpAddress.baseUrl() != null) {
             try {
                 mcpMaterializer.materialize(workDir);
             } catch (RuntimeException exception) {
-                return RunOutcome.failure("falha ao materializar o servidor MCP do KnowAll: " + exception.getMessage());
+                if (turno != null) {
+                    turnCoordinator.settleFailed(turno.turnId());
+                }
+                return RunOutcome.failure("falha ao materializar o servidor MCP: " + exception.getMessage());
             }
+            McpToolProfile profile = pontaDoCeo ? McpToolProfile.CEO : McpToolProfile.EXECUTOR;
             mcpToken = mcpBridge.open(new McpRunScope(runContext.companyId(), runContext.agentId(),
-                    runContext.issueId(), runContext.runId()));
+                    runContext.issueId(), runContext.runId(), profile));
             String scriptPath = workDir.resolve(KnowAllMcpMaterializer.SCRIPT_RELATIVE_PATH).toString();
             mcpServer = new McpServerSpec(KnowAllMcpMaterializer.SERVER_NAME, "node",
-                    List.of(scriptPath, mcpAddress.baseUrl(), mcpToken));
+                    List.of(scriptPath, mcpAddress.baseUrl(), mcpToken, profile.argv()));
         }
         AgentAdapter.Context adapterContext = new AgentAdapter.Context(
                 runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(), workDir,

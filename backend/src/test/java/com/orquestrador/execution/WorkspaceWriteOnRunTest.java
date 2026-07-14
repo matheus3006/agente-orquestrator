@@ -91,10 +91,13 @@ class WorkspaceWriteOnRunTest {
         // A lista é a UNIÃO das convenções conhecidas (ADR-0032/D6): o replace-por-subtree
         // remove do volume o que não existe no host — a faxina do DOCKER de graça (P2).
         // F-N6 (ADR-0042): hooks materializam em TODO run, junto das skills.
+        // F-C3 (C9): o memoryFile também — as DUAS pontas materializam a dieta durável (o executor
+        // recebe os princípios), então ele atravessa o seam do Docker em run de Issue também.
         assertThat(write.relativePaths()).containsExactly(
                 ".claude/skills", ".codex/skills",
                 ".claude/settings.json", ".claude/hooks/pretooluse-guard.js",
-                ".codex/hooks.json", ".codex/hooks/pretooluse-guard.js");
+                ".codex/hooks.json", ".codex/hooks/pretooluse-guard.js",
+                ".claude/CLAUDE.md", "AGENTS.md");
         assertThat(write.spec().workDir()).isEqualTo(workspaces.resolve(companyId, agentId, issueId));
         assertThat(write.spec().volumeName()).isEqualTo(workspaces.volumeName(companyId, agentId, issueId));
         // A imagem e a do PROPRIO adapter (process = plainShell), como no leitor do preview; e o

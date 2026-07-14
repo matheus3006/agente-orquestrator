@@ -46,6 +46,9 @@ public class KnowAllMcpMaterializer {
 
             const BASE_URL = process.argv[2];
             const TOKEN = process.argv[3];
+            // F-C3: a PONTA deste run ('executor' | 'ceo') — decide QUAIS tools são anunciadas. O core
+            // recusa de novo, por perfil: este script é relay burro (o agente poderia adulterá-lo).
+            const PROFILE = process.argv[4] || 'executor';
 
             const rl = readline.createInterface({ input: process.stdin, terminal: false });
 
@@ -53,7 +56,7 @@ public class KnowAllMcpMaterializer {
               process.stdout.write(JSON.stringify(obj) + '\\n');
             }
 
-            const TOOLS = [
+            const KNOWALL_TOOLS = [
               {
                 name: 'knowall_search',
                 description: 'Search the global KnowAll skill catalog by metadata (name/description/triggers). '
@@ -87,6 +90,53 @@ public class KnowAllMcpMaterializer {
                 annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
               },
             ];
+
+            // F-C3 (C10): a memória DURÁVEL SELADA da empresa — princípios (grau=PRINCIPIO) e direções
+            // do dono, endereçáveis por #N. As duas pontas (executor e CEO) enxergam estas tools.
+            const MEMORY_TOOLS = [
+              {
+                name: 'memory_search',
+                description: 'Search the company\\'s sealed durable memory (owner-sealed PRINCIPLES and '
+                  + 'DIRECTIONS) by metadata: area and what changed. Read-only and FREE (no per-run cap). '
+                  + 'Returns each decision\\'s address #N, date, area, tipo, grau, what changed, and whether '
+                  + 'it is still current (a superseded one names the #N that replaced it). Use it to find the '
+                  + '#N of a past decision, then memory_fetch it to learn WHY it was made. The raw '
+                  + 'operational/technical decision log is the owner\\'s material and is not reachable here.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    query: { type: 'string', description: 'free-text query matched against area + what changed' },
+                    limit: { type: 'number', description: 'max results (optional, default 20)' },
+                  },
+                  required: ['query'],
+                  additionalProperties: false,
+                },
+                annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+              },
+              {
+                name: 'memory_fetch',
+                description: 'Fetch the BODY of one sealed decision by its address #N: the RATIONALE (why the '
+                  + 'owner decided it), the evidence, the lineage (what it superseded / what superseded it) and '
+                  + 'the cluster of sibling decisions in the same area. Read-only. This is how you answer '
+                  + '"why did we decide #7?". There is a per-run cap on how many DISTINCT bodies you may load; '
+                  + 'over the cap the call returns a refusal message and you should continue with what you have. '
+                  + 'Re-fetching the same #N does not consume the cap.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    seq: { type: 'number', description: 'the decision address #N (from memory_search or from '
+                      + 'the always-on principles), as a plain number: 7 for #7' },
+                  },
+                  required: ['seq'],
+                  additionalProperties: false,
+                },
+                annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+              },
+            ];
+
+            // A ponta do CEO NÃO recebe o trilho de corpo de skill (F-AT2/D6: "personas FORA" — o CEO
+            // PROPÕE skill pelo gate). A do executor recebe os dois trilhos.
+            const TOOLS = (PROFILE === 'ceo') ? MEMORY_TOOLS : KNOWALL_TOOLS.concat(MEMORY_TOOLS);
 
             function callCore(path, payload) {
               return new Promise((resolve, reject) => {
@@ -155,6 +205,20 @@ public class KnowAllMcpMaterializer {
                   callCore('/internal/mcp/knowall/fetch-body', { skillKey: args.skillKey || '' })
                     .then((r) => textResult(id, (r && typeof r.text === 'string') ? r.text : JSON.stringify(r), false))
                     .catch((callError) => textResult(id, 'knowall_fetch_body falhou: ' + callError.message, true));
+                  return;
+                }
+                if (name === 'memory_search') {
+                  callCore('/internal/mcp/memory/search', { query: args.query || '', limit: args.limit || 20 })
+                    .then((results) => textResult(id, JSON.stringify(results), false))
+                    .catch((callError) => textResult(id, 'memory_search falhou: ' + callError.message, true));
+                  return;
+                }
+                if (name === 'memory_fetch') {
+                  // O veredito volta ESTRUTURADO ({status, corpo, motivo}) — a recusa do teto/fora-do-
+                  // escopo viaja como CONTEÚDO normal da tool (isError:false): o agente lê e segue.
+                  callCore('/internal/mcp/memory/fetch', { seq: args.seq })
+                    .then((r) => textResult(id, JSON.stringify(r), false))
+                    .catch((callError) => textResult(id, 'memory_fetch falhou: ' + callError.message, true));
                   return;
                 }
                 textResult(id, 'unknown tool ' + name, true);

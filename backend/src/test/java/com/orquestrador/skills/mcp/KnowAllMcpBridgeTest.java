@@ -56,7 +56,7 @@ class KnowAllMcpBridgeTest {
                 UUID.randomUUID()).getId();
         UUID agentId = agents.save(new Agent(UUID.randomUUID(), companyId, "Vega", "executor", null)).getId();
         UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, null, RunStatus.RUNNING)).getId();
-        return new McpRunScope(companyId, agentId, null, runId);
+        return new McpRunScope(companyId, agentId, null, runId, McpToolProfile.EXECUTOR);
     }
 
     /** Semeia N skills no catálogo GLOBAL com corpos marcados; devolve o prefixo das chaves. */

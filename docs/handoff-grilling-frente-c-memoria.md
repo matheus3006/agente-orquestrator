@@ -318,3 +318,74 @@ acima provou. Judgment call registrado.
 - O `.claude/launch.json` untracked pré-existente no checkout (config de FE→18081 de sessão
   anterior) foi usado e mantido como estava; `.env.local` do operador restaurado byte a byte.
 - Zero reserva além da V29; ADR-0043 segue LIVRE.
+
+---
+
+## §RESULTADO — F-C3 "índice + navegação JIT" EXECUTADA (faixa R17-A, 2026-07-14) — **A FRENTE C FECHOU**
+
+**Suíte 721 backend (piso 702 + 19) / 294 front (intocado) · /verify PASS nos 2 motores REAIS · ZERO migração.**
+
+### O que entrou (o §F-C3 na íntegra, nada além)
+
+- **`memory/MemoryQuery` ✚** — a navegação: `search(query)` (metadados, LIVRE) + `fetch(#N)` (corpo:
+  racional/evidência/linhagem/cluster). **A FRONTEIRA (C10.b) é o invariante da classe:** só o durável
+  SELADO (princípios de qualquer tipo + direções); o log cru `OPERACIONAL`/`TECNICA` é **board-only** e
+  inalcançável **nem com o `#N` em mãos** (recusa que não confirma sequer a existência do endereço).
+- **`memory/MemoryAudience` ✚ + `CompanyMemoryMaterializer`** — o **split do sempre-on (C9)**:
+  CEO = carta + princípios · **EXECUTOR = princípios SÓ**. O executor **não recebia memória nenhuma** até
+  aqui (D12 = letra morta); agora recebe o índice enxuto, que carrega o `#N` e **ensina o trilho JIT de graça**.
+- **`skills/mcp/` — o MESMO bridge da F-AT2 (zero canal novo, C10):** `memory_search` + `memory_fetch` como
+  2ª família de tools/rotas (`/internal/mcp/memory/*`, mesmo token/guard). **Teto D6 da frente no core:**
+  `CAP_DECISOES_POR_RUN=3` distintos/run + dedup por `#N` + recusa-com-motivo **não-fatal**
+  (`MEMORY_FETCH_REFUSED`/`MEMORY_FETCHED`) — **espelha** o `CAP_BODIES_POR_RUN` mas é teto **PRÓPRIO**
+  (contador dividido deixaria um trilho faminto do outro).
+- **`skills/mcp/McpToolProfile` ✚ + `AdapterRunExecutor`** — o trilho abre nas **2 PONTAS** (run de executor
+  e **turno do CEO**, o consumidor primário; `McpRunScope.issueId` NULO lá). O **perfil** mantém a F-AT2/D6
+  intacta: **CEO só vê as tools de memória** (o corpo de skill segue exclusivo do executor). O script anuncia
+  só as tools do perfil (argv[4]) **e** o core recusa fora do perfil (`REFUSED_SCOPE`).
+- **Emendas:** ADR-0003 (bridge ganha as tools de memória) · ADR-0019 (split C9 + `memoryFile` = território do
+  produto) · roadmap §Frente C. **ZERO ADR nova (0043 segue LIVRE).**
+
+### Decisões de kickoff tomadas (dentro do plano; racional nas ADRs)
+
+1. **PERFIL de tools por ponta (`McpToolProfile`)** — abrir a 2ª ponta NÃO pode ampliar autonomia por efeito
+   colateral: sem o perfil, o CEO ganharia `knowall_fetch_body` de graça (a F-AT2/D6 decidiu "personas FORA").
+2. **Teto PRÓPRIO, não compartilhado** (3 corpos de skill + 3 corpos de decisão) — trilhos capam recursos
+   diferentes; contador único acoplaria duas fomes que ninguém decidiu acoplar.
+3. **🔴 `memoryFile` = território do PRODUTO em TODO run** — **judgment call do dono (colhido no kickoff)**.
+   Colidia com um invariante TESTADO ("o pipeline nunca toca o `AGENTS.md` de um run de Issue"), que era
+   **consequência** de o executor não receber memória, não princípio próprio. Mesma regra das outras
+   superfícies de config do CLI que o produto já possui em run de Issue (faxina do `.claude/skills/`, hooks
+   do F-N6). Consequência assumida: o que o AGENTE escrever nesse caminho é substituído pela dieta durável.
+4. **Busca casa por TERMOS, não por frase inteira** — **achado do /verify** (ver abaixo).
+
+### §VENDO F-C3 (instância descartável `:18081` + pg efêmero `fc3-pg`; `:8080` INTOCADO)
+
+Fixtures REAIS: 5 direções nascidas pelo **gate da review** (writer D5) + projeções geradas pelo
+**consolidator REAL** na passagem do gate (o princípio foi semeado — a graduação é VENDO da F-C2).
+
+| prova | resultado |
+|---|---|
+| EXECUTOR busca memória mid-run → usa → **termina no MESMO run** | ✅ **claude**: `memory_search` ×3 (livre) → `memory_fetch #6` (1/3) → `#1` (2/3) → escreveu `RACIONAL.md` com o racional **literal** do #1 → `RUN_SUCCEEDED` |
+| idem no 2º motor | ✅ **codex**: `mcp_tool_call` → `MEMORY_FETCHED #1` → `RACIONAL_CODEX2.md` com o racional literal → `RUN_SUCCEEDED` (zero cancelamento: `readOnlyHint` satisfaz o gate do codex) |
+| **cap=3** + **4º recusado COM MOTIVO** (não-fatal) + **dedup** | ✅ pedidos `#1,#2,#1(repetido),#3,#4,#6` → eventos `MEMORY_FETCHED` **1/3, 2/3, 3/3** (o repetido **não gerou evento nem consumiu slot**) + `MEMORY_FETCH_REFUSED` ×2 → o agente **leu o motivo, seguiu e terminou** (`AUDITORIA.md` transcreve as 2 recusas) |
+| **ponta do CEO** cita o `#N` certo | ✅ turno real (claude/opus): perguntado pela linhagem do princípio **#5**, chamou `memory_fetch` e citou a **evidência LITERAL** — *"Graduado de #1, #2, #3 (C5…)"* — string que **só existe no corpo** (nenhuma projeção a carrega) |
+| **split do sempre-on (C9)** | ✅ executor claude: `.claude/CLAUDE.md` = **playbook, sem carta** · executor codex: `AGENTS.md` = **playbook, sem carta** · CEO: `.claude/CLAUDE.md` = **carta + playbook** |
+| 🔍 **fronteira C10.b** (o probe que importa) | ✅ decisão `OPERACIONAL` #42 com racional sigiloso; agente **mandado buscar o #42** recebeu recusa legível ("o log operacional/técnico é material do dono — board-only") e o segredo **não apareceu em NENHUM arquivo** do workspace |
+| carona `being-ceo` | ✅ corpo sincronizado nas 2 demos (`updated:1` cada) — **md5 corpo==banco** (`31cdbe93…`, v2; a v1 fica no savelog) |
+
+**🔴 ACHADO DO /verify (corrigido na fatia):** a busca casava a **frase inteira** por substring. O **codex**
+mandou *"a decisão original de cobrança por assento"*, **não casou nada** (*"a busca por texto não retornou
+índice direto"*) e caiu de volta no princípio que já tinha no sempre-on — **respondeu o `#N` errado (#5)**.
+Quem chama a tool é um LLM em linguagem natural, não um `grep`. Corrigido para casamento **por TERMOS**
+(ranqueado por nº de termos casados, palavras de ligação fora, casamento por **palavra** — "por" casava
+dentro de "su**por**te"). Re-provado ao vivo: o codex passou a achar e responder **#1**. Teste de regressão
+nomeia o achado.
+
+### Pendências
+
+1. **Fecho documental residual** + **PROVA FINAL** (o v1 não tem mais fatia de código).
+2. Fraseado do `oQueMudou` da review (os 2 espaços de `#N`: "#6 … [APPROVE REVIEW] #5 …") — **não tocado**
+   (registrado pra decisão do dono no fecho; é cosmético e reversível).
+3. Dívida de NOME (não bloqueia): `KnowAllMcpBridge`/`KnowAllMcpBridgeController` agora servem **duas**
+   famílias (skill + memória) — o nome honesto seria `McpBridge`. Rename mecânico, candidato ao fecho.

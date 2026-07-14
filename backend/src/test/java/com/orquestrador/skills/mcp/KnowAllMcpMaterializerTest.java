@@ -5,8 +5,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -44,6 +49,54 @@ class KnowAllMcpMaterializerTest {
 
         assertThat(Files.readString(workDir.resolve(".orq/mcp/knowall-server.js")))
                 .isEqualTo(KnowAllMcpMaterializer.SERVER_SCRIPT);
+    }
+
+    /**
+     * O PERFIL por PONTA (F-C3, C10), provado no script REAL: {@code tools/list} do servidor rodando
+     * em node. A ponta do EXECUTOR anuncia os dois trilhos (skill + memória); a do CEO anuncia SÓ a
+     * memória — o corpo de skill do KnowAll segue exclusivo do executor (F-AT2/D6, "personas FORA").
+     * Todas {@code readOnlyHint:true}: é verdade (leitura pura) e é o que satisfaz o gate do codex.
+     */
+    @Test
+    void oPerfilDaPontaFiltraAsToolsAnunciadas() throws IOException, InterruptedException {
+        materializer.materialize(workDir);
+        Path script = workDir.resolve(".orq/mcp/knowall-server.js");
+
+        assertThat(toolsAnunciadas(script, "executor"))
+                .containsExactlyInAnyOrder("knowall_search", "knowall_fetch_body",
+                        "memory_search", "memory_fetch");
+        assertThat(toolsAnunciadas(script, "ceo"))
+                .as("a persona não navega o catálogo de skills mid-turno")
+                .containsExactlyInAnyOrder("memory_search", "memory_fetch");
+    }
+
+    /** Fala MCP de verdade com o script (JSON-RPC por stdio) e devolve os nomes das tools anunciadas. */
+    private List<String> toolsAnunciadas(Path script, String profile) throws IOException, InterruptedException {
+        ProcessBuilder run = new ProcessBuilder("node", script.toString(),
+                "http://127.0.0.1:1/", "token-de-teste", profile);
+        run.redirectErrorStream(true);
+        Process process;
+        try {
+            process = run.start();
+        } catch (IOException nodeAusente) {
+            Assumptions.abort("node não está no PATH deste ambiente — pulando o tools/list real");
+            return List.of();
+        }
+        process.getOutputStream().write(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n".getBytes(StandardCharsets.UTF_8));
+        process.getOutputStream().flush();
+        process.getOutputStream().close();
+        String saida = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        process.waitFor();
+
+        assertThat(saida).as("o servidor respondeu o tools/list").contains("\"tools\"");
+        assertThat(saida).as("readOnlyHint em toda tool (gate do codex)").doesNotContain("readOnlyHint\":false");
+        List<String> nomes = new ArrayList<>();
+        Matcher nome = Pattern.compile("\"name\":\"([a-z_]+)\"").matcher(saida);
+        while (nome.find()) {
+            nomes.add(nome.group(1));
+        }
+        return nomes;
     }
 
     @Test

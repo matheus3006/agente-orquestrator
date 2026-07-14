@@ -162,8 +162,57 @@ class CodexWorkspaceConventionOnRunTest {
                 ".claude/CLAUDE.md", "AGENTS.md");
     }
 
+    /**
+     * F-C3 (C9) — <b>o memoryFile é território do PRODUTO em TODO run</b> (decisão do dono no kickoff
+     * desta faixa, 2026-07-14). Até aqui o pipeline não tocava o {@code AGENTS.md} de um run de Issue
+     * ("é do agente") — mas isso era CONSEQUÊNCIA de o executor não receber memória nenhuma, não um
+     * princípio próprio. Com o C9 ele passa a receber os PRINCÍPIOS pelo único canal sempre-on que
+     * existe, e a regra fica a MESMA das outras superfícies de config do CLI, que o produto já
+     * possui em run de Issue: {@code .claude/skills/} é varrido (faxina) e os hooks são escritos
+     * (F-N6). O que o AGENTE escrever nesse caminho é substituído pela dieta durável.
+     */
     @Test
-    void runDeIssueCodexMaterializaSoSkillsECartaDoAgenteFicaEmPaz() throws Exception {
+    void runDeIssueCodexMaterializaSkillsEOsPrincipios_oMemoryFileEhDoProduto() throws Exception {
+        UUID companyId = novaCompany();
+        Agent worker = new Agent(UUID.randomUUID(), companyId, "W", "worker", null);
+        worker.configureRuntime("codex", "true", "LOCAL");
+        UUID workerId = agents.save(worker).getId();
+        instalaESeleciona(companyId, workerId, "mat-codex", "# Codex\ncorpo\n");
+        // A carta NÃO é material de executor (C9) — só o playbook atravessa.
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA,
+                "# Carta\n- #3 direcao SECRETA-DO-DONO", 1));
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.PLAYBOOK,
+                "# Playbook da empresa\n- #7 principio VERDE-42", 1));
+
+        UUID issueId = issues.create(companyId, "tarefa", null).getId();
+        Path workDir = workspaces.resolve(companyId, workerId, issueId);
+        Files.createDirectories(workDir.resolve(".claude/skills/velha"));
+        Files.writeString(workDir.resolve(".claude/skills/velha/SKILL.md"), "cerebro velho");
+        Files.writeString(workDir.resolve("AGENTS.md"), "notas do proprio agente");
+
+        wakeups.enqueue(companyId, workerId, issueId, "trabalhar");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(Files.exists(workDir.resolve(".codex/skills/mat-codex/SKILL.md"))).isTrue();
+        assertThat(Files.exists(workDir.resolve(".claude/skills"))).isFalse();
+        // O canal nativo do codex carrega os PRINCÍPIOS — e nunca a carta (o split C9).
+        assertThat(Files.readString(workDir.resolve("AGENTS.md")))
+                .contains("#7 principio VERDE-42")
+                .doesNotContain("SECRETA-DO-DONO")
+                .doesNotContain("notas do proprio agente");
+        // F-N6: hooks materializam em TODO run (junto das skills) — também em run de Issue.
+        assertThat(Files.exists(workDir.resolve(".codex/hooks/pretooluse-guard.js"))).isTrue();
+        assertThat(recorder.writes).hasSize(1);
+        assertThat(recorder.writes.get(0)).containsExactly(
+                ".claude/skills", ".codex/skills",
+                ".claude/settings.json", ".claude/hooks/pretooluse-guard.js",
+                ".codex/hooks.json", ".codex/hooks/pretooluse-guard.js",
+                ".claude/CLAUDE.md", "AGENTS.md");
+    }
+
+    /** Sem princípio selado, a dieta do executor é vazia — e o memoryFile some (nunca serve dieta velha). */
+    @Test
+    void runDeIssueSemPlaybookRemoveOMemoryFile() throws Exception {
         UUID companyId = novaCompany();
         Agent worker = new Agent(UUID.randomUUID(), companyId, "W", "worker", null);
         worker.configureRuntime("codex", "true", "LOCAL");
@@ -172,25 +221,12 @@ class CodexWorkspaceConventionOnRunTest {
 
         UUID issueId = issues.create(companyId, "tarefa", null).getId();
         Path workDir = workspaces.resolve(companyId, workerId, issueId);
-        Files.createDirectories(workDir.resolve(".claude/skills/velha"));
-        Files.writeString(workDir.resolve(".claude/skills/velha/SKILL.md"), "cerebro velho");
-        // Um AGENTS.md que o AGENTE escreveu no próprio workspace de Issue (D5): o pipeline
-        // nunca o toca em run de Issue — espelho exato do contrato do .claude/CLAUDE.md.
-        Files.writeString(workDir.resolve("AGENTS.md"), "notas do proprio agente");
+        Files.writeString(workDir.resolve("AGENTS.md"), "dieta de um run anterior");
 
         wakeups.enqueue(companyId, workerId, issueId, "trabalhar");
         assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
 
-        assertThat(Files.exists(workDir.resolve(".codex/skills/mat-codex/SKILL.md"))).isTrue();
-        assertThat(Files.exists(workDir.resolve(".claude/skills"))).isFalse();
-        assertThat(Files.readString(workDir.resolve("AGENTS.md"))).isEqualTo("notas do proprio agente");
-        // F-N6: hooks materializam em TODO run (junto das skills) — também em run de Issue.
-        assertThat(Files.exists(workDir.resolve(".codex/hooks/pretooluse-guard.js"))).isTrue();
-        assertThat(recorder.writes).hasSize(1);
-        assertThat(recorder.writes.get(0)).containsExactly(
-                ".claude/skills", ".codex/skills",
-                ".claude/settings.json", ".claude/hooks/pretooluse-guard.js",
-                ".codex/hooks.json", ".codex/hooks/pretooluse-guard.js");
+        assertThat(Files.exists(workDir.resolve("AGENTS.md"))).isFalse();
     }
 
     @Test

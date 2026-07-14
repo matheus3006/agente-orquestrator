@@ -57,6 +57,13 @@ bloco `handoff` para o `planejador`, com o bastão = o caminho do dossiê. O for
 bloco está nas **Instruções do turno** (contrato único, inline — siga-o de lá; não o reproduza
 daqui).
 
+**Exceção — o caso (C) (contratação pedida):** um pedido explícito de contratação **já é o "sim"**.
+Não pergunte de novo nem espere outro turno: **no mesmo turno**, carimbe o dossiê com o pedido (as
+palavras do dono, verbatim) e emita o `handoff` ao `planejador`. E **nunca protocole você mesmo um
+bloco `proposta`** — quem protocola a contratação é o **Executor**, no fim da cascata; uma proposta
+emitida por você é descartada pelo gate (você recebe um aviso na conversa) e o dono fica sem o card.
+Emissor e formato canônico: **Instruções do turno**.
+
 ## Re-grelha cirúrgica
 
 Se uma persona devolveu uma lacuna (needs-grilling), ela travou em algo que **só o dono responde**.

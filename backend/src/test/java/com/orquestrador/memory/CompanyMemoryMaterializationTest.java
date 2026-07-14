@@ -4,10 +4,12 @@ import com.orquestrador.common.security.ActorType;
 import com.orquestrador.conversation.Conversation;
 import com.orquestrador.conversation.ConversationService;
 import com.orquestrador.execution.HeartbeatDispatcher;
+import com.orquestrador.execution.WakeupService;
 import com.orquestrador.execution.runtime.WorkspaceResolver;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.work.issue.IssueService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +45,10 @@ class CompanyMemoryMaterializationTest {
     private CompanyService companies;
     @Autowired
     private AgentRepository agents;
+    @Autowired
+    private WakeupService wakeups;
+    @Autowired
+    private IssueService issues;
 
     @TempDir
     Path workDir;
@@ -58,21 +64,21 @@ class CompanyMemoryMaterializationTest {
         Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
 
         // Sem carta: nada é escrito.
-        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.CEO);
         assertThat(Files.exists(claudeMd)).isFalse();
 
         memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA, "# Carta v1", 1));
-        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.CEO);
         assertThat(Files.readString(claudeMd)).isEqualTo("# Carta v1");
 
         // Versão mais nova VENCE (append-only: v2 não apaga v1 no banco, mas o arquivo é o corrente).
         memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA, "# Carta v2", 2));
-        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.CEO);
         assertThat(Files.readString(claudeMd)).isEqualTo("# Carta v2");
 
         // Carta de OUTRA company nunca vaza; sem carta própria o arquivo é REMOVIDO.
         UUID outraCompany = novaCompany();
-        materializer.materialize(workDir, ".claude/CLAUDE.md", outraCompany);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", outraCompany, MemoryAudience.CEO);
         assertThat(Files.exists(claudeMd)).isFalse();
     }
 
@@ -85,13 +91,84 @@ class CompanyMemoryMaterializationTest {
         Path agentsMd = workDir.resolve("AGENTS.md");
 
         memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA, "# Carta codex", 1));
-        materializer.materialize(workDir, "AGENTS.md", companyId);
+        materializer.materialize(workDir, "AGENTS.md", companyId, MemoryAudience.CEO);
         assertThat(Files.readString(agentsMd)).isEqualTo("# Carta codex");
         assertThat(Files.exists(workDir.resolve(".claude/CLAUDE.md"))).isFalse();
 
         // Sem carta própria (outra company), o AGENTS.md é REMOVIDO.
-        materializer.materialize(workDir, "AGENTS.md", novaCompany());
+        materializer.materialize(workDir, "AGENTS.md", novaCompany(), MemoryAudience.CEO);
         assertThat(Files.exists(agentsMd)).isFalse();
+    }
+
+    /**
+     * O SPLIT do sempre-on (F-C3, C9): as duas pontas recebem DIETAS diferentes da mesma memória.
+     * O CEO recebe a carta (direções vigentes) + os princípios; o EXECUTOR recebe os PRINCÍPIOS e
+     * NUNCA a carta — direção do dono não é material de executor. Os princípios SÃO o índice enxuto
+     * (frases terças, dono-seladas) e trazem o {@code #N} que destrava o {@code memory_fetch}.
+     */
+    @Test
+    void oSplitDoSempreOn_executorRecebePrincipiosNuncaACarta() throws Exception {
+        UUID companyId = novaCompany();
+        Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA,
+                "# Carta de interesses da empresa\n- #3 cobrar por assento", 1));
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.PLAYBOOK,
+                "# Playbook da empresa\n- #7 sempre validar canal antes de escalar", 1));
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.CEO);
+        assertThat(Files.readString(claudeMd))
+                .as("o CEO recebe as DUAS superfícies")
+                .contains("Carta de interesses").contains("#3 cobrar por assento")
+                .contains("Playbook da empresa").contains("#7 sempre validar canal");
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR);
+        assertThat(Files.readString(claudeMd))
+                .as("o EXECUTOR recebe os princípios — e a carta NÃO entra")
+                .contains("Playbook da empresa").contains("#7 sempre validar canal")
+                .doesNotContain("Carta de interesses").doesNotContain("cobrar por assento");
+    }
+
+    /** Sem princípio selado, o executor não ganha arquivo nenhum (nunca serve dieta vazia/velha). */
+    @Test
+    void semPlaybookOExecutorNaoRecebeArquivo() throws Exception {
+        UUID companyId = novaCompany();
+        Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA, "# Carta v1", 1));
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR);
+        assertThat(Files.exists(claudeMd)).isFalse();
+
+        // E o arquivo de um run ANTERIOR do CEO é REMOVIDO quando a dieta do executor está vazia.
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.CEO);
+        assertThat(Files.exists(claudeMd)).isTrue();
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR);
+        assertThat(Files.exists(claudeMd)).isFalse();
+    }
+
+    /**
+     * O split C9 vivo, no RUN: até a F-C3 o executor de uma Issue não recebia memória nenhuma
+     * ("em run de Issue o executor não o chama"). Agora recebe os PRINCÍPIOS — e a carta continua
+     * fora do workspace dele.
+     */
+    @Test
+    void runDeExecutorMaterializaOsPrincipiosSemACarta() throws Exception {
+        UUID companyId = novaCompany();
+        Agent executor = new Agent(UUID.randomUUID(), companyId, "Vega", "executor", null);
+        executor.configureRuntime("process", "echo ok", "LOCAL");
+        UUID executorId = agents.save(executor).getId();
+        UUID issueId = issues.create(companyId, "tarefa", null).getId();
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA,
+                "# Carta de interesses da empresa\n- #3 cobrar por assento", 1));
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.PLAYBOOK,
+                "# Playbook da empresa\n- #7 validar canal antes de escalar", 1));
+
+        wakeups.enqueue(companyId, executorId, issueId, "trabalhar");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        Path claudeMd = workspaces.resolve(companyId, executorId, issueId).resolve(".claude/CLAUDE.md");
+        assertThat(Files.readString(claudeMd))
+                .contains("#7 validar canal antes de escalar")
+                .doesNotContain("cobrar por assento");
     }
 
     @Test
