@@ -5,11 +5,17 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui
 import { type ReviewDecision } from "@/lib/api";
 import { shortId } from "@/lib/format";
 
-// A decisão de um ciclo de review (F.5), com os textos congelados do
-// openDecisionDialog. Controlado: a PÁGINA é dona da mutation porque o card
-// precisa sair animado (.leaving) ANTES da invalidação — o dialog só coleta o
-// reason e devolve a confirmação. reason ≤2000 (o server valida; 422 volta como
-// errorMessage inline, sem fechar). APPROVE→DONE, REJECT→BLOCKED.
+// A decisão de um ciclo de review (F.5 + F-C1/C14). Controlado: a PÁGINA é dona
+// da mutation porque o card precisa sair animado (.leaving) ANTES da invalidação
+// — o dialog só coleta o texto e devolve a confirmação. reason ≤2000 (o server
+// valida; 422 volta como errorMessage inline, sem fechar). APPROVE→DONE,
+// REJECT→BLOCKED.
+//
+// C14 ("perguntar sempre, bloquear nunca"): no APPROVE o prompt é o racionalProbe
+// — a pergunta NÃO-bloqueante nas PALAVRAS da política (criativo = maiêutica D10;
+// não-criativo pesca o risco aceito); responder fabrica a Decisão, pular deixa só
+// o histórico. No REJECT o motivo é OBRIGATÓRIO (ele É a Decisão do registro) —
+// o botão trava sem texto; o server é o backstop (400).
 
 export interface DecisionTarget {
   reviewId: string;
@@ -17,6 +23,8 @@ export interface DecisionTarget {
   title: string;
   runId: string;
   decision: ReviewDecision;
+  /** A pergunta do approve nas palavras da política (C14); null degrada pro texto padrão. */
+  racionalProbe: string | null;
 }
 
 export function DecisionDialog({
@@ -62,12 +70,13 @@ function DecisionForm({
 }) {
   const [reason, setReason] = useState("");
   const isReject = target.decision === "REJECT";
+  const motivoAusente = isReject && reason.trim() === "";
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (!pending) {
+        if (!pending && !motivoAusente) {
           onConfirm(reason.trim());
         }
       }}
@@ -84,16 +93,18 @@ function DecisionForm({
           </span>
           <br />
           {isReject
-            ? "REJECT estaciona a issue em BLOCKED — o recovery é o unblock (REOPEN/CANCEL)."
-            : "APPROVE conclui a issue (DONE)."}
+            ? "REJECT estaciona a issue em BLOCKED — o motivo é obrigatório e vira a Decisão do registro."
+            : "APPROVE conclui a issue (DONE). Responder vira Decisão no log; pular deixa só o histórico."}
         </p>
         <textarea
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           maxLength={2000}
-          placeholder={`reason ${
-            isReject ? "(recomendado no reject)" : "(opcional)"
-          } — fica na tabela review, nunca no activity log`}
+          placeholder={
+            isReject
+              ? "motivo (obrigatório) — o que barrou a entrega?"
+              : (target.racionalProbe ?? "alguma ressalva ou risco que valha registrar? (opcional)")
+          }
           autoFocus
         />
         {errorMessage && <p className="m-0 text-[12.5px] text-coral">{errorMessage}</p>}
@@ -102,7 +113,11 @@ function DecisionForm({
         <DialogClose className="btn ghost" type="button">
           Cancelar
         </DialogClose>
-        <button className={isReject ? "btn danger" : "btn primary"} type="submit" disabled={pending}>
+        <button
+          className={isReject ? "btn danger" : "btn primary"}
+          type="submit"
+          disabled={pending || motivoAusente}
+        >
           {pending ? "Enviando…" : isReject ? "Rejeitar ciclo" : "Aprovar ciclo"}
         </button>
       </div>

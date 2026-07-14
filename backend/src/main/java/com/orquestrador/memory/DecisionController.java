@@ -41,13 +41,15 @@ public class DecisionController {
                 .map(DecisionResponse::from).toList();
     }
 
-    public record DecisionResponse(UUID id, Instant decidedAt, String area, String tipo, String origem,
-                                   String oQueMudou, String racional, String racionalTipo,
-                                   boolean racionalArrancado, UUID supersedesId, String evidencia,
-                                   UUID issueId, UUID approvalId, UUID reviewId) {
+    // seq = o #N humano da Decisão (C4, clone da ADR-0033); grau = o eixo do ALCANCE (C3).
+    public record DecisionResponse(UUID id, int seq, Instant decidedAt, String area, String tipo,
+                                   String grau, String origem, String oQueMudou, String racional,
+                                   String racionalTipo, boolean racionalArrancado, UUID supersedesId,
+                                   String evidencia, UUID issueId, UUID approvalId, UUID reviewId) {
         static DecisionResponse from(Decision decision) {
-            return new DecisionResponse(decision.getId(), decision.getDecidedAt(), decision.getArea(),
-                    decision.getTipo().name(), decision.getOrigem().name(), decision.getOQueMudou(),
+            return new DecisionResponse(decision.getId(), decision.getSeq(), decision.getDecidedAt(),
+                    decision.getArea(), decision.getTipo().name(), decision.getGrau().name(),
+                    decision.getOrigem().name(), decision.getOQueMudou(),
                     decision.getRacional(), decision.getRacionalTipo().name(),
                     decision.isRacionalArrancado(), decision.getSupersedesId(), decision.getEvidencia(),
                     decision.getIssueId(), decision.getApprovalId(), decision.getReviewId());

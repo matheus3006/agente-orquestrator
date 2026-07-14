@@ -12,6 +12,9 @@ const review = (o: Partial<ReviewSummary> = {}): ReviewSummary => ({
   decisionReason: null,
   requestedAt: "2026-07-02T10:00:00Z",
   decidedAt: null,
+  area: "operacao",
+  racionalTipo: "LOGICO",
+  racionalProbe: "Alguma ressalva ou risco que valha registrar?",
   ...o,
 });
 
@@ -81,6 +84,34 @@ describe("resolveReviewCard (a ReviewResponse enxuta resolvida pela lista de iss
   it("agente designado mas fora da lista → null (mesma semântica da página de issues)", () => {
     const card = resolveReviewCard(review(), [issue({ assigneeAgentId: "sumiu" })], [agent()]);
     expect(card.assigneeName).toBeNull();
+  });
+
+  // F-C1 (C14): a pergunta não-bloqueante do approve vem nas PALAVRAS da política
+  // (racionalProbe) + área/tipo do artefato (C11/D9) — a UI é dona só do MOMENTO.
+  it("carrega área, tipo e o probe da política no card (F-C1/C14)", () => {
+    const card = resolveReviewCard(
+      review({
+        area: "design",
+        racionalTipo: "INTUICAO",
+        racionalProbe: "Probe maieutico (ADR-0020/D10): o que exatamente te agrada aqui?",
+      }),
+      [issue()],
+      [agent()],
+    );
+    expect(card.area).toBe("design");
+    expect(card.racionalTipo).toBe("INTUICAO");
+    expect(card.racionalProbe).toContain("maieutico"); // as palavras vêm da política, nunca da UI
+  });
+
+  it("degrada sem quebrar quando o backend não resolve área/probe (issue sumida)", () => {
+    const card = resolveReviewCard(
+      review({ area: null, racionalTipo: null, racionalProbe: null }),
+      [issue()],
+      [agent()],
+    );
+    expect(card.area).toBeNull();
+    expect(card.racionalTipo).toBeNull();
+    expect(card.racionalProbe).toBeNull();
   });
 
   it("carrega os campos do ciclo (runId, decisionReason, decidedAt, status) sem transformar", () => {

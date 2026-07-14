@@ -491,6 +491,62 @@ class ApprovalGateTest {
         assertThat(carta.getBody()).contains("o nicho dental tem dor aguda e ticket alto");
     }
 
+    /**
+     * F-C1 (C12 — writer D11 ACESO na porta pré-hoc): o CEO propõe citando o {@code #N}, o dono
+     * sela com {@code supersedesSeq} — a nova direção aponta a velha e a carta se AUTO-CURA na
+     * hora (o leitor já filtrava supersedidas; faltava o elo de escrita).
+     */
+    @Test
+    void donoSelaSupersedeCitadoEACartaSeAutoCura() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        timeComArquiteto(companyId, "Produto", "Nicho", "Ana Arquiteta");
+        Approval antiga = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
+                        "{\"dominio\":\"Produto\",\"foco\":\"Nicho\",\"title\":\"Focar no nicho dental\"}",
+                        "Focar no nicho dental", "direcao-roadmap"));
+        approvals.decide(companyId, antiga.getId(), ApprovalDecision.APPROVE,
+                "o nicho dental tem dor aguda", null, ActorType.BOARD, UUID.randomUUID());
+        Decision direcaoAntiga = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).get(0);
+        assertThat(memories.findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, MemoryKind.CARTA)
+                .orElseThrow().getBody()).contains("Focar no nicho dental");
+
+        Approval nova = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
+                        "{\"dominio\":\"Produto\",\"foco\":\"Nicho\",\"title\":\"Pivotar para veterinaria\"}",
+                        "Pivotar para veterinaria (supera a #" + direcaoAntiga.getSeq() + ")",
+                        "direcao-roadmap"));
+        approvals.decide(companyId, nova.getId(), ApprovalDecision.APPROVE,
+                "o dental saturou; a premissa caiu", null, ActorType.BOARD, UUID.randomUUID(),
+                null, direcaoAntiga.getSeq());
+
+        Decision direcaoNova = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).stream()
+                .filter(decision -> decision.getOQueMudou().contains("Pivotar")).findFirst().orElseThrow();
+        assertThat(direcaoNova.getSupersedesId()).isEqualTo(direcaoAntiga.getId());
+        String carta = memories.findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, MemoryKind.CARTA)
+                .orElseThrow().getBody();
+        assertThat(carta).contains("Pivotar para veterinaria");
+        assertThat(carta).as("a supersedida sai da carta sozinha (auto-cura do leitor)")
+                .doesNotContain("Focar no nicho dental");
+    }
+
+    /** C12: endereço #N fantasma no sela → 409 acionável ANTES de qualquer efeito; segue PENDING. */
+    @Test
+    void supersedeComEnderecoFantasmaE409EPropostaSeguePending() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix());
+
+        assertThatThrownBy(() -> approvals.decide(companyId, proposta.getId(),
+                ApprovalDecision.APPROVE, "runway curto", null, ActorType.BOARD, UUID.randomUUID(),
+                null, 99))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("#99");
+        assertThat(approvalRepo.findById(proposta.getId()).orElseThrow().getStatus())
+                .isEqualTo(ApprovalStatus.PENDING);
+        assertThat(agents.findByCompanyId(companyId)).as("nada disparou").hasSize(1); // só o CEO
+    }
+
     @Test
     void areaCriativaCommitaNaHoraComPreferencia() {
         UUID companyId = novaCompany();

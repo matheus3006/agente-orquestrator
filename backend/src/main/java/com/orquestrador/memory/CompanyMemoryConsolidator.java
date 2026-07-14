@@ -61,7 +61,10 @@ public class CompanyMemoryConsolidator {
         out.append("> direção aprovadas pelo dono. Não editar à mão — a fonte é o log.\n\n");
         out.append("## Direções vigentes\n");
         for (Decision decisao : vigentes) {
-            out.append("- [").append(DATA.format(decisao.getDecidedAt())).append("] ")
+            // O #N na frente é o ENDEREÇO (C4): é o que o CEO cita ao supersedar (D11) e a
+            // chave que o fetch JIT vai buscar — a carta ensina o endereço de graça.
+            out.append("- #").append(decisao.getSeq())
+                    .append(" [").append(DATA.format(decisao.getDecidedAt())).append("] ")
                     .append("(").append(decisao.getArea()).append(") ")
                     .append(decisao.getOQueMudou())
                     .append(" — racional: ").append(decisao.getRacional())

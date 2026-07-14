@@ -21,6 +21,12 @@ export interface ReviewCard {
   decisionReason: string | null;
   requestedAt: string;
   decidedAt: string | null;
+  /** F-C1 (C11): a área do ARTEFATO (time do assignee); null se a issue sumiu (degrada). */
+  area: string | null;
+  /** LOGICO | INTUICAO derivado da área (D9) — INTUICAO = a maiêutica (D10) no prompt. */
+  racionalTipo: string | null;
+  /** A pergunta não-bloqueante do approve, nas PALAVRAS da política (C14). */
+  racionalProbe: string | null;
 }
 
 export function resolveReviewCard(
@@ -41,6 +47,9 @@ export function resolveReviewCard(
     decisionReason: review.decisionReason,
     requestedAt: review.requestedAt,
     decidedAt: review.decidedAt,
+    area: review.area ?? null,
+    racionalTipo: review.racionalTipo ?? null,
+    racionalProbe: review.racionalProbe ?? null,
   };
 }
 

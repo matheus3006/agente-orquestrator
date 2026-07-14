@@ -1,6 +1,7 @@
 # ADR-0020: Racional arrancado por grill no gate
 
-**Status:** Aceito (2026-07-04; triviabilidade = residual a fechar na implementação de T.3)
+**Status:** Aceito (2026-07-04) · **residual da triviabilidade FECHADO + D8 emendado
+(2026-07-14, F-C1 — ver Revisão abaixo)**
 
 > Registro do **regime de racional** das Decisões (ADR-0019). Detalhe/porquê: `docs/handoff-grilling-memoria-ceo-
 > segundo-cerebro.md` (D6–D12). A Decisão-átomo é o ADR-0019; a `approval` que carrega o campo é o ADR-0018.
@@ -38,8 +39,63 @@ e sem induzir confabulação. Fundamentação: o write-validation-gate das pesqu
 - O regime é **presença auditável**: nada é bloqueado por "qualidade fraca"; o que falta fica visível pra revisão.
 
 ## Residual (a fechar na implementação de T.3)
-- **Proporcionalidade / triviabilidade do grill** — rec.: reusar o escape **"Auto-aprovado por triviabilidade"**
-  do `controle/` do cadillac (não grelhar rename/typo/ajuste trivial).
+- **Proporcionalidade / triviabilidade do grill** — ~~rec.: reusar o escape "Auto-aprovado por
+  triviabilidade" do `controle/` do cadillac (não grelhar rename/typo/ajuste trivial)~~ —
+  **FECHADO (2026-07-14, F-C1/C14):** a recomendação original caiu; ver Revisão abaixo.
+
+## Revisão 2026-07-14 (F-C1 — grill da Frente C, C13/C14)
+
+> Detalhe/porquê (alternativas rejeitadas inclusas): `docs/handoff-grilling-frente-c-memoria.md`.
+
+- **D8 emendado — o regime de COMMIT é ÚNICO nos dois tipos (C13). O código estava certo; este
+  documento estava errado.** O texto original ("Lógico BLOQUEIA o commit até razão substantiva")
+  prometia uma barra que o código nunca teve — e **não deve ter**. Empírico, não filosófico:
+  `LOGICO` é 100% do tráfego padrão do gate (as 6 ações derivam pra estrutura-org/backlog/
+  operacao/skills — nenhuma criativa); uma barra de qualidade no LOGICO cairia sobre TODO commit
+  do dono → *"fricção mata o hábito"* (D6) + **confabulação em escala** (D7: o único jeito de
+  passar por uma barra que você não satisfaz honestamente é inventar uma premissa). O regime dos
+  DOIS tipos é o mesmo: **presença + anti-confabulação** (vazio e "porque quis" grelham; qualidade
+  NUNCA é julgada). **A diferença lógico↔intuição continua viva onde é real:** o fraseado do probe
+  · a evidência maiêutica (só na intuição, D10) · o sinal de revisabilidade (D11) que o
+  `racional_tipo` carrega pela vida da Decisão.
+  - *Alternativa rejeitada (registrada para NÃO ser re-litigada):* um check de **ESPÉCIE** (barrar
+    racional em forma de preferência no LOGICO — "me agrada" não é premissa). REJEITADO porque as
+    palavras de preferência são **AMBÍGUAS**: *"prefiro Postgres a Mongo porque o modelo é
+    relacional"* contém "prefiro" **e é uma premissa perfeita**. `CONFAB_FORMS` só funciona porque
+    seus membros são não-respostas inequívocas; uma lista de preferência dispararia falso no loop
+    quente. Um lógico "mal-tipado" é auto-revelador no texto (custo do regime único: ZERO mecânico
+    — `racional_tipo` tem exatamente 2 consumidores, o fraseado do probe e a evidência maiêutica).
+- **Triviabilidade FECHADA (C14) — "silêncio DEPOIS de ser perguntado", só na porta da review:**
+  | ato na review | o gate faz | Decisão |
+  |---|---|---|
+  | **REJECT** | **bloqueia** — motivo obrigatório | ✅ nasce |
+  | **APPROVE com racional** | commita | ✅ nasce — o *"risco aceito-sem-mudar"* (D5) |
+  | **APPROVE em silêncio** | commita **+ pergunta NÃO-bloqueante**, nas palavras da POLÍTICA (criativo → a maiêutica D10; não-criativo → *"alguma ressalva ou risco que valha registrar?"*) | ✅ se responder · ❌ se pular — fica só o `REVIEW_APPROVED` no activity_log (**memória durável não nasce do nada**) |
+
+  A saída estava escrita nas decisões o tempo todo: D6 — escriba-que-**INSISTE**, **nunca
+  bloqueia** (as duas metades) + D10 — o probe roda em AMBOS os tipos → **perguntar sempre,
+  bloquear nunca**. **Não-gameável:** para escapar você precisa não dizer nada — e quem não diz
+  nada não ganha memória, que é a verdade. A chamada segue UMA (`review(decision, racional?)`);
+  **a política é dona das PALAVRAS (`RacionalPolicy.reviewProbe`), a UI é dona do MOMENTO**.
+  A regra "sem substância → sem Decisão" mora DENTRO da fábrica única (`GateDecisionFactory`,
+  ADR-0019/C15).
+  - *Rejeitados:* **forçar racional em todo approve** (`racional: "ok"` em massa — e `CONFAB_FORMS`
+    não pega "ok"; o risco-aceito fica enterrado no ruído) · **"silêncio = trivial" sem perguntar**
+    (o writer D5 nasceria morto na prática; o registro que morre primeiro é justamente o
+    risco-aceito — problema grande vira REJECT e fica; problema pequeno aceito evapora por inércia;
+    viola o D10) · **`APPROVE_COM_RESSALVA` (3º valor de enum)** (adição rasa — deleta o valor e a
+    capacidade continua; entrega nudge, não comportamento) · **o escape "Auto-aprovado por
+    triviabilidade"** da recomendação original (julgar trivialidade a priori é a barra de qualidade
+    que o D6 proíbe — a triviabilidade REAL é revelada pelo silêncio do dono após perguntado).
+- **A porta da APPROVAL não muda (C14):** ela CRIA estado (`dispatchAction` contrata/cria/instala)
+  — criação merece um porquê; aceitação em silêncio, não. O volume lá já tem a resposta da casa:
+  o lote com racional COMPARTILHADO (ADR-0035) — "compartilhe o racional", nunca "pule o racional".
+- **Bônus (pré-fiação da F-C2):** o detector de graduação (C5) e o cap (C7) passam a nunca contar
+  carimbo — o Playbook não gradua ruído.
+- **Achado registrado (C13):** a maiêutica (D10) era praticamente código morto — 100% do tráfego
+  LOGICO fazia o `maieuticProbe` quase nunca disparar. **O que a ressuscitou foi o C11:** a review
+  é onde o dono julga ARTEFATO — e artefato é onde mora o gosto (issue criativa revisada → área
+  criativa → INTUICAO → a maiêutica dispara). D10 vivo pela primeira vez.
 
 ## Relaciona
 `docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D6–D12); ADR-0019 (a Decisão-átomo que carrega o racional);

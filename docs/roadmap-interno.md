@@ -172,6 +172,7 @@ a *assinatura do método* (anti-inchaço) ainda não.
 | Sub-parte | Verdict · Estágio | Evidência | Ponteiro |
 |-----------|-------------------|-----------|----------|
 | Decisão-como-átomo + racional por grill + carta (projeção determinística zero-LLM) | ✅ IMPLEMENTADA · VENDO | `memory/CompanyMemoryConsolidator.java:32-55` (carta = projeção de Decisões-de-direção vigentes) | ADR-0019/0020 |
+| **F-C1 "o átomo completo"** (R15-A, 2026-07-14): endereço `#N` + `grau` (V29) · fábrica ÚNICA `GateDecisionFactory` (C15) · **writers D5/D11 ACESOS** (review fabrica Decisão com área do ARTEFATO; `supersedesSeq` nas 2 portas → carta se auto-cura) · triviabilidade C14 (silêncio-após-perguntado; probe da política no FE) · `render()` emite `#N` | ✅ IMPLEMENTADA · VENDO na descartável | `memory/{GateDecisionFactory, DecisionGrau}` · `V29__decision_seq_grau.sql` · `IssueService.review` (review_id acordou) · suíte 691 back / 290 front | ADR-0019+0020 **emendadas** (nota D5/D11 + triviabilidade FECHADAS) · `handoff-grilling-frente-c-memoria.md` §RESULTADO |
 | Cap-de-linha + **graduação** episódico→durável + tier Playbook | ⚪ AUSENTE · 🟡 PLANEJADO | `MemoryKind` só tem `CARTA`; sem ritual de graduação (residual 2 da ADR-0019, consciente) | `handoff-grilling-memoria-ceo-segundo-cerebro` |
 | Índice enxuto sempre-carregado + navegação JIT | ⚪ AUSENTE · 🟡 PLANEJADO | método/prosa; única camada always-on é a carta (`CLAUDE.md`) | idem |
 

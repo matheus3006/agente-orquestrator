@@ -67,7 +67,8 @@ public class ApprovalController {
         ApprovalService.EngineOverride engine = new ApprovalService.EngineOverride(
                 request.adapterType(), request.model(), request.effort());
         DecideOutcome outcome = approvals.decide(companyId, approvalId, request.decision(),
-                request.racional(), request.reason(), actor.type(), actor.id(), engine);
+                request.racional(), request.reason(), actor.type(), actor.id(), engine,
+                request.supersedesSeq());
         // D15 (ADR-0035): recusa commitada VOLTA ao proponente na conversa de origem. O gancho
         // fica no CALLER (não no decide) de propósito: o lote agrega por conversa antes de
         // postar (D7) — decide() por item postando quebraria a agregação.
@@ -111,13 +112,18 @@ public class ApprovalController {
                 outcome.decididas().stream().map(ApprovalResponse::from).toList());
     }
 
-    /** O trio adapterType/model/effort é o motor editado pelo dono no menu do hire (A4). */
+    /**
+     * O trio adapterType/model/effort é o motor editado pelo dono no menu do hire (A4).
+     * supersedesSeq (opcional, D11): o #N citado pelo CEO que esta decisão supersede — o dono
+     * sela; a carta se auto-cura (o leitor já filtra supersedidas). #N fantasma → 409.
+     */
     public record DecisionRequest(@NotNull ApprovalDecision decision,
                                   @Size(max = 4000) String racional,
                                   @Size(max = 2000) String reason,
                                   @Size(max = 120) String adapterType,
                                   @Size(max = 120) String model,
-                                  @Size(max = 120) String effort) {
+                                  @Size(max = 120) String effort,
+                                  Integer supersedesSeq) {
     }
 
     /** O 422 do grill: o commit NÃO aconteceu; o probe é a pergunta do escriba-que-insiste. */
