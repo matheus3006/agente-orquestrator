@@ -343,3 +343,16 @@ própria conta), com o **teto de rate-limit** como a restrição real (dimension
 numa assinatura). O que **não** pode, sem migrar pra **API paga**: transformar o orquestrador em **SaaS multi-tenant
 roteando as assinaturas de clientes**. Essa bifurcação (self-hosted-pessoal vs SaaS-com-API-key) deve ser cravada no
 **ADR-0016** antes de construir a F.8.
+
+---
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**Os 4 alvos de teste de frontend do plano (dropdown popula · hire envia os 3 campos · detail
+edita · roster renderiza label) não existem como testes de componente — e a ausência é
+convenção deliberada da casa, não lacuna.** O piso de verificação do board (ADR-0013) é
+vitest **SÓ nos helpers puros de `src/lib`** ("logic in tested lib helpers, thin
+components"); a lógica desses 4 alvos vive testada em `engines.test.ts` (labels/derivações do
+catálogo), e as telas fecharam com verificação VIVA contra o protótipo aprovado — o caminho
+que a ADR-0013 definiu para componente. O item da lista de execução (#15) foi escrito antes
+da ADR-0013 cravar essa convenção. Nada a construir. Corpo original intocado.

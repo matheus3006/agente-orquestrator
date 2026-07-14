@@ -66,3 +66,14 @@ pessoal.
 - Toda query nova DEVE registrar em `queryKeys`; toda navegação DEVE usar `CompanyLink`/`useCompanyNav`.
 - Slug inválido nunca renderiza company errada (404 escopado no segmento).
 - O theme vive nos tokens de `globals.css`; nenhuma tela usa cor fora deles.
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**O `notFound()` do LAYOUT não resolve no not-found do segmento** — pela semântica do App
+Router, `notFound()` lançado num layout sobe ao not-found do segmento PAI (a raiz, aqui). O
+que o `not-found.tsx` do segmento `[companySlug]` realmente cobre são as PÁGINAS internas
+(issue/agent inexistente); o slug inválido em si renderiza o not-found da RAIZ. O próprio
+código já documenta isso corretamente no comentário (`frontend/src/app/[companySlug]/
+not-found.tsx:3-6`) — o drift é só do texto desta ADR ("chama `notFound()` escopado"). A
+garantia que importa fica de pé: **slug inválido nunca renderiza company errada** (404 em
+qualquer dos dois níveis). Corpo original intocado.

@@ -50,6 +50,11 @@ agente-orquestrator/
 4. **Gates de aprovação** — ações governadas exigem aprovação server-side; mudanças de config são revisionadas/rollback.
 5. **Activity log** — toda ação mutante registra ator + evento.
 6. **Deny-by-default** — wrapper de rota que falha fechado por padrão (melhoria sobre o Paperclip).
+   *(Implementação real — nota 2026-07-14, fecho documental: o tripwire nominal é o
+   **`ActorContext`** (`common/security/ActorContext.java`) — ThreadLocal por-requisição que
+   guarda o `Actor` + o flag `companyAccessAsserted`; toda rota company-scoped deve chamar o
+   `CompanyAccessGuard`, que seta o flag, e o `CompanyScopeInterceptor` verifica-o ao fim da
+   request. Os docs citavam só os vizinhos; a classe que carrega o invariante é esta.)*
 7. **Sem PII/segredos em logs** (LGPD); redação no import de skills e nos transcripts.
 
 ## 3. Modelo de domínio

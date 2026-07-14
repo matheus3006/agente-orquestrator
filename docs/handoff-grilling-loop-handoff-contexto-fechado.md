@@ -249,3 +249,17 @@ tabela de skill-de-sistema no v1; (2) `--resume` do **codex** best-effort (claud
    (`cd backend && mvn -o -DskipTests package`) e reinicia o `:8080` — o agente faz verificação read-only.
 2. Reverter o dial/seed do VENDO. 3. **Merge** do PR #1. 4. Memória de fechamento (ver
    `f-loop-handoff-contexto` / `roadmap-inventario-auditado`).
+
+---
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**O "seam do skill-set da continuação v1-explícito, pronto pra Fatia 2 plugar" (D6) nunca
+nasceu — e não fez falta.** Não existe parâmetro de skill-set no caminho da continuação
+(`ContinuationTurnPoster` não conhece skills; `ContextHandoffLoop` idem). A Fatia 2 (ADR-0031)
+foi implementada por um desenho que dispensou o seam: **3 agentes DURÁVEIS** com
+`role='ceo'+persona` — cada persona é um Agent com skillset próprio pinado, então "qual
+skill-set a continuação usa" resolve pela identidade do agente, não por um parâmetro do
+poster. O seam previsto aqui era para o desenho supersedido (1 agente trocando de chapéu,
+`proposta-3-ceos-personas.md`, ⚫ SUPERSEDIDA no roadmap). Classificação: promessa de seam
+que o desenho vencedor tornou desnecessária — nada a construir. Corpo original intocado.

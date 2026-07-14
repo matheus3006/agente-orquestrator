@@ -207,3 +207,17 @@ A pasta global do PC é só **fonte de import** — nenhum agente a acessa.
 - Injeção de env de segredo **não construída** (ok: skills do v1 são instruções puras).
 - Imutabilidade do activity_log e GIN/pg_trgm são **guards Postgres-only** (não forçados no H2).
 - **Preview (diferencial #5) bloqueado** até skills multi-arquivo.
+
+---
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**O "catalog sync" nível-operador (item 9 da migração/plano: popular a Camada 1 a partir da
+raiz do PC SEM instalar em company) existe como código, mas sem caminho de produção.**
+`SkillIndexer.syncGlobalCatalog` (`SkillIndexer.java:56`) só tem callers em teste — verificado
+de novo na main `60ac302`; o caminho vivo de import sempre instala na company
+(`SkillService`/`CompanyLibraryInstaller`, install-on-attach da 7c). Na prática o catálogo
+global é populado como efeito do primeiro install — o sync "puro" nunca teve demanda de
+operador. Classificação: capacidade construída-e-adormecida (não seam morto de invariante,
+como os da ADR-0019 — aqui nada depende dela); ganha caller se/quando a rotina de operador
+pedir. Corpo original intocado.

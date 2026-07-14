@@ -222,3 +222,16 @@ tocado. Um Run novo falha o `tryCheckout` (`WHERE execution_lock_run_id is null 
   - auto-retry on transient — `RECOVERING` + `retryNotBefore`, gated no **erro tipado do ADR-0004**; ramo dentro
     de `settleAfterRun`.
   - `failure_count` / give-up-após-N-falhas (só quando o auto-retry existir).
+
+---
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**A corrida de install concorrente NÃO "degrada pra attach" — devolve 409 limpo.** O Q7.1
+previa `catch DataIntegrityViolation → degrada p/ attach`; o construído captura a exceção e
+lança `ConflictException` ("Skill ja instalada nesta company (install concorrente)") →
+**HTTP 409** (`SkillInstallService.java:64-66`). O código é MAIS estrito e mais correto que o
+documentado: continuar dentro de uma transação abortada pós-`DataIntegrityViolation` não é
+seguro em JPA (o "degrada e segue" exigiria transação nova), e o 409 é acionável — o caller
+re-tenta o attach e encontra a skill instalada pelo vencedor da corrida. Doc desatualizado,
+comportamento superior; nada a construir. Corpo original intocado.

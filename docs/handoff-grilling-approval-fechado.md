@@ -276,3 +276,17 @@ Decisão do usuário: construir a `review` já — é inevitável, e a V11 já v
 - **Auto-fluxo do plano do architect → input da Issue-impl** (passagem de artefato entre runs).
 - **Dependência automática entre Issues** (impl espera o plano ser aprovado).
 - **Default de risco por-agente/role**; **limiar por-company**; **agente-como-reviewer** (via `reports_to`).
+
+---
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+Sobre o invariante **máx-1-review-PENDING por Issue** (`uq_review_pending`, índice parcial
+V11): (a) a entidade JPA **não declara** o índice parcial — JPA não expressa `where
+status='PENDING'`, e o guard vive SÓ no Postgres (H2 dos testes não força). É **desvio
+consciente e hoje documentado no próprio javadoc** de `Review.java:21-23`; (b) **não existe
+teste dedicado de concorrência** do invariante (dois submits em corrida → um vence, outro
+estoura o índice) — verificado de novo na main `60ac302`: os testes de review cobrem
+nascimento/fila/decisão/cross-company, não a corrida. Fica registrado como lacuna de teste
+consciente, não de mecanismo (o índice parcial É o guard, e a corrida real exigiria Postgres
+no teste — o parque roda H2). Corpo original intocado.

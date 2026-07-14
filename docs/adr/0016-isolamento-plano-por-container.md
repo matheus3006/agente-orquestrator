@@ -100,3 +100,22 @@ risco --bare), ADR-0015 (handoff), ADR-0018 (o CEO com mãos foi o amplificador 
   `team.fan_out_cap`, ledger de orquestração em moeda própria (`cost_event.orchestration_action` +
   `orchestration_limit_cents`; conta cai no CAUSADOR) e a drenagem até o checkpoint no `BudgetService`.
   Migration **V19**; registro canônico: `docs/handoff-teams-t4.md`.
+
+## Nota-GATE — home-volume compartilhado (2026-07-14, fecho documental; decisão D7 do grill motor-nativo, 2026-07-11) — **BLOQUEANTE**
+
+O laudo motor-nativo (R4-C, `docs/laudo-motor-nativo.md` §1.1-d) registrou a consequência de
+segurança do desenho "home-como-volume" desta ADR (§2): os **JSONLs de sessão de TODOS os
+tenants vivem no MESMO home-volume do motor** (`orq_claude_creds`/`orq_codex_creds` montam
+`/home/node` inteiro) e são **legíveis pelo modelo via Bash** — um agente de uma company pode,
+em princípio, ler o rastro de sessão de outra. O grill do laudo (R5-A, D7,
+`docs/handoff-grilling-motor-nativo.md`) decidiu: **ACEITO no v1** (hoje o único tenant é o
+dono — o risco só materializa em multi-tenant de verdade), **com este GATE BLOQUEANTE**:
+
+> **Nenhum tenant externo entra ANTES da fatia de isolamento do home-volume shippada.**
+
+Não é ressalva informativa — é condição de entrada de qualquer 2º tenant (soma-se à bifurcação
+de negócio da §Bifurcação: multi-tenant já exigiria API paga). Cinto de carona JÁ shippado:
+o hook **PreToolUse** da F-N6 (**ADR-0042**, PR #20) nega leitura de
+`~/.claude/projects`/`~/.codex/sessions` fora do próprio workspace nos DOIS motores — mitiga o
+caminho trivial, mas é cinto (deny por hook), não fronteira (o isolamento real é a fatia
+futura, com rascunho de desenho no D7 do grill; candidata v1.1 "(ii)-docker + isolamento D7").

@@ -69,3 +69,15 @@ As duas juntas fecham a janela de corrida; os contadores denormalizados são só
 - O **governador real** da assinatura (**rate-limit do plano** + **uso de contexto/handoff**) é reconhecido como
   **fatia futura**, não construído aqui. Estimar dólares por `tokens × tabela` foi **rejeitado** — ficção que
   pausaria agentes por dinheiro inexistente.
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**O reativo NÃO "cancela Runs em voo" — drena até o checkpoint.** O corpo desta ADR ("cruzou o
+hard limit → pausa o escopo + cancela Runs em voo + cancela wakeups na fila") descreve o
+desenho original; o construído (T.4, deliberado) cancela **só o que não começou**: Runs
+`QUEUED` + wakeups na fila (`BudgetService.java:26`, `CANCELLABLE_RUNS = List.of(QUEUED)`).
+Um Run `RUNNING` **termina o passo e liquida no settle** — "matar RUNNING no banco nunca matou
+o processo" (o comentário da própria classe, `BudgetService.java:20,140-141`, já documenta o
+racional: o resultado do que já foi pago não é jogado fora, e a linha do banco não alcança o
+processo vivo). O preflight continua fechando a janela: escopo pausado não INICIA Run novo.
+Texto reconciliado com o código; corpo original intocado como registro do desenho da época.

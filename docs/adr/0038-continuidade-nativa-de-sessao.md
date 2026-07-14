@@ -156,3 +156,19 @@ handle · issue-com-conversa resume+grava · issue-sem-conversa fresca+não-grav
 `ClaudeArgvTest`/`CodexArgvTest`/`ClaudeCodeAdapterTest`/`CodexAdapterTest` (tetos D6 + sessionLost).
 `SessionLostSignalTest`. VENDO (skill `verify`, instância descartável): as 4 provas do grill —
 memória viva 3+ turnos, teto de subagente, retry de handle, fallback barulhento.
+
+## Apêndice (2026-07-14 — fecho documental): estado do knob de compactação nativa
+
+Registro de fecho do aberto-pequeno do D1.3 — **nada mudou desde a R6-A, e isso é o estado
+correto, não esquecimento**:
+- O knob do claude (`orquestrador.engines.claude.autocompact-pct-override` →
+  `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`) segue **fiado e default-VAZIO** (= default da CLI).
+  Ligá-lo continua GATEADO na **sonda empírica da semântica** (laudo motor-nativo §5) que
+  nunca rodou — baixar o dial cego a 55% empilharia compactação nativa in-place com o restart
+  externo do ADR-0030 no MESMO limiar (o racional do D1.3, intacto).
+- O dial token-based do codex (`model_auto_compact_token_limit`) segue **follow-up não fiado**
+  (precisa da janela catalogada fiada no adapter); a auto-compactação do codex é nativa e
+  ligada por default no core — o que falta é só a sintonia ao golden-rule (ADR-0015).
+- Classificação: **aberto-pequeno consciente**, sem gate sobre nada do v1 (a rede ADR-0030
+  cobre janela cheia hoje). Fica registrado aqui para o operador que quiser ligar o knob:
+  primeiro a sonda, depois o dial.

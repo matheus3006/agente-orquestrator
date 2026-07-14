@@ -66,3 +66,33 @@ levantamento de paralelismo: **contrato do ADR atualizado para o código** (a ca
 convenção substituiu o campo; o texto original acima fica como registro do desenho da época).
 Obs.: o "error tipado" do contrato original também segue simplificado (`error` String,
 fail-soft) — já registrado na Revisão 2026-07-02 como fatia futura.
+
+## Nota de reconciliação (2026-07-14 — fecho documental; 4 divergências MÉDIA da auditoria doc×código de 2026-07-11, snapshot `2ab8eac`)
+
+Mesmo padrão da nota acima: **texto atualizado para o código; corpo original preservado como
+registro do desenho da época.** Verificação re-feita na main `60ac302`:
+
+1. **`descriptor()`/`AdapterDescriptor` não existem** — nunca existiram no repo. A superfície
+   real da interface é `type()` + `engineContainer()` + `workspaceConvention()` +
+   `acceptsPromptAsCommand()` (+ os métodos de execução), cada um nascido na fatia que precisou
+   dele (ADR-0014/0016/0032) — a "detecção de capacidades" prevista no bloco ilustrado se
+   materializou como métodos pequenos, não como um objeto descritor.
+   Evidência: `AgentAdapter.java:15`.
+2. **O `RunContext` ilustrado carrega 5 itens que o `Context` real NÃO carrega** —
+   ancestralidade de goal (não viaja), skillSet (materializado ANTES do execute, no workspace),
+   budgetView (o preflight vive no `HeartbeatDispatcher`), secrets (ficam no adapter/
+   `EngineContainer`) e eventSink (é parâmetro separado, `execute(Context, StepSink)`).
+   O espírito ("o adapter recebe tudo pronto e não conhece o core") é honrado — por
+   composição no executor, não por um contexto gordo. Evidência: `AgentAdapter.java:68`,
+   `AdapterRunExecutor.java:339`.
+3. **"Transmitido por SSE" — divergência SUPERADA pelo PR #19** (F-N4/ADR-0040, 2026-07-12).
+   No snapshot auditado o transporte era SÓ REST com polling incremental; hoje o StepTrace tem
+   os DOIS transportes: `GET /runs/{id}/steps` (poll, catch-up/fallback) **e**
+   `GET /runs/{id}/steps/stream` (SSE com keep-alive). O contrato original voltou a ser
+   verdade — por fatia posterior, não por acaso. Evidência: `RunStepsController.java:90`.
+4. **"o ÚNICO call site" tem uma exceção deliberada** — além do `AdapterRunExecutor`
+   (caminho normal + retry fresh), o resume-cirúrgico do `ContextHandoffLoop.surgicalDistill`
+   (ADR-0030) invoca `execute()` fora do módulo `execution`. A exceção é decidida em ADR
+   própria e é terminal (um turno de destilação, sessão descartada); o invariante que o
+   "1 call site" protege — nenhuma rota alternativa de execução de trabalho — segue de pé.
+   Evidência: `AdapterRunExecutor.java:339,356` · `ContextHandoffLoop.java:99`.

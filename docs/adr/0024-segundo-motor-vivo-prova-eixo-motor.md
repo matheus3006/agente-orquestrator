@@ -102,3 +102,18 @@ handoff, não resume — por isso a retomada de sessão segue fora) · ADR-0016 
 montagem seletiva, setup-*.sh — a fatia EXECUTA o que ele desenhou) · ADR-0021/0022/0023 (os
 contratos de workspace cuja agnosticidade esta fatia prova; "Codex ganha de graça" vira fato ou
 vira bug conhecido).
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**A Decisão 2 ("skills chegam ao codex por PROMPT, caminho único `.claude/skills/`) foi
+SUPERSEDIDA pela ADR-0032** (2026-07-10, fatia G3/AGENTS.md, PR #4). O que mudou: a premissa
+"o caminho é contrato do workspace, não config de engine" caiu na prática — o codex executava
+mas **não lembrava nem sabia** (divergência 🔴 "codex pelado", achada ao vivo em 2026-07-09).
+O desenho vigente é a **convenção de workspace POR-ADAPTER**
+(`WorkspaceConvention.java:22-34`): claude = `.claude/skills/` + `CLAUDE.md`; codex =
+`.codex/skills/` + `AGENTS.md` — cada motor recebe carta e skills pelo SEU canal nativo, e a
+faxina permanente apaga o espelho que o motor não lê. O fallback pré-decidido aqui
+("AGENTS.md apontando para as skills") foi o embrião da solução real, que foi além (canal
+nativo completo, não ponteiro). O restante desta ADR (a PROVA do eixo motor-agnóstico, DoD,
+cobaias, recortes) permanece válido como registro histórico — corpo intocado. Par desta nota:
+`docs/handoff-grilling-plano-codex-fechado.md` (mesma emenda).
