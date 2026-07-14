@@ -90,3 +90,48 @@ O diferencial central do produto é resolver a poluição de contexto: cada Agen
   demanda de domínio).
 - Ver `docs/handoff-grilling-agente-como-tool.md` (§3 F-AT2, §5) e `docs/laudo-sonda-mcp-consume.md`
   (gramática exata por motor + o requisito `readOnlyHint`).
+
+## Revisão 2026-07-14 (F-C3, grill da Frente C — o bridge MCP ganha as tools de MEMÓRIA)
+
+**O canal é o mesmo; o que entra são DUAS tools novas.** A Frente C (memória do CEO) precisava de um
+trilho de navegação JIT sobre a memória durável, e a regra do transporte (motor-nativo §2) é
+**"escolher, não inventar"**: o trilho MCP-loopback da F-AT2 já estava provado nos 2 CLIs reais, com
+token efêmero por-run + identidade do PRODUTO + teto/dedup/recusa server-side. **Zero canal novo**
+(C10) — o `KnowAllMcpBridge` passa a mediar duas famílias de tool, e o controller ganha uma 2ª família
+de rotas sob o MESMO guard (`/internal/mcp/knowall/*` + `/internal/mcp/memory/*`, mesmo header
+`X-Orq-Mcp-Token`, mesma sessão).
+
+- **`memory_search(query)`** — METADADOS do durável selado (`#N`, data, área, tipo, grau, o que mudou,
+  vigência). **LIVRE**, fora do teto, como o `knowall_search`: metadado não é corpo — é o que a projeção
+  sempre-on já ensina de graça. Casa por **TERMOS** (não por frase inteira): quem chama é um LLM que
+  pergunta *"qual foi a decisão original de cobrança por assento?"* — achado do /verify (com casamento
+  de frase o codex não achou nada e respondeu pelo princípio que já tinha no sempre-on).
+- **`memory_fetch(#N)`** — o CORPO de UMA Decisão: racional, evidência, linhagem (D11) e cluster da área.
+  É a resposta literal do *"por que decidimos #7?"*.
+- **TETO D6 da Frente C, enforcement de 1ª classe no core** (o script materializado é relay burro e o
+  agente poderia adulterá-lo): `CAP_DECISOES_POR_RUN = 3` corpos DISTINTOS/run + **dedup por `#N`**
+  (mesmo `#N` 2× = 1 slot) + **recusa COM MOTIVO não-fatal** (`MEMORY_FETCH_REFUSED`); sucesso →
+  `MEMORY_FETCHED`. **ESPELHA** o `CAP_BODIES_POR_RUN` da F-AT2 (mesmo número, mesma mecânica) mas é
+  teto **PRÓPRIO, não contador compartilhado**: os trilhos capam recursos diferentes, e um contador
+  dividido deixaria a busca de skill **faminta** a de memória (ninguém decidiu esse acoplamento).
+  O `memory_fetch` **amplia o alcance do agente** (traz racional durável sem passar por gate) — por isso
+  paga o cinto; as outras fatias da frente não ampliavam (o gate já era o teto).
+- **FRONTEIRA (C10.b) — o que o trilho NÃO alcança:** só o **durável SELADO** (princípios de qualquer
+  tipo + direções). O **log cru** `OPERACIONAL`/`TECNICA` com racional segue **BOARD-ONLY** (o
+  `DecisionController` é `assertBoardMember` — "racional é material do dono") e é inalcançável **nem com
+  o `#N` em mãos**: recusa legível que não confirma sequer a existência do endereço, e que **não consome
+  o teto** (nada entrou no contexto). Alargar pro log inteiro = **v1.1 com grill próprio**.
+- **PERFIL por PONTA (`McpToolProfile`) — decisão de kickoff desta faixa:** o trilho abre nas **duas
+  pontas** (run de EXECUTOR e **turno do CEO** — o consumidor primário; `McpRunScope.issueId` é NULO lá).
+  Mas abrir a 2ª ponta **não pode ampliar autonomia por efeito colateral**: a F-AT2/D6 decidiu
+  *"personas FORA"* do trilho de corpo de skill (o CEO **propõe** skill pelo gate). Então o perfil da
+  ponta decide as tools: **EXECUTOR** = KnowAll + memória · **CEO** = **só** memória. O script anuncia
+  apenas as tools do perfil (argv[4]) **e** o core recusa fora do perfil (`REFUSED_SCOPE`) — o agente
+  pode chamar pelo nome uma tool que ninguém anunciou.
+- Todas `readOnlyHint:true` — é verdade (leitura pura) e é o que satisfaz o gate próprio do codex no
+  headless (laudo R12-B).
+- **Zero migração** · **sem ADR nova** (dentro de "campo→rota"; ADR-0043 segue livre).
+- **/verify PASS nos 2 motores REAIS** (claude + codex, LOCAL): executor busca mid-run → usa → **termina
+  no MESMO run**; 3 corpos servidos + 4º/5º **recusados com motivo** (run segue); `#N` repetido = 1 slot;
+  turno do CEO cita a **evidência literal** do princípio (string que só existe no corpo); `#N` do log cru
+  **recusado** e o racional sigiloso **não apareceu em lugar nenhum** do workspace do agente.

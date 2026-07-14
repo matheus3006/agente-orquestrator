@@ -164,6 +164,40 @@ Inventário: `docs/roadmap-interno.md §Divergências`.
   "cair-pra-JIT" concreto já nesta fatia) · projeção que JÁ EXISTE re-renderiza até vazia —
   a auto-cura D11 vale para a ÚLTIMA direção supersedida (só o NASCIMENTO exige vigência).
 
+## Revisão 2026-07-14 (F-C3 "índice + navegação JIT" — grill da Frente C, C9/C10)
+
+**O SPLIT do sempre-on (C9): as duas pontas leem a MESMA memória, com DIETAS diferentes.**
+
+| ponta | dieta sempre-on | por quê |
+|---|---|---|
+| **turno do CEO** | **CARTA + PLAYBOOK** | é o dono do rumo: direção vigente é material dele |
+| **run do EXECUTOR** | **PLAYBOOK só** (os princípios) | **direção do dono não é material de executor** — ele executa uma Issue, não conduz a empresa |
+
+- **Até aqui o executor não recebia memória NENHUMA** (`CompanyMemoryMaterializer`: *"em run de Issue o
+  executor não o chama"*) — o **D12** (*"os agentes APLICAM"*) era **letra morta**, e sem nada sempre-on o
+  agente sofria **cegueira-de-retrieval**: nunca lhe ocorria PROCURAR. Agora ele recebe os **princípios**,
+  que **SÃO o índice enxuto** do método (frases terças, dono-seladas — indexar um índice seria absurdo) e
+  que carregam o **`#N`**: a dieta sempre-on **ensina o trilho JIT de graça** (o `#N` é a chave do
+  `memory_fetch`). Provado ao vivo: o executor leu o princípio, buscou o `#N` da decisão-mãe e trouxe o
+  racional dela mid-run.
+- A dieta é escolhida pela `MemoryAudience` (seam pequeno; o materializer concatena as projeções
+  CORRENTES, cada uma VERBATIM — nada é reescrito) e vale para os 2 motores pelo `memoryFile` da
+  `WorkspaceConvention` (ADR-0032): `.claude/CLAUDE.md` no claude, `AGENTS.md` na raiz no codex.
+- **O `memoryFile` é território do PRODUTO em TODO run** — *judgment call do dono, colhido no kickoff da
+  F-C3 (2026-07-14)*. Antes, o pipeline não tocava o `AGENTS.md`/`.claude/CLAUDE.md` de um run de Issue
+  ("é do agente"); **isso era CONSEQUÊNCIA de o executor não receber memória**, não um princípio próprio.
+  Com o C9 ele passa a receber, pelo **único canal sempre-on que existe** — e a regra fica a MESMA das
+  outras superfícies de config do CLI que o produto **já** possui em run de Issue (`.claude/skills/` é
+  varrido pela faxina; os hooks são escritos em todo run, F-N6). Consequência assumida: o que o AGENTE
+  escrever nesse caminho é substituído pela dieta durável. "Quem materializa, faxina" — e agora o
+  executor materializa, então ele também varre a convenção inativa (troca de motor nunca deixa cérebro
+  velho no chão, ADR-0032/D6). Dieta vazia (sem princípio selado) → o arquivo **some** (nunca servir
+  dieta velha).
+- **A navegação JIT** (`memory_search`/`memory_fetch`, cap 3/run, fronteira = durável selado) reusa o
+  bridge MCP da F-AT2 — está na **ADR-0003, Revisão 2026-07-14** (zero canal novo, C10/C10.b).
+- **Zero migração** (V30+ seguem livres) · **sem ADR nova** (ADR-0043 livre).
+
+
 ## Relaciona
 `docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D1–D12, schema, findability); ADR-0018 (carta/
 `company_memory`/materialização + `CompanyMemoryConsolidator`); ADR-0020 (racional-por-grill — D6–D12);
