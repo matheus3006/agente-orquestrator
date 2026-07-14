@@ -130,4 +130,49 @@ class ApprovalHttpTest {
                 .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("Focar no nicho dental")));
     }
+
+    /**
+     * F-C2 (C2/C6): a 7ª ação via HTTP — o card manda {@code fraseDoPrincipio} (a frase editada
+     * pelo dono) e o Log filtrável devolve o princípio com a frase FINAL, {@code grau=PRINCIPIO}
+     * e a linhagem C5 em evidência. O contrato que o front consome.
+     */
+    @Test
+    void graduacaoViaHttpSelaComAFraseEditadaPeloDono() throws Exception {
+        UUID board = UUID.randomUUID();
+        String slug = "co-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID companyId = idFrom(mvc.perform(post("/api/companies")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID ceoId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+
+        UUID approvalId = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.GRADUATE_PRINCIPLE,
+                        "{\"frase\":\"Toda campanha nasce com CAC alvo\",\"graduadaDe\":[1,2,3]}",
+                        "Graduar principio de growth", "growth")).getId();
+
+        mvc.perform(post("/api/companies/" + companyId + "/approvals/" + approvalId + "/decision")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"APPROVE\","
+                                + "\"racional\":\"o padrao se repetiu em tres gates\","
+                                + "\"fraseDoPrincipio\":\"Toda acao de growth nasce com CAC alvo e payback\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        mvc.perform(get("/api/companies/" + companyId + "/decisions?area=growth")
+                        .header("X-Board-User", board.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].grau").value("PRINCIPIO"))
+                .andExpect(jsonPath("$[0].oQueMudou")
+                        .value("Toda acao de growth nasce com CAC alvo e payback"))
+                .andExpect(jsonPath("$[0].approvalId").value(approvalId.toString()))
+                .andExpect(jsonPath("$[0].evidencia")
+                        .value(org.hamcrest.Matchers.containsString("#1, #2, #3")));
+    }
 }

@@ -1008,13 +1008,16 @@ export function listTurns(companyId: string, conversationId: string): Promise<Co
 // CREATE_ROLE_TEMPLATE (R10-A): o CEO propõe um molde (preset de cargo GLOBAL) — o dono aprova.
 // SKILL_INSTALL_REQUEST (F-AT1, grill agente-como-tool): o EXECUTOR de uma Issue pede uma skill
 // fora do seu set — o APPROVE anexa via install-on-attach (ADR-0003).
+// GRADUATE_PRINCIPLE (F-C2, a 7ª ação): o CEO propõe a FRASE de um princípio; o dono edita no
+// card e sela — nasce a Decisão grau=PRINCIPIO e o Playbook materializa.
 export type ApprovalActionType =
   | "HIRE_AGENT"
   | "CREATE_ISSUE"
   | "WAKEUP_AGENT"
   | "CREATE_TEAM"
   | "CREATE_ROLE_TEMPLATE"
-  | "SKILL_INSTALL_REQUEST";
+  | "SKILL_INSTALL_REQUEST"
+  | "GRADUATE_PRINCIPLE";
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -1068,6 +1071,9 @@ export type ApprovalDecisionInput = {
   // F-C1 (D11): o #N citado pelo CEO que esta decisão supersede — o dono sela;
   // a carta se auto-cura. #N fantasma → 409 (a Approval segue PENDING).
   supersedesSeq?: number;
+  // F-C2 (C2): a frase do princípio EDITADA pelo dono no card do GRADUATE_PRINCIPLE —
+  // o dono é o writer-of-record do Playbook; em branco vale a frase protocolada no alvo.
+  fraseDoPrincipio?: string;
 };
 
 // O espelho do DecideOutcome selado do backend: o 422 do grill NÃO é falha —

@@ -16,6 +16,7 @@ import {
   destinoDaIssueProposta,
   hireDaProposta,
   issueDaApproval,
+  principioDaProposta,
   racionalDoTimeProposto,
 } from "@/lib/ceo-conversa";
 import { fmtClock, shortId } from "@/lib/format";
@@ -62,6 +63,12 @@ export function ApprovalThreadCard({
     model: hire?.motor.model ?? "",
     effort: hire?.motor.effort ?? "",
   });
+
+  // F-C2 (C2): no card de graduação a FRASE do princípio é a mão soberana do dono — editável
+  // antes de selar (writer-of-record), como o motor no hire (A4). Prefill = a proposta do CEO;
+  // em branco, o backend cai na frase protocolada no alvo.
+  const principio = principioDaProposta(approval);
+  const [frase, setFrase] = useState(principio?.frase ?? "");
 
   const queryClient = useQueryClient();
   const decisao = useMutation({
@@ -120,12 +127,17 @@ export function ApprovalThreadCard({
             effort: motor.effort.trim() || undefined,
           }
         : {};
+    // A frase só viaja no APPROVE de graduação; igual à proposta é no-op (o backend prefere
+    // a não-branca) — não precisa detectar "mudou".
+    const fraseEditada =
+      principio && decision === "APPROVE" ? { fraseDoPrincipio: frase.trim() || undefined } : {};
     const motivoTexto = motivo.trim();
     decisao.mutate({
       decision,
       ...(texto ? { racional: texto } : {}),
       ...(decision === "REJECT" && motivoTexto ? { reason: motivoTexto } : {}),
       ...motorEditado,
+      ...fraseEditada,
     });
   };
 
@@ -208,6 +220,29 @@ export function ApprovalThreadCard({
             seu ajuste vence o protocolo · skills do molde: somente-leitura (ajuste por-agente
             depois da contratação)
           </span>
+        </div>
+      )}
+
+      {pendente && principio && (
+        <div className="aprovacao-meta flex flex-col gap-1.5">
+          <label className="flex flex-col gap-1">
+            <b>frase do princípio (editável — o texto final é o seu)</b>
+            <textarea
+              className="rounded border border-edge bg-transparent px-1.5 py-1 text-[12.5px]"
+              aria-label="Frase do princípio"
+              value={frase}
+              onChange={(event) => setFrase(event.target.value)}
+              maxLength={2000}
+              rows={2}
+              placeholder="a frase que entra no Playbook"
+            />
+          </label>
+          {principio.graduadaDe.length > 0 && (
+            <span className="text-faint">
+              graduado de {principio.graduadaDe.map((seq) => `#${seq}`).join(", ")} — a linhagem
+              fica como evidência da Decisão
+            </span>
+          )}
         </div>
       )}
 

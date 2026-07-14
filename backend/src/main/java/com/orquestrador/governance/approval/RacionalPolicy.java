@@ -43,6 +43,9 @@ public class RacionalPolicy {
             case CREATE_ISSUE -> "backlog";
             case WAKEUP_AGENT -> "operacao";
             case SKILL_INSTALL_REQUEST -> "skills";
+            // F-C2: o CEO declara a área graduada (o detector C5 é por-área); sem declaração,
+            // um princípio governa casos futuros — cai na área de direção geral.
+            case GRADUATE_PRINCIPLE -> "direcao-geral";
         };
     }
 

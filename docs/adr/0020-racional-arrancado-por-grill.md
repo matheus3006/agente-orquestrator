@@ -1,7 +1,8 @@
 # ADR-0020: Racional arrancado por grill no gate
 
 **Status:** Aceito (2026-07-04) · **residual da triviabilidade FECHADO + D8 emendado
-(2026-07-14, F-C1 — ver Revisão abaixo)**
+(2026-07-14, F-C1) · D12 CONCRETIZADO — ritual = 7ª ação do gate (2026-07-14, F-C2) —
+ver Revisões abaixo**
 
 > Registro do **regime de racional** das Decisões (ADR-0019). Detalhe/porquê: `docs/handoff-grilling-memoria-ceo-
 > segundo-cerebro.md` (D6–D12). A Decisão-átomo é o ADR-0019; a `approval` que carrega o campo é o ADR-0018.
@@ -31,6 +32,7 @@ e sem induzir confabulação. Fundamentação: o write-validation-gate das pesqu
 - **D12 — princípios graduam de PADRÃO (N ocorrências) + promoção manual do dono** — **nunca de 1 decisão**.
   Graduam pro **Playbook** (tier durável, ADR-0019/D3); agentes aplicam JIT. **O grill é AUTO-LIQUIDANTE:** taxa
   de grill caindo = empresa mais esperta (o que já foi arrancado vira princípio e para de ser perguntado).
+  *Concretizado na F-C2: o ritual É a 7ª ação do gate — ver Revisão F-C2 abaixo.*
 
 ## Consequências
 - A `approval` (ADR-0018) e a Decisão (ADR-0019) ganham **`racional` (texto, obrigatório) + `racional_tipo`
@@ -97,7 +99,45 @@ e sem induzir confabulação. Fundamentação: o write-validation-gate das pesqu
   é onde o dono julga ARTEFATO — e artefato é onde mora o gosto (issue criativa revisada → área
   criativa → INTUICAO → a maiêutica dispara). D10 vivo pela primeira vez.
 
+## Revisão 2026-07-14 (F-C2 "a assinatura: graduação + cap" — grill da Frente C, C2/C5/C6)
+
+> Detalhe/porquê (alternativas rejeitadas inclusas): `docs/handoff-grilling-frente-c-memoria.md`.
+> O TIER (Playbook) e o cap são a ADR-0019, Revisão F-C2.
+
+- **D12 CONCRETIZADO — o ritual de graduação É a 7ª ação do gate:
+  `ApprovalActionType.GRADUATE_PRINCIPLE` (C6).** O texto original prometia "graduam de padrão +
+  promoção manual" sem dizer o COMO; o como é o gate que já existe. O ciclo completo:
+  1. o **detector** (C5, ADR-0019) acende a nudge de candidata na carta (N=3 decisões numa área
+     desde o último princípio, com os `#N`);
+  2. o **CEO propõe a FRASE** do princípio (C2 — a entrada do Playbook é AUTORADA;
+     heurística não se destila deterministicamente: o valor é a frase sintetizada) citando a
+     linhagem no alvo (`graduadaDe: [#N…]`);
+  3. o **dono sela pelo gate** — writer-of-record de verdade: a frase é **EDITÁVEL no card**
+     antes de selar (a mão soberana, padrão A4 do motor) e o texto FINAL é o do dono;
+  4. nasce a Decisão **`grau=PRINCIPIO`** pela fábrica única (`approval_id` NOT NULL de graça;
+     a linhagem vira `evidencia`) — **a ÚNICA Decisão da passagem** (o princípio É o registro
+     do gate) — e o **Playbook materializa na MESMA tx**.
+
+  Herda **de graça, sem código novo**: propose-then-commit · o grill do racional (D6/D7) ·
+  a fila · o **lote com racional compartilhado** (ADR-0035). **Teto D6 intacto:** a graduação
+  NÃO amplia autonomia — é PROPOSTA que o dono sela; o gate já É o teto.
+- **O auto-liquidante ganhou o mecanismo:** o que já foi arrancado 3× numa área vira candidata
+  a princípio — gradua e **para de ser perguntado**; a nudge apaga sozinha no commit do
+  princípio (o "desde o último princípio" zera o contador da área).
+- *Rejeitados (registrados para NÃO re-litigar):* **"graduation-badge" + endpoint de promoção +
+  fluxo de selagem próprio** (módulo raso — morre no teste da deleção: o gate já faz
+  propose-then-commit/grill/fila/lote; violaria "escolher, não inventar") · **gatilho por "N
+  usos"** (exigiria contar cada fetch JIT — máquina nova; v1.1, C5).
+- **Judgment call do dono (kickoff da F-C2, registrado):** EMENDA aqui **venceu** ADR-0043
+  própria — critério carimbado no ledger ("só abre ADR nova se a decisão for além de
+  campo→rota"; a 7ª ação é um valor de enum + um case de dispatch). A ADR-0043 segue LIVRE.
+- **Reconciliação da auditoria doc×código (triagem de 2026-07-11) FECHADA:** a triagem pedia
+  marcar no texto do D12 que o ritual não existia no código — esta revisão o marca CONCRETIZADO.
+  A premissa da triagem *"Frente C está fora do v1, congelada"* estava **DEFASADA** (a Frente C
+  é v1 TOTAL) e foi ignorada, conforme o kickoff.
+
 ## Relaciona
-`docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D6–D12); ADR-0019 (a Decisão-átomo que carrega o racional);
-ADR-0018 (a `approval` ganha os campos; o gate arranca); ADR-0012 (o gate pós-hoc também vira fábrica de Decisões);
-ADR-0010 (nomes + módulos profundos — o probe/graduação são mecanismos, não flags soltas).
+`docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D6–D12); ADR-0019 (a Decisão-átomo que carrega o racional
++ Playbook/cap na Revisão F-C2); ADR-0018 (a `approval` ganha os campos; o gate arranca); ADR-0012 (o gate pós-hoc
+também vira fábrica de Decisões); ADR-0035 (o lote — a 7ª ação o herda); ADR-0010 (nomes + módulos profundos —
+o probe/graduação são mecanismos, não flags soltas).

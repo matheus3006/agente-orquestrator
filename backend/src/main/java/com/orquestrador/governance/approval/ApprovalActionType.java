@@ -13,6 +13,11 @@ package com.orquestrador.governance.approval;
  * emendada): o EXECUTOR de uma Issue pede uma skill fora do seu set pelo canal de saída (bloco
  * {@code pedido-skill}); o APPROVE anexa via {@code SkillSetService.attachToIssue} (install-on-
  * attach reusado, ADR-0003) — 1º consumidor real da Approval-de-ação-de-agente (ADR-0006).
+ * {@code GRADUATE_PRINCIPLE} é a 7ª ação (Frente C/F-C2, C6 — ADR-0020/D12 emendada): o ritual
+ * de graduação É o gate — o CEO propõe a FRASE do princípio (C2: a entrada do Playbook é
+ * AUTORADA) e o APPROVE fabrica a Decisão {@code grau=PRINCIPIO} pela fábrica única; herda
+ * propose-then-commit, o grill do racional (D6), a fila e o lote (ADR-0035) de graça — o
+ * "graduation-badge" com endpoint próprio foi DERRUBADO como módulo raso.
  */
 public enum ApprovalActionType {
     HIRE_AGENT,
@@ -20,5 +25,6 @@ public enum ApprovalActionType {
     WAKEUP_AGENT,
     CREATE_TEAM,
     CREATE_ROLE_TEMPLATE,
-    SKILL_INSTALL_REQUEST
+    SKILL_INSTALL_REQUEST,
+    GRADUATE_PRINCIPLE
 }

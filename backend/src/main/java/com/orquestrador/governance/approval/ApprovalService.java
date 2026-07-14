@@ -9,6 +9,7 @@ import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.execution.lineage.SpawnLineageGuard;
+import com.orquestrador.memory.Decision;
 import com.orquestrador.memory.DecisionGrau;
 import com.orquestrador.memory.DecisionLog;
 import com.orquestrador.memory.DecisionOrigem;
@@ -154,6 +155,14 @@ public class ApprovalService {
                 engineOverride, null);
     }
 
+    @Transactional
+    public DecideOutcome decide(UUID companyId, UUID approvalId, ApprovalDecision decision,
+                                String racional, String reason, ActorType actorType, UUID actorId,
+                                EngineOverride engineOverride, Integer supersedesSeq) {
+        return decide(companyId, approvalId, decision, racional, reason, actorType, actorId,
+                engineOverride, supersedesSeq, null);
+    }
+
     /**
      * O commit com a MÃO SOBERANA no motor (A4, adendo ADR-0031): no menu do hire as skills são
      * somente-leitura, mas o TRIO do motor é livremente editável pelo dono — o override vence o
@@ -162,11 +171,16 @@ public class ApprovalService {
      * <p>{@code supersedesSeq} (opcional) é a linhagem D11 na porta pré-hoc: o CEO propõe o link
      * citando o {@code #N}, o dono sela aqui — a Decisão fabricada aponta a supersedida e a carta
      * se auto-cura (o leitor já filtra). {@code #N} inexistente → 409 acionável, nada commitado.
+     *
+     * <p>{@code fraseDoPrincipio} (opcional, F-C2/C2) é a mão soberana do dono na 7ª ação: a frase
+     * EDITADA no card VENCE a proposta do CEO — o dono é o writer-of-record do Playbook. Em branco
+     * cai na frase protocolada no alvo; ignorada nas demais ações.
      */
     @Transactional
     public DecideOutcome decide(UUID companyId, UUID approvalId, ApprovalDecision decision,
                                 String racional, String reason, ActorType actorType, UUID actorId,
-                                EngineOverride engineOverride, Integer supersedesSeq) {
+                                EngineOverride engineOverride, Integer supersedesSeq,
+                                String fraseDoPrincipio) {
         Approval approval = approvals.findByIdAndCompanyId(approvalId, companyId)
                 .orElseThrow(() -> new NotFoundException("Approval nao encontrada: " + approvalId));
         if (approval.getStatus() != ApprovalStatus.PENDING) {
@@ -188,7 +202,8 @@ public class ApprovalService {
         Map<String, Object> detail = new HashMap<>();
         detail.put("requestedByAgentId", approval.getRequestedByAgentId());
         if (decision == ApprovalDecision.APPROVE) {
-            dispatchAction(approval, actorType, actorId, detail, engineOverride);
+            dispatchAction(approval, actorType, actorId, detail, engineOverride, supersedesId,
+                    fraseDoPrincipio);
         }
         approvals.save(approval);
 
@@ -196,7 +211,13 @@ public class ApprovalService {
                 ? ActivityAction.APPROVAL_APPROVED : ActivityAction.APPROVAL_REJECTED;
         activityLog.record(companyId, actorType, actorId, action, "approval", approval.getId(), detail);
 
-        fabricaDecisaoDoGate(approval, decision, supersedesId);
+        // F-C2 (C6): no APPROVE de graduação o dispatch JÁ fabricou a Decisão da passagem — o
+        // princípio É o registro do gate (uma passagem, UMA Decisão; uma irmã grau=DECISAO
+        // duplicaria o endereço). No REJECT a porta registra a recusa como Decisão comum.
+        if (!(decision == ApprovalDecision.APPROVE
+                && approval.getActionType() == ApprovalActionType.GRADUATE_PRINCIPLE)) {
+            fabricaDecisaoDoGate(approval, decision, supersedesId);
+        }
         return new DecideOutcome.Committed(approval);
     }
 
@@ -223,13 +244,14 @@ public class ApprovalService {
                 + (approval.getResumo() != null ? approval.getResumo() : approval.getTargetDetail());
         gateDecisions.fabricate(new GatePassage(approval.getCompanyId(), approval.getArea(), origem,
                 oQueMudou, approval.getRacional(), approval.getRacionalTipo(),
-                approval.isRacionalArrancado(), supersedesId, DecisionGrau.DECISAO,
+                approval.isRacionalArrancado(), supersedesId, DecisionGrau.DECISAO, null,
                 new Anchor.NaApproval(approval.getId())));
     }
 
     /** APPROVE dispara a ação REAL com ator=aprovador (ADR-0018); os IDs criados vão no detail. */
     private void dispatchAction(Approval approval, ActorType actorType, UUID actorId,
-                                Map<String, Object> detail, EngineOverride engineOverride) {
+                                Map<String, Object> detail, EngineOverride engineOverride,
+                                UUID supersedesId, String fraseDoPrincipio) {
         JsonNode alvo = parseAlvo(approval);
         switch (approval.getActionType()) {
             case HIRE_AGENT -> {
@@ -355,7 +377,38 @@ public class ApprovalService {
                         approval.getRequestedByAgentId(), skill.getId(), actorType, actorId, approval.getRunId());
                 detail.put("issueSkillAttachmentId", attachment.getId());
             }
+            case GRADUATE_PRINCIPLE -> {
+                // F-C2 (C2/C6): a graduação — o CEO propôs a FRASE, o dono sela (writer-of-record).
+                // A "ação real" É a Decisão grau=PRINCIPIO pela fábrica única (approval_id NOT NULL
+                // de graça); a linhagem C5 vai em evidência ("graduado de #N…" — documentação
+                // resolvível, nunca FK) e o PLAYBOOK materializa na mesma tx.
+                String frase = preferNonBlank(fraseDoPrincipio, textOrNull(alvo, "frase"));
+                if (frase == null) {
+                    throw new ConflictException(
+                            "Proposta de graduacao sem a frase do principio: " + approval.getId());
+                }
+                Decision principio = gateDecisions.fabricate(new GatePassage(approval.getCompanyId(),
+                        approval.getArea(), DecisionOrigem.PROPOSTA_CEO, frase.strip(),
+                        approval.getRacional(), approval.getRacionalTipo(),
+                        approval.isRacionalArrancado(), supersedesId, DecisionGrau.PRINCIPIO,
+                        linhagemDe(alvo), new Anchor.NaApproval(approval.getId())))
+                        .orElseThrow(() -> new IllegalStateException(
+                                "graduacao sem racional passou pelo grill: " + approval.getId()));
+                detail.put("decisionSeq", principio.getSeq());
+            }
         }
+    }
+
+    /** A linhagem da graduação (C5): os {@code #N} citados no alvo viram evidência resolvível. */
+    private static String linhagemDe(JsonNode alvo) {
+        List<String> seqs = new ArrayList<>();
+        for (JsonNode seq : alvo.path("graduadaDe")) {
+            if (seq.isInt()) {
+                seqs.add("#" + seq.asInt());
+            }
+        }
+        return seqs.isEmpty() ? null
+                : "Graduado de " + String.join(", ", seqs) + " (C5 — linhagem resolvivel pelos #N)";
     }
 
     /** O tipo de função do molde proposto (enum FIXO); ausente/inválido = 409 acionável (segue PENDING). */
