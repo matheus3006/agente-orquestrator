@@ -136,3 +136,14 @@ FATO (ou bug conhecido) nos achados; kickoff da próxima fatia se a sessão rend
 Sessão de execução **F.11a → F.11b → F.11c → F.11d → F.11e**, kickoff gerado por /nova-sessao ao
 fim desta sessão. F.11b exige o OPERADOR presente (login interativo) — agendar o momento com ele.
 ADR-0015: ao cruzar ~50-60% do contexto, destilar handoff parcial e recomeçar.
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**A decisão A.5 ("skills chegam ao codex por PROMPT em `.claude/skills/`; fallback AGENTS.md
+só-ponteiro") foi SUPERSEDIDA pela ADR-0032** (fatia G3/AGENTS.md, PR #4, 2026-07-10). O
+desenho vigente é a convenção de workspace POR-ADAPTER (`WorkspaceConvention.java:22-34`):
+codex recebe a carta em `AGENTS.md` e as skills em **`.codex/skills/`** (canais nativos dele),
+com faxina do espelho `.claude/` que ele nunca leu — não o caminho único com prompt neutro
+decidido aqui. O gatilho foi a divergência 🔴 "codex pelado" (2026-07-09): o motor executava
+mas não lembrava nem sabia. Par desta nota: apêndice homônimo na ADR-0024. Corpo original
+intocado (registro histórico do grill da F.11).

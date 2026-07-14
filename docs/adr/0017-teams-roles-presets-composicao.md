@@ -117,3 +117,19 @@ NA TELA** (a versão pinada do agente ≠ a corrente do molde; `agent.pinnedTemp
 versão (motor + skillset) e move o pin; a versão MANDA (ajustes manuais do operador descartados) — é
 mão soberana LOCAL (board-only-direto, sem gate). (D7) teto = o próprio gate (nada persiste enquanto
 PENDING). **Sem migração, sem ADR nova** (emenda; ADR-0043 fica livre). Novo piso 640 back / 286 front.
+
+## Nota de reconciliação (2026-07-14 — fecho documental; 2 divergências MÉDIA da auditoria doc×código de 2026-07-11)
+
+As duas fichas MÉDIA que a auditoria (snapshot `2ab8eac`) apontou nesta ADR foram **SUPERADAS
+pelo PR #22** (R10-A, propose-then-commit de molde, MERGED 2026-07-12 — o forward-ref acima):
+
+1. *"CEO pode CRIAR molde com aprovação — não existe; `ApprovalActionType` nem tem a ação"* →
+   **construído**: `CREATE_ROLE_TEMPLATE` é a 5ª ação do enum e o dispatch cria a versão no
+   APPROVE com `proposed_by`≠`approved_by`. Evidência: `ApprovalActionType.java:22` +
+   `ApprovalService.dispatchAction`.
+2. *"Re-pin para vN existe (`pinForAgent`) mas sem chamador de produção"* → **construído**:
+   `POST /api/companies/{id}/agents/{agentId}/repin` (board-only) chama
+   `AgentHireService.repin` — re-pin COMPLETO que substitui motor+skillset e move o pin
+   (D5/D6 da R10-A). Evidência: `AgentController.java:103-108`.
+
+Nada a aplicar aqui além deste registro — o corpo já foi emendado pela própria R10-A.

@@ -37,3 +37,19 @@ Registrar toda ação mutante é invariante (#5). O install/attach de skills (fa
 - Novos `ActivityAction`: **`CEO_PROPOSED` · `APPROVAL_APPROVED` · `APPROVAL_REJECTED`**.
 - O **racional** (ADR-0020) e o `decision_reason` ficam **na tabela `approval`/`decision`, NUNCA no `detail`**
   (mesma regra PII desta ADR — texto livre fora do log).
+
+## Nota de reconciliação (2026-07-14 — fecho documental; 2 divergências MÉDIA da auditoria doc×código de 2026-07-11)
+
+Duas divergências de FORMA (as chaves reais diferem das prometidas; a substância só-IDs é
+honrada). Verificadas na main `60ac302`; corpo original intocado:
+
+1. **Ação delegada: as chaves reais são `detail.requestedByAgentId` (camelCase) e o
+   `approval_id` NUNCA vai no `detail`** — ele viaja como o `entity_id` do PRÓPRIO evento
+   (`entity_type="approval"`), que é mais forte que uma chave de detail (é coluna tipada,
+   consultável). O texto do corpo ("`detail.requested_by_agent`, `detail.approval_id`")
+   descreve o desenho; o código escolheu o lugar melhor para o segundo ID.
+   Evidência: `ApprovalService.java:189,197`.
+2. **Eventos de review: só o submit carrega os 2 IDs.** `ISSUE_SUBMITTED_FOR_REVIEW` leva
+   `review_id`+`run_id`; `REVIEW_APPROVED`/`REVIEW_REJECTED` levam SÓ `reviewId` — o `run_id`
+   da decisão é derivável pela linha da `review` (o ciclo aponta o run), então a chave extra
+   seria redundância, não informação. Evidência: `IssueService.java:213-214,280-281`.

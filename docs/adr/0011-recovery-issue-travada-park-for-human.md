@@ -52,3 +52,14 @@ com o mesmo agente, pelo caminho normal); `CANCEL → CANCELLED`.
 - O `unblock {REOPEN|CANCEL}` **serve os dois sem mudança** (REOPEN mantém o agente → re-run normal). No reject,
   o feedback do revisor entra na **edição da Issue antes do REOPEN** (human-mediated — o agente selado não tem
   canal inbound).
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**"O feedback do revisor entra na edição da Issue antes do REOPEN" não tem caminho no código.**
+Não existe endpoint de edição de Issue no backend (superfície completa:
+`IssueController.java:43-99` — create/list/checkout/complete/review/unblock); o feedback do
+reject fica em `review.decision_reason` (visível no board, no ciclo de review), sem caminho
+para o `description` da Issue. O REOPEN re-executa a Issue com o texto original — o agente
+não vê o motivo do reject. É a única ficha MÉDIA da auditoria que segue **genuinamente em
+aberto como decisão do dono** — registrada na **lista H do fecho do v1**
+(`docs/lista-h-fecho-v1.md`, item 1, com recomendação). Corpo original intocado.

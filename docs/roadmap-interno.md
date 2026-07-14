@@ -161,8 +161,8 @@ front **269**).
 | **Redesenho motor-nativo (F-N1–F-N6)** — continuidade de sessão, saída estruturada, interrupção mid-run, contabilidade off-book e hook PreToolUse mínimo | ✅ F-N1–F-N5 EXECUTADAS (PRs #16–#19) · **F-N6 EXECUTADA (2026-07-12, branch `feat/hooks-pretooluse-adr0042`, R9-A)** | Grill fechado `docs/handoff-grilling-motor-nativo.md` (D1–D7) + `docs/laudo-motor-nativo.md`. F-N6 (D6 skills read-only + D7 cinto de sessão): `HookMaterializer` atrás do seam `WorkspaceConvention` (`hooksFile`/`hooksScript` novos) — script node ÚNICO materializado nos 2 motores (mecânica empírica confirmada: `{"hooks":{"PreToolUse":[...]}}` idêntico em `.claude/settings.json` e `.codex/hooks.json`), `--dangerously-bypass-hook-trust` no `CodexArgv`; suíte backend **624** (piso 605 + 19), front intocado (280) | **ADR-0042** · `docs/handoff-grilling-motor-nativo.md` §3 F-N6 |
 | **Auto-kickback amplo entre personas (R9-B)** — devolução automática do bastão entre back-office, sem re-grelhar o dono | ✅ IMPLEMENTADA (2026-07-12) · pende VENDO do operador | Suíte **617** = piso 605 + 12 (front intocado, 280 — a rota produz só turno invisível): 5º bloco tipado ` ```retrabalho ` (`TurnOutputSchema.retrabalhoVariant`, só no `anyOf` do Executor) · `PersonaHandoffScanner.Retrabalho` (regex + `scanStructured`) · `PersonaBatonRouter` (emissor restrito ao Executor) · `PersonaContinuationPoster.postRetrabalho` + `origemDoBastaoNoTail` (deriva o destino andando pra trás no tail através de prossiga/retrabalho — achado do `/verify`: derivar só do turno imediato perdia a reincidência pós-prossiga) · régua M9 COMPARTILHADA (`kickbacksSeguidosNoTail` conta os dois canais) · prova: `PersonaBatonFlowTest` (+6 casos: retrabalho fenced/estruturado → bastão devolvido ao Planejador · só Executor roteia · teto→prossiga · reincidência DIRETA no turno de prossiga→corte) · **`/verify` live PASS** (instância descartável `:18082` + pg `kickback-pg:15433`: cascata Q→P→E→5×retrabalho→prossiga→reincidência→"Bastão parado" visível ao Questionador, zero run após o corte) | **ADR-0031** emendada (forward-ref 2026-07-12, sem ADR-0043 — mecanismo ficou dentro de "campo→rota") · branch `feat/auto-kickback-personas` · sem migração |
 | **Propose-then-commit de molde + drift-badge (R10-A)** — o CEO PROPÕE molde global pelo gate (o dono aprova); drift-badge + re-pin que SUBSTITUI | ✅ IMPLEMENTADA (2026-07-12) · **VENDO PASS (instância descartável)** · pende OK do Matheus p/ merge | Suíte **640** back (piso 635 + 5) / **286** front (piso 280 + 6): 5ª ação `CREATE_ROLE_TEMPLATE` no enum + rota no `ApprovalService.dispatchAction` (proposedBy=CEO/approvedBy=dono; nada persiste enquanto PENDING) · variante `proposta`(CREATE_ROLE_TEMPLATE) no `anyOf` do Executor (1º campo ARRAY em strict: `skillKeys`) + instrução no `blocoExecutor` · `RoleTemplateService.createTemplate` ganhou o split proposer/approver · **re-pin COMPLETO** `AgentHireService.repin` (re-aplica motor+skillset, `SkillSetService.clearForAgent` + `deleteByCompanyIdAndAgentId`; SUBSTITUI) + endpoint `POST /agents/{id}/repin` (board-only) · drift **derivado na tela** (`agenteEmDrift` + `AgentResponse.pinnedTemplateId` read-join) · badge âmbar clicável no canvas · prova: `ApprovalGateTest`/`TurnOutputSchemaTest`/`ProposalScannerTest`/`HireWithRoleTest` (+5) · `role-templates.test.ts`/`ceo-conversa.test.ts` (+6) · **`/verify` live PASS** (`:18081` + pg `r10a-pg:15432`: propose→PENDING (molde 0)→APPROVE→molde global proposed≠approved · REJECT→sem molde · hire v1→edita v2→drift-badge visível→clica→`/repin 200`→opus→sonnet→badge some) | **ADR-0017 emendada** (fila Approval, não Review) + forward-refs 0018/0039 · CONTEXT atualizado · **sem migração, sem ADR nova** (ADR-0043 livre) · branch `feat/propose-then-commit-molde` |
-| **Pedido de skill do EXECUTOR via Approval (F-AT1)** — o agente-como-tool DESCONGELADO (R11-A): o EXECUTOR de uma Issue pede skill fora do set pelo canal de saída; o dono aprova pela fila madura | ✅ IMPLEMENTADA · pende OK do Matheus p/ merge | Suíte **651** back (piso 640 + 11) / **288** front (piso 286 + 2): `SkillRequestScanner` (irmão do `ProposalScanner`, coluna 0, ` ```pedido-skill `) colhe sobre o texto CRU reconstruído pelo `RunFinalOutput` (D6 nota-de-lealdade: o Run de Issue não tem `outputSchema`/ADR-0039) · `AdapterRunExecutor` agora coleta o `RunFinalOutput` SEMPRE (não só em turno) · `SkillRequestGate` aplica o teto (cap 5 distintos/run + dedup contra já-efetivo via `SkillSetService.resolveForRun` + evento `SKILL_REQUEST_DISCARDED` visível no StepTrace) · 6ª ação `SKILL_INSTALL_REQUEST` no `ApprovalActionType` (MESMO pipeline propose/decide/dispatchAction das 5 anteriores) — `ApprovalService.dispatchAction` chama `SkillSetService.attachToIssue` (reuso PURO do install-on-attach) · auditoria `SKILL_INSTALL_REQUESTED` novo em `ActivityAction` (propose() branca por actionType) · frontend: `ApprovalActionType`/`VERBO_POR_ACAO`/`acaoLegivel` sincronizados (card "Pedir skill") · prova: `SkillRequestScannerTest` + `SkillRequestOnRunTest` (tracer/dedup/cap+evento/já-efetivo) + `ApprovalGateTest` (+3: audita distinto de CEO_PROPOSED · dispatch anexa pro agente que pediu · skillKey desconhecido→409 PENDING) + `ceo-conversa.test.ts` (+2) | **ADR-0003 emendada** (encerra o caveat "estado-alvo FUTURO" só pra (i)) + **ADR-0006 emendada** (1º consumidor real da Approval-de-ação-de-agente) · **sem ADR nova** (ADR-0043 livre) · **sem migração** (V29 livre) · branch `feat/skill-request-executor` · `docs/handoff-grilling-agente-como-tool.md` |
-| **KnowAll body inline SÍNCRONO pro EXECUTOR via MCP-stdio LOCAL (F-AT2)** — a (ii)-local do agente-como-tool (R13-A): o EXECUTOR busca o CORPO de uma skill fora do set NA HORA, mid-run, e termina a task no MESMO run | ✅ IMPLEMENTADA · **VENDO PASS (instância descartável, 2 motores)** · pende OK do Matheus p/ merge | Suíte **672** back (piso 651 + 21) / **288** front (intocado): servidor MCP-stdio do KnowAll (`skills/mcp/`) — script Node único materializado em `.orq/mcp/knowall-server.js` (`KnowAllMcpMaterializer`, irmão do `HookMaterializer`), JSON-RPC 2.0 (molde da sonda R12-B), 2 tools read-only `knowall_search` + `knowall_fetch_body` (`readOnlyHint:true` — requisito do gate do codex) que fazem callback **loopback** pro `KnowAllMcpBridgeController` (`/internal/mcp/knowall/*`, header `X-Orq-Mcp-Token`, token efêmero por-run) · **`KnowAllMcpBridge` é o TETO do #1 de PRIMEIRA CLASSE server-side:** cap **3** corpos distintos/run + dedup por skill (2×=1 leitura, não consome o teto) + recusa-com-motivo NÃO-fatal (`SKILL_BODY_FETCH_REFUSED`) + evento leve `SKILL_BODY_FETCHED` (D5) · `KnowAllService.fetchBody` (reuso puro do catálogo Camada 1) · `ClaudeArgv` ganha `--mcp-config`+`--strict-mcp-config` (adapter grava `.orq/mcp/claude-mcp.json`) · `CodexArgv` ganha `-c mcp_servers.<n>.command/.args` (gramática do laudo) · `AdapterRunExecutor` liga o MCP SÓ no run de EXECUTOR LOCAL (`turno==null && issueId!=null`; personas FORA D6, docker v1.1 D7); `McpCallbackAddress` capta a porta loopback ligada · prova: `KnowAllMcpBridgeTest` (cap/dedup/recusa/token) + `KnowAllFetchBodyServiceTest` + `Claude/CodexArgvTest` (+6 gramática pura) + `KnowAllMcpMaterializerTest` (+`node --check`) + `KnowAllMcpBridgeHttpTest` + `McpServerOnExecutorRunTest` (gate D6) · **`/verify` live PASS 2 motores** (`:18081` + pg efêmero, claude E codex REAIS, LOCAL): fetch_body mid-run→corpo→escreve o código **body-only** `ZX-4231-QRT`→termina no MESMO run; cap: 3 fetched (1/3→3/3) + 2 refused, run segue; dedup: `proto-alpha` 2×=1 slot; **codex 0 cancelamentos** (readOnlyHint prova o gate) | **ADR-0003 emendada** (encerra a metade (ii) do caveat "estado-alvo FUTURO") · **sem ADR nova** (ADR-0043 livre) · **sem migração** (V29 livre) · branch `feat/knowall-mcp-executor` · `docs/handoff-grilling-agente-como-tool.md` + `docs/laudo-sonda-mcp-consume.md` |
+| **Pedido de skill do EXECUTOR via Approval (F-AT1)** — o agente-como-tool DESCONGELADO (R11-A): o EXECUTOR de uma Issue pede skill fora do set pelo canal de saída; o dono aprova pela fila madura | ✅ IMPLEMENTADA · **MERGED (PR #23, 2026-07-13, main `0f10ddb`)** — status varrido no fecho documental 2026-07-14 (a linha foi escrita antes do merge) | Suíte **651** back (piso 640 + 11) / **288** front (piso 286 + 2): `SkillRequestScanner` (irmão do `ProposalScanner`, coluna 0, ` ```pedido-skill `) colhe sobre o texto CRU reconstruído pelo `RunFinalOutput` (D6 nota-de-lealdade: o Run de Issue não tem `outputSchema`/ADR-0039) · `AdapterRunExecutor` agora coleta o `RunFinalOutput` SEMPRE (não só em turno) · `SkillRequestGate` aplica o teto (cap 5 distintos/run + dedup contra já-efetivo via `SkillSetService.resolveForRun` + evento `SKILL_REQUEST_DISCARDED` visível no StepTrace) · 6ª ação `SKILL_INSTALL_REQUEST` no `ApprovalActionType` (MESMO pipeline propose/decide/dispatchAction das 5 anteriores) — `ApprovalService.dispatchAction` chama `SkillSetService.attachToIssue` (reuso PURO do install-on-attach) · auditoria `SKILL_INSTALL_REQUESTED` novo em `ActivityAction` (propose() branca por actionType) · frontend: `ApprovalActionType`/`VERBO_POR_ACAO`/`acaoLegivel` sincronizados (card "Pedir skill") · prova: `SkillRequestScannerTest` + `SkillRequestOnRunTest` (tracer/dedup/cap+evento/já-efetivo) + `ApprovalGateTest` (+3: audita distinto de CEO_PROPOSED · dispatch anexa pro agente que pediu · skillKey desconhecido→409 PENDING) + `ceo-conversa.test.ts` (+2) | **ADR-0003 emendada** (encerra o caveat "estado-alvo FUTURO" só pra (i)) + **ADR-0006 emendada** (1º consumidor real da Approval-de-ação-de-agente) · **sem ADR nova** (ADR-0043 livre) · **sem migração** (V29 livre) · branch `feat/skill-request-executor` · `docs/handoff-grilling-agente-como-tool.md` |
+| **KnowAll body inline SÍNCRONO pro EXECUTOR via MCP-stdio LOCAL (F-AT2)** — a (ii)-local do agente-como-tool (R13-A): o EXECUTOR busca o CORPO de uma skill fora do set NA HORA, mid-run, e termina a task no MESMO run | ✅ IMPLEMENTADA · **VENDO PASS (instância descartável, 2 motores)** · **MERGED (PR #24, 2026-07-13, main `3d02801`)** — status varrido no fecho documental 2026-07-14 | Suíte **672** back (piso 651 + 21) / **288** front (intocado): servidor MCP-stdio do KnowAll (`skills/mcp/`) — script Node único materializado em `.orq/mcp/knowall-server.js` (`KnowAllMcpMaterializer`, irmão do `HookMaterializer`), JSON-RPC 2.0 (molde da sonda R12-B), 2 tools read-only `knowall_search` + `knowall_fetch_body` (`readOnlyHint:true` — requisito do gate do codex) que fazem callback **loopback** pro `KnowAllMcpBridgeController` (`/internal/mcp/knowall/*`, header `X-Orq-Mcp-Token`, token efêmero por-run) · **`KnowAllMcpBridge` é o TETO do #1 de PRIMEIRA CLASSE server-side:** cap **3** corpos distintos/run + dedup por skill (2×=1 leitura, não consome o teto) + recusa-com-motivo NÃO-fatal (`SKILL_BODY_FETCH_REFUSED`) + evento leve `SKILL_BODY_FETCHED` (D5) · `KnowAllService.fetchBody` (reuso puro do catálogo Camada 1) · `ClaudeArgv` ganha `--mcp-config`+`--strict-mcp-config` (adapter grava `.orq/mcp/claude-mcp.json`) · `CodexArgv` ganha `-c mcp_servers.<n>.command/.args` (gramática do laudo) · `AdapterRunExecutor` liga o MCP SÓ no run de EXECUTOR LOCAL (`turno==null && issueId!=null`; personas FORA D6, docker v1.1 D7); `McpCallbackAddress` capta a porta loopback ligada · prova: `KnowAllMcpBridgeTest` (cap/dedup/recusa/token) + `KnowAllFetchBodyServiceTest` + `Claude/CodexArgvTest` (+6 gramática pura) + `KnowAllMcpMaterializerTest` (+`node --check`) + `KnowAllMcpBridgeHttpTest` + `McpServerOnExecutorRunTest` (gate D6) · **`/verify` live PASS 2 motores** (`:18081` + pg efêmero, claude E codex REAIS, LOCAL): fetch_body mid-run→corpo→escreve o código **body-only** `ZX-4231-QRT`→termina no MESMO run; cap: 3 fetched (1/3→3/3) + 2 refused, run segue; dedup: `proto-alpha` 2×=1 slot; **codex 0 cancelamentos** (readOnlyHint prova o gate) | **ADR-0003 emendada** (encerra a metade (ii) do caveat "estado-alvo FUTURO") · **sem ADR nova** (ADR-0043 livre) · **sem migração** (V29 livre) · branch `feat/knowall-mcp-executor` · `docs/handoff-grilling-agente-como-tool.md` + `docs/laudo-sonda-mcp-consume.md` |
 
 ## Frente C — Método de memória do CEO (2º cérebro) — PARCIAL
 
@@ -180,13 +180,35 @@ a *assinatura do método* (anti-inchaço) ainda não.
 
 | Item | Origem | Estágio |
 |------|--------|---------|
-| Contabilidade de produto sobre a pesquisa off-book do `delegation` | Fatia 2 §G | ⚪ ADIADO |
+| ~~Contabilidade de produto sobre a pesquisa off-book do `delegation`~~ | Fatia 2 §G | ✅ **F-N5/PR #18** (ADR-0041 — 2ª `CostEmission` rotulada `cost_event.off_book`/V28, excluída da régua de handoff; varrida no fecho documental 2026-07-14) |
 | ~~Auto-kickback amplo entre personas (além do `needs-grilling` cirúrgico)~~ | Fatia 2 §G | ✅ IMPLEMENTADA (R9-B, ver Frente B) |
-| Interrupção mid-run (streaming ao vivo + kill) | Fatia 1 §G | ⚪ ADIADO |
-| Levar o loop de handoff pros EXECUTORES (não só o CEO) | Fatia 1 §G | ⚪ ADIADO |
-| Agente-como-tool (attach por agente + KnowAll body inline) | ADR-0003 rev · 7c | ⚪ ADIADO (v1 = board-only) |
+| ~~Interrupção mid-run (streaming ao vivo + kill)~~ | Fatia 1 §G | ✅ **F-N4/PR #19** (ADR-0040 — kill de process group + `INTERRUPTED` + SSE do StepTrace; varrida no fecho documental 2026-07-14) |
+| ~~Levar o loop de handoff pros EXECUTORES (não só o CEO)~~ | Fatia 1 §G | ⚫ **MORTA — SUPERSEDIDA** pelo D3 do grill motor-nativo: o executor continua por **resume nativo por Issue** (F-N2/PR #16, ADR-0038 §F-N2); o bilhete ficou restrito a troca de AGENTE (varrida no fecho documental 2026-07-14) |
+| ~~Agente-como-tool (attach por agente + KnowAll body inline)~~ | ADR-0003 rev · 7c | ✅ **F-AT1/PR #23 + F-AT2/PR #24** (grill R11-A descongelou e fatiou; emendas ADR-0003/0006; a metade (ii)-docker ficou candidata v1.1 — varrida no fecho documental 2026-07-14) |
 | ~~Propose-then-commit de molde (CEO cria molde; drift-badge)~~ | Teams T.1-FE residual 3 | ✅ IMPLEMENTADA (R10-A, ver Frente B) |
 | _(próximo grill — a definir)_ | — | 💡 IDEIA |
+
+### Candidatas v1.1 acumuladas (registro do fecho documental parcial, 2026-07-14)
+
+> Regra anti-círculo do congelamento do v1: chegou depois do congelamento e não quebra a prova
+> final → **v1.1, SALVO palavra do dono**. Este é o REGISTRO consolidado (as fontes têm o
+> racional); antecipar qualquer uma é decisão H.
+
+| # | Candidata | Fonte registrada |
+|---|-----------|------------------|
+| 1 | **(ii)-docker do KnowAll body inline + fatia de isolamento do home-volume (D7)** — sequenciadas JUNTAS (o canal MCP-no-container é a mesma obra) | grill agente-como-tool D3/§4 · grill motor-nativo D7 + nota-GATE na ADR-0016 (bloqueante p/ tenant externo) |
+| 2 | **(iii) agente-durável-como-tool** — épico próprio com grill próprio (contabilidade reusa F-N5; `multi_agent` do codex stable, provado na R6-B) | grill agente-como-tool D1/§4 |
+| 3 | **persona-self-request/fetch** — personas pedirem skill/corpo como o executor; só com demanda real | grill agente-como-tool D6/§4 |
+| 4 | **`disallowed-tools` do claude** (default vazio) — teto de PRODUTO no eixo-subagente, sobre o cap nativo de profundidade | grill agente-como-tool §4 · seam já fiado na ADR-0038 D6 |
+| 5 | **CEO-propõe-EDIÇÃO de molde existente** (D8 da R10-A; puxa visibilidade dos moldes no contexto do CEO) | ADR-0017 forward-ref R10-A · ledger rodada 10 |
+| 6 | **Steering/processo-vivo** (correção mid-turn sem kill) — gate explícito: codex `app-server` sair de experimental | grill motor-nativo D4 · ADR-0040 §Alternativas |
+| 7 | **Enforcement amplo dos hooks** (Glob/Grep fora do cinto D7; hoje o deny cobre Read/Write/Edit/apply_patch) | follow-up honesto da ADR-0042 (F-N6) |
+| 8 | **ID sequencial de CONVERSA** (fluxo verbatim do dono no §0 do grill motor-nativo) | grill motor-nativo §5 |
+| 9 | **Promoção por "N usos" na graduação de princípios** (exige contar cada fetch JIT — máquina nova) | grill Frente C, C5 (`handoff-grilling-frente-c-memoria.md`) |
+| 10 | **`memory_fetch` sobre o log CRU** (vazaria racional `OPERACIONAL`/`TECNICA` board-only pra contexto de agente — grill próprio) | grill Frente C, C10.b |
+| 11 | **3 tetos de escalação da ADR-0018** (contador de riscos-do-plano + circuit-breaker de erro repetido; só o teto de gasto existe — `BudgetPolicy.orchestrationLimitCents`) — default registrado v1.1; a DECISÃO está na lista H | auditoria doc×código (ficha grill·teams-fechado) · triagem do ledger 2026-07-11 · `docs/lista-h-fecho-v1.md` item 3 |
+| 12 | **Paridade Docker** (transporte de arquivo + visibilidade de volume: o schema-arquivo da F-N3 e o side-channel da F-N5 caem em fail-soft/loud sob DOCKER) | fechamento da rodada 8 do ledger · ADR-0041 §Consequências |
+| 13 | **Grill do ARQUITETO** (invariante de nascimento na porta manual · `setArquiteto(null)` · multi-arquiteto · divisão em 2 personas · clone por ociosidade >30min) — decisão explicitamente do DONO (toca o norte "arquiteto como mente de cada grupo") | semente verbatim §G.1 de `handoff-grilling-absorcao-issues.md` |
 
 ---
 
@@ -353,26 +375,42 @@ a *assinatura do método* (anti-inchaço) ainda não.
 
 ## § Vetos pendentes (decisões que aguardam o Matheus — **H**)
 
-**Fatia 2 (3 personas):**
-- Formato dos blocos tipados (```` ```handoff ```` / ```` ```needs-grilling ````) — contrato do roteamento.
-- Blocos do `writing-doc-plans` (estratégia + Premissas + validação de cobertura).
-- `N` da trava anti-loop de kickback.
-- Governança off-book do `delegation` (aceito no v1; freio duro = subsistema).
-- Sourcing das skills externas (`cs-ceo-advisor`, `brainstorming`, `teach`, `adaptive-communication`, `grill-me`, `grill-with-docs`).
-- ADR-0031 nova (confirmar).
+**Fatia 2 (3 personas): ✅ TODOS RESOLVIDOS** (varrido no fecho documental 2026-07-14):
+- ~~Formato dos blocos tipados~~ — **confirmado pelo dono (2026-07-10, PR #8)**: JSON em fence
+  coluna 0, pinado em `PersonaHandoffScannerTest`.
+- ~~Blocos do `writing-doc-plans`~~ — **vetado na R3-A (PR #11)**: 11 vetos H decididos um a um;
+  prova viva na estratégia real (Premissas + teto 27<30, VENDO §D).
+- ~~`N` da trava anti-loop de kickback~~ — **N=5 confirmado (PR #8)**; régua M9 depois
+  compartilhada com o retrabalho (R9-B).
+- ~~Governança off-book do `delegation`~~ — **aceito no v1 (PR #8)**; a CONTABILIDADE do gasto
+  veio na F-N5/PR #18 (ADR-0041).
+- ~~Sourcing das skills externas~~ — **vetado na R3-A (PR #11)**: balcão único
+  `docs/skills-ceo/sourcing.md`; 5 skills registradas no DB, corpo==draft por md5.
+- ~~ADR-0031 nova~~ — **confirmada (PR #8)**.
 
-**Fatia 1 (loop de handoff):**
-- Template do bilhete destilado.
-- `N=5` da trava anti-loop.
-- Nome do dial `orquestrador.handoff.context-threshold-percent` + default 55.
-- ADR-0030 nova (confirmar).
+**Fatia 1 (loop de handoff): ✅ TODOS RESOLVIDOS** (varrido no fecho documental 2026-07-14 —
+o merge do **PR #1** com OK do dono selou os 4: a ADR-0030 aceita carrega o template do
+bilhete, o N=5, o dial `orquestrador.handoff.context-threshold-percent` default 55 e a
+própria ADR como nova):
+- ~~Template do bilhete destilado~~ · ~~`N=5` da trava anti-loop~~ · ~~Nome do dial + default
+  55~~ · ~~ADR-0030 nova~~.
 
 **Novo (da auditoria 2026-07-07):**
 - ~~**Divergência ALTA (ADR-0005 lease):** implementar renovação de lease **ou** reconciliar o ADR? (investigar o efeito real primeiro).~~ **RESPONDIDA (2026-07-10): implementar renovação** — grill fechado, plano em `docs/handoff-grilling-renovacao-lease.md` → **EXECUTADA (2026-07-10):** `LeaseRenewer` + `renewLease` CAS + `RUN_LEASE_LOST` + `LeaseRenewalTest` (4 provas); ADR-0005 emendada (trecho Recovery); pende só o VENDO live do pulso (com operador).
 - **Médias doc×código (jOOQ · SKIP LOCKED · `producedArtifacts` · D5 review→Decision · D11 supersedes):**
   ~~atualizar os ADRs para refletir o código, ou puxar fatias?~~ **Reconciliação em doc EXECUTADA (2026-07-10,
-  faixa R1-E):** notas datadas nas ADR-0001/0004/0005 (só claim) /0019 + ARQUITETURA.md corrigida. **Segue H:**
-  destino dos seams mortos da 0019 (`review_id` / `supersedesId`) — puxar fatia × aceitar como está.
+  faixa R1-E):** notas datadas nas ADR-0001/0004/0005 (só claim) /0019 + ARQUITETURA.md corrigida. ~~**Segue H:**
+  destino dos seams mortos da 0019 (`review_id` / `supersedesId`) — puxar fatia × aceitar como está.~~
+  **RESOLVIDO POR PR #25 (F-C1, MERGED 2026-07-14; varrido no fecho documental):** os dois seams foram
+  ACESOS — a review pós-hoc FABRICA Decisão (writer D5, área do artefato) e o `supersedesSeq` entra pelas
+  2 portas do gate (writer D11, carta se auto-cura); emenda correspondente na ADR-0019 fechou a nota.
+- **26 fichas MÉDIA da auditoria doc×código de 2026-07-11:** **APLICADAS no fecho documental parcial
+  (2026-07-14, faixa R16-B)** — notas de reconciliação datadas em ADR-0004 (×4, SSE superada por PR #19) ·
+  0006 · 0009 (×2) · 0011 · 0013 · 0017 (×2 superadas por PR #22) · 0018 · 0024 · 0026 + handoffs de grill
+  (approval · loop-handoff · 7c · motores · skills-knowall · plano-codex) + `ActorContext` nominal na
+  ARQUITETURA.md + ADR-0041 escrita (buraco de numeração fechado). EXCLUÍDAS por fronteira: ADR-0020/D12
+  (F-C2 em voo) · fichas D5/D8 de memória (consumidas pela Frente C — PR #25/emendas). O único MÉDIA que
+  segue decisão H é o feedback-do-revisor→Issue (ADR-0011) — na **lista H** (`docs/lista-h-fecho-v1.md`).
 
 ---
 

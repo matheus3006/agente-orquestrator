@@ -117,3 +117,15 @@ apaga) · ADR-0023 (PreviewServer monta o volume `:ro` — a causa do IN_USE e d
 ADR-0025 (padrão de método ADITIVO no seam) · ADR-0009 (activity_log, detail só-IDs) · ADR-0010
 (módulo profundo — `WorkspaceResolver` dono único da nomeação) · ADR-0012 (estados terminais vs
 não-terminais).
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**O aviso do B4 existe, mas por outra mecânica e outro shape.** O texto prometeu "preflight de
+volume, 409"; o construído: (a) o preflight é pelo **evento `WORKSPACE_COLLECTED` no
+`activity_log`** (a auditoria durável que o B5 grava — fonte mais barata e sempre disponível),
+não por sondar o volume; (b) a resposta é **200 com
+`StartResponse{started=false, error="workspace coletado…"}`**, não 409 — o start de preview
+já tinha um envelope de resultado (o caminho de erro existente que o próprio B4 pedia para
+reusar), e o front consome o `error` legível dele sem tratamento novo de status. A promessa
+de substância (start em Issue coletada falha LEGÍVEL, nunca silêncio) é honrada. Evidência:
+`PreviewServerController.java:49-53,140`. Corpo original intocado.

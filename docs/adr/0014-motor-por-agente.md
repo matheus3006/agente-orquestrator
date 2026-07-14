@@ -64,3 +64,21 @@ ADR-0002 (session — `--resume` bruto vira secundário ao handoff), ADR-0004 (c
 `model`/`effort` + `costEvents`), ADR-0006 (budget — hard-stop de dólares inócuo na assinatura, acumula tokens),
 ADR-0010 (o adapter encapsula a gramática do CLI), ADR-0015 (handoff a 50-60% consome a instrumentação de tokens),
 ADR-0016 (Docker/isolamento — reservado, fatia futura F.8).
+
+## Nota de reconciliação (2026-07-14 — fecho documental; achados R4-C, R6 e F-AT2)
+
+- **A defesa do pino foi CONFIRMADA pela doc oficial** (achado do laudo motor-nativo, R4-C,
+  2026-07-11): a documentação do claude declara que **`--bare` "vai virar default do `-p`"** —
+  o risco (b) das Consequências desta ADR é real, não hipotético. O pino de versão
+  (`EngineContainerPinTest`, ADR-0016 §1) segue sendo a defesa; bump é sempre decisão
+  consciente com racional no PR.
+- **Candidato de bump REGISTRADO, não decidido — item da lista H** (`docs/lista-h-fecho-v1.md`):
+  o host roda claude **2.1.206** enquanto o pino da imagem é **2.1.201** (achado da rodada 6).
+  A F-N3 (ADR-0039) MANTEVE o pino deliberadamente: dois cintos no backend
+  (`requireWellFormed` na ida + malformado→WARN+fallback regex na volta) cobrem a gotcha do
+  `--json-schema` silencioso <2.1.205. A decisão de bump é do dono.
+- **Gotcha codex `--model` explícito** (achado do /verify da F-AT2, 2026-07-13): quando o
+  `config.toml` do host está pinado num modelo que o CLI 0.142.5 não aceita, o `codex exec` é
+  REJEITADO — runs de codex em prova/VENDO devem passar `--model` explícito em vez de herdar o
+  default do host. Registrado aqui porque é gramática de CLI (o território desta ADR); vale
+  para roteiros de verificação e para o operador.

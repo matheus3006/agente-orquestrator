@@ -123,3 +123,16 @@ o "2º consumidor" que a `review` reservava, agora também para a proposta de mo
 cabia — issue_id/run_id NOT NULL). O APPROVE dispara `createTemplate` com `proposedBy`=proponente /
 `approvedBy`=aprovador (o split que o gate sempre implicou). Emenda (sem ADR nova); decisões em
 `docs/handoff-grilling-propose-then-commit-molde.md` (D1–D3/D7).
+
+## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
+
+**`target_detail` NÃO é "só-IDs" — carrega texto livre por construção.** O corpo desta ADR
+(§A primitiva Approval) prometeu `target_detail jsonb **só-IDs**` no espírito da regra PII da
+ADR-0009; o construído guarda ali o **alvo canônico da proposta**, que para `HIRE_AGENT`
+inclui `name`/`role`/`racional` em prosa (o `ProposalScanner` serializa o bloco `alvo`
+canônico inteiro — `ProposalScanner.java:112-115`; V17 já nascia com o campo texto). A regra
+"só-IDs" da ADR-0009 vale para o **`detail` do activity_log** (e É honrada lá); o
+`target_detail` da `approval` é outra coisa — é o RASCUNHO da ação proposta, que o dono
+precisa LER para decidir (um hire sem nome/racional seria inaprovável). O que permanece fora
+dele: segredos e PII de terceiros (nada além do conteúdo que o próprio CEO propôs). Texto
+reconciliado com o código; corpo original intocado.
