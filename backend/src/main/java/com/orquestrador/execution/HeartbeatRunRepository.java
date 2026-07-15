@@ -1,5 +1,6 @@
 package com.orquestrador.execution;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -53,6 +54,23 @@ public interface HeartbeatRunRepository extends JpaRepository<HeartbeatRun, UUID
     @Query("select r from HeartbeatRun r where r.agentId = :agentId and r.status in :statuses")
     List<HeartbeatRun> findByAgentAndStatuses(@Param("agentId") UUID agentId,
                                               @Param("statuses") Collection<RunStatus> statuses);
+
+    /**
+     * Circuit-breaker de erro repetido (ADR-0018 teto (c), R18-B): os desfechos de EXECUCAO mais
+     * recentes do par agente×issue, do mais novo ao mais velho. O caller passa o filtro de status
+     * (so FAILED/SUCCEEDED — abortos administrativos e estados nao-terminais ficam de fora) e o
+     * limite ({@link Pageable}); o breaker abre quando os N primeiros vierem todos FAILED. Derivado
+     * do historico ja persistido, sem coluna nem tabela nova.
+     */
+    @Query("""
+            select r from HeartbeatRun r
+             where r.agentId = :agentId and r.issueId = :issueId and r.status in :desfechos
+             order by r.createdAt desc
+            """)
+    List<HeartbeatRun> findRecentOutcomesByPair(@Param("agentId") UUID agentId,
+                                                @Param("issueId") UUID issueId,
+                                                @Param("desfechos") Collection<RunStatus> desfechos,
+                                                Pageable pageable);
 
     /** Fan-out do time (T.4): quantos runs dos MEMBROS do time estao nos statuses dados. */
     @Query("""

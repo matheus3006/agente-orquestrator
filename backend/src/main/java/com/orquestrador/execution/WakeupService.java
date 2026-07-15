@@ -30,11 +30,14 @@ public class WakeupService {
     private final SpawnLineageGuard lineageGuard;
     private final TeamFanOutGate fanOutGate;
     private final BudgetService budgets;
+    private final RepeatedFailureBreaker breaker;
+    private final RepeatedFailureNotice breakerNotice;
 
     public WakeupService(AgentRepository agents, HeartbeatRunRepository runs,
                          AgentWakeupRequestRepository wakeups, HeartbeatRunEventRepository events,
                          TeamService teamService, SpawnLineageGuard lineageGuard,
-                         TeamFanOutGate fanOutGate, BudgetService budgets) {
+                         TeamFanOutGate fanOutGate, BudgetService budgets,
+                         RepeatedFailureBreaker breaker, RepeatedFailureNotice breakerNotice) {
         this.agents = agents;
         this.runs = runs;
         this.wakeups = wakeups;
@@ -43,6 +46,8 @@ public class WakeupService {
         this.lineageGuard = lineageGuard;
         this.fanOutGate = fanOutGate;
         this.budgets = budgets;
+        this.breaker = breaker;
+        this.breakerNotice = breakerNotice;
     }
 
     /** Wakeup de ato humano DIRETO (operador/dono): linhagem raiz — nunca fecha ciclo. */
@@ -72,15 +77,27 @@ public class WakeupService {
         // entram por fora do enqueue (promote-on-finalize).
         teamService.assertDispatchAllowed(agent);
 
+        List<HeartbeatRun> active = runs.findByAgentAndStatuses(agentId,
+                List.of(RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.RECOVERING));
+
+        // Circuit-breaker de erro repetido (ADR-0018 teto (c), R18-B): SO o caminho que criaria um
+        // Run NOVO (agente ocioso) e SO o wakeup AUTOMATICO (linhagem causada). A mao humana direta
+        // (root) fura o breaker — e o gesto que destrava o par (o dono retomou o volante). Barra
+        // ANTES de criar o wakeup/cobrar budget: "para so o pedaco travado, o resto continua".
+        if (active.isEmpty() && !lineage.isRoot()) {
+            var tripped = breaker.avalia(agentId, issueId);
+            if (tripped.isPresent()) {
+                breakerNotice.avisaSeInedito(companyId, agentId, issueId, tripped.get());
+                return WakeupOutcome.barrado();
+            }
+        }
+
         AgentWakeupRequest wakeup = wakeups.save(
                 new AgentWakeupRequest(UUID.randomUUID(), companyId, agentId, issueId, reason, lineage));
 
         // O ato de ACORDAR é cobrado na abertura no ledger de orquestração (T.4, anti-enxame),
         // na conta de quem o CAUSOU (último elo da linhagem; nulo = mão humana direta).
         budgets.recordOrchestration(companyId, lineage.causer(), null, OrchestrationAction.WAKEUP);
-
-        List<HeartbeatRun> active = runs.findByAgentAndStatuses(agentId,
-                List.of(RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.RECOVERING));
 
         if (active.isEmpty()) {
             // O cap de fan-out do time (T.4) conta runs CONCORRENTES: só o caminho que CRIA run

@@ -136,3 +136,43 @@ canônico inteiro — `ProposalScanner.java:112-115`; V17 já nascia com o campo
 precisa LER para decidir (um hire sem nome/racional seria inaprovável). O que permanece fora
 dele: segredos e PII de terceiros (nada além do conteúdo que o próprio CEO propôs). Texto
 reconciliado com o código; corpo original intocado.
+
+## Emenda (2026-07-14 — R18-B: circuit-breaker de erro repetido — o teto (c), e a cascata para fora)
+
+Os "tetos que escalam" (§Governança Board↔CEO, `:26-29`) prometeram três freios e uma **cascata**;
+**nenhum existia** (a lista H, R17-B, confirmou: `grep -ri circuit` no backend era vazio). O único
+freio de loop vivo era o teto de **atos** da ADR-0016/T.4 — econômico (cobra o ato na abertura; o
+loop drena o teto e para): corta **tarde, caro e sem diagnóstico**. Esta fatia entrega o teto (c) e
+reconcilia os outros dois + a cascata:
+
+- **(a) gasto por token — NÃO é promessa do v1.** A própria decisão já o dispensa (*"só no modo API
+  paga; no v1/assinatura o custo é 0, sem gate de gasto"*). Nada a construir. (Correção de rota: o
+  campo `BudgetPolicy.orchestrationLimitCents` que a lista H apontou como "o teto de gasto que
+  existe" é o teto de **atos** da ADR-0016/T.4 — outro mecanismo, de outra ADR.)
+- **(b) plano com muitos riscos → v1.1.** Falta um artefato para o agente declarar os riscos que
+  identificou (o `TurnOutputSchema` não o conhece) — obra maior, e aqui *não sabemos que dá
+  problema*. Fica na candidata #11 do roadmap, agora só com este teto.
+- **(c) erro se repetindo → IMPLEMENTADO (esta fatia).** Circuit-breaker **DERIVADO do histórico**:
+  **N falhas consecutivas do par agente×issue** (default **3**, configurável em
+  `orquestrador.circuit-breaker.consecutive-failures`) **param de reenfileirar SÓ aquele par** — nos
+  dois pontos que criam Run (`WakeupService.enqueue` e `HeartbeatRunStore.promoteIfNeeded`). O resto
+  continua: o agente segue em outras issues, a issue segue para outros agentes ("escalação
+  assíncrona: para só o pedaço travado"). Um **SUCCEEDED** zera a conta; abortos administrativos
+  (CANCELLED/INTERRUPTED) não contam. **Zero estado novo** — derivado por query, não é o campo
+  `attempt` (que conta reclaims do MESMO run). `RepeatedFailureBreaker` + `RepeatedFailureNotice`.
+- **A cascata (executor→arquiteto→líder→CEO→dono) NÃO foi construída — escalação DIRETA ao dono.**
+  Todo o resto do sistema escala direto ao dono (gate, avisos M6); manter a coerência. O aviso do
+  breaker é o **padrão M6**: um turno já-ANSWERED na conversa ancorada à issue, **zero Run novo**
+  (`RepeatedFailureNotice`, espelho do `ProposalDescarteNotice`).
+- **O que DESTRAVA (grill R18-B):** o **wakeup manual direto** do dono (`WakeupController`, linhagem
+  **raiz**) — a mão humana direta **fura o breaker** por construção (o mesmo *"o freio é humano"* do
+  caso B, ADR-0034). Um `WAKEUP_AGENT` aprovado no gate (linhagem **causada**, não-raiz) **não**
+  destrava no v1: seria tocar o `ApprovalService` sem ganho semântico claro (aprovar um wakeup ≠
+  examinar o loop de erro daquele par).
+- **Fronteira conhecida (v1):** um Run que morre com **lease expirado** nunca vira FAILED (o reaper o
+  requeua RUNNING→QUEUED); um contador derivado de FAILED **não vê a morte silenciosa**. Aceitável —
+  o breaker mira erro que *se repete com diagnóstico* (o `last_error`), não posse de lease perdida.
+
+Parâmetros do grill (R18-B, verbatim do dono): limiar **3** · para **só o par agente×issue** ·
+destrava **só pelo wakeup manual direto**. Racional completo em `docs/handoff-decisoes-lista-h.md`
+(item 3) e no handoff da faixa.

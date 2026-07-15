@@ -68,4 +68,9 @@ public final class SpawnLineage {
     public int depth() {
         return causerChain.size();
     }
+
+    /** Ato humano direto (cadeia vazia)? A mao do operador/dono — nunca barrada pelo circuit-breaker. */
+    public boolean isRoot() {
+        return causerChain.isEmpty();
+    }
 }

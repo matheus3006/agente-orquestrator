@@ -4,6 +4,7 @@ import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.conversation.ConversationTurnRepository;
 import com.orquestrador.conversation.ProposalDescarteNotice;
 import com.orquestrador.conversation.TurnStatus;
+import com.orquestrador.execution.RepeatedFailureNotice;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.handoff.ContinuationSentinel;
 import com.orquestrador.org.agent.Agent;
@@ -257,7 +258,8 @@ public class PersonaContinuationPoster {
     /** A primeira mensagem que NÃO é do fluxo interno de personas — o dono de volta na conversa. */
     private static boolean donoDeVoltaNaConversa(String message) {
         return !ContinuationSentinel.isContinuation(message) && !KickbackTurn.isKickback(message)
-                && !ProposalDescarteNotice.isAviso(message);
+                && !ProposalDescarteNotice.isAviso(message)
+                && !RepeatedFailureNotice.isAviso(message);
     }
 
     /** O corte (espelho do aviso da ADR-0030): turno ANSWERED visível, sem wakeup — o loop PARA. */
