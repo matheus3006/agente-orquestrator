@@ -218,7 +218,9 @@ public class IssueService {
     /**
      * A decisão do board sobre uma Issue estacionada (review gate, ADR-0012): APPROVE →
      * {@code DONE}; REJECT → {@code BLOCKED} (o recovery é 100% o {@link #unblock} do §7 — o
-     * feedback do revisor entra editando a Issue antes do REOPEN). Transição guardada por
+     * feedback do revisor É a Decisão do reject, ENTREGUE ao executor no re-run pela dieta
+     * materializada das Decisões da issue, ADR-0011 emendada na R19-A; NÃO há edição de Issue).
+     * Transição guardada por
      * {@code status = 'PENDING_REVIEW'} (0 linhas → 409) + o ciclo {@code review} vira
      * APPROVED/REJECTED com reviewer/decided_at na MESMA tx. O {@code decision_reason} (texto
      * livre) fica NA TABELA review; o evento carrega só o {@code reviewId} (regra PII, ADR-0009).
