@@ -208,7 +208,7 @@ class ReviewDecisionServiceTest {
 
         Decision decisao = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).get(0);
         assertThat(decisao.getRacionalTipo()).isEqualTo(RacionalTipo.INTUICAO); // derivada da área (D9)
-        assertThat(decisao.getEvidencia()).as("D10 vivo pela 1ª vez").contains("maieutico");
+        assertThat(decisao.getEvidencia()).as("D10 vivo pela 1ª vez").contains("maiêutico");
     }
 
     /** F-C1 (C14): REJECT bloqueia SEM motivo — o motivo é a Decisão do registro; nada muda sem ele. */

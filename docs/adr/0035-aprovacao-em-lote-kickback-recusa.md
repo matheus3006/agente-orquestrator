@@ -2,7 +2,8 @@
 
 **Status:** Aceito (2026-07-10) · grill fechado em 2026-07-10
 (`handoff-grilling-aprovacao-em-lote.md`, D1–D15) · migração **V27 reservada e NÃO consumida**
-(os campos existentes bastaram)
+(os campos existentes bastaram) · **reconciliado com a F-C1 — UMA Decisão por lote, não por item
+(2026-07-14, R18-A; ver Revisão abaixo)**
 
 ## Contexto
 O gate pré-hoc (ADR-0018/0020) decidia um-a-um, embutido na thread (`ApprovalThreadCard`). A
@@ -66,7 +67,9 @@ mecanismo como lote de UM.
 O lote roda sempre o motor protocolado na proposta — motor errado em `HIRE_AGENT` cria agente de
 verdade, síncrono; o escape é decidir aquele item na thread, onde o A4 (ADR-0031) segue valendo.
 Auditoria mantém a granularidade: 27 decisões em lote = 27 `activity_log` + 27 `Decision`, sem
-`batch_id` (especulação sem caso de uso).
+`batch_id` (especulação sem caso de uso). **[EMENDADO — R18-A: o `27 Decision` era a premissa de
+2026-07-10, antes de a F-C1 acender os writers do gate; virou `1 Decision por lote`. O `27
+activity_log` (auditoria do ATO de decidir cada item, D11) PERMANECE. Ver Revisão abaixo.]**
 
 ## Alternativas rejeitadas
 - **Fila embutida na thread com "aprovar todos"** — approvals cruzam N conversas; agregação por
@@ -93,7 +96,58 @@ Auditoria mantém a granularidade: 27 decisões em lote = 27 `activity_log` + 27
 - `BadRequestException` (400) entra no vocabulário de erros da casa para contrato condicional de
   request (o Bean Validation não expressa "motivo obrigatório SÓ no REJECT").
 
+## Revisão 2026-07-14 (R18-A — reconciliação com a F-C1: UMA Decisão por lote)
+
+> **Bug de produção vivo em `main`**, achado pela sessão de decisões da lista H (R17-B,
+> `docs/handoff-decisoes-lista-h.md` item 5). Decidido e recortado pelo dono; esta fatia executa.
+
+**O buraco.** A §7 acima prometia "27 decisões em lote = **27 Decision**". Isso valia em 2026-07-10
+(PR #12): o gate ainda **não** fabricava Decisões — os writers estavam apagados. A **F-C1** (PR #25,
+2026-07-14) os acendeu: cada `decide()` passou a fabricar a sua Decisão, e a porta *"sempre nasce"*
+(`ApprovalService.fabricaDecisaoDoGate`). As duas fatias landaram em momentos diferentes e **ninguém
+cruzou** — então o lote passou a carimbar o **mesmo racional literal** em **N Decisões clonadas** na
+**mesma área**, no Decision-log append-only (nada as coleta). Pior: o detector de graduação (C5) conta
+grau≠PRINCIPIO por área **sem filtrar tipo** e dispara com 3 — logo rejeitar 3+ propostas do mesmo
+tipo em lote acendia uma **nudge FALSA de "candidata a graduação" na carta** (o artefato que os
+AGENTES leem). A Frente C inteira existe para a memória ser *derivada, nunca auto-escrita* — e o lote
+a envenenava com um sinal inventado.
+
+**A correção — 1 Decisão por lote, não por item.** O lote é **UM ato do dono com N alvos** (o modelo
+de dados já contava assim: um `racional` do lote + `Item(approvalId, observacao)` por item). Agora:
+- `ApprovalService.decideNoLote` (o item do lote) dispara a ação real e commita a Approval, mas
+  **SUPRIME** a fabricação da Decisão por item (flag `fabricaDecisaoPorItem=false` no `decide`);
+- `ApprovalService.fabricaDecisaoDoLote` registra **UMA** Decisão depois do loop, com a **linhagem
+  dos N alvos na `evidencia`** — exatamente como a F-C2/graduação registra suas fontes (C5). Reflete
+  só os itens que de fato commitaram (o lote é não-transacional por design, D9);
+- âncora nova **`GateDecisionFactory.Anchor.NoLote`**: a Decisão do lote não aponta uma approval
+  singular (não há uma "approval do lote"); `approval_id` fica nulo, com precedente no caso B
+  (Decisão ancorada só na issue). A rastreabilidade das N vive na `evidencia`.
+
+**O que NÃO muda (invariantes preservados).** A **auditoria** segue granular: **N `activity_log`**
+(um `APPROVAL_REJECTED`/`APPROVED` por item — o registro do ATO de decidir cada approval) permanece;
+só a **memória durável** (`Decision`) reconcilia. O kickback de recusa segue agregado por conversa
+(D7); o `decisionReason` por item (D8) segue na linha da Approval; o skip de GRADUATE_PRINCIPLE-APPROVE
+(o dispatch já fabrica o princípio) é **ortogonal** ao novo flag.
+
+**Decisão de implementação (refino, não redecisão): agrupa por ÁREA.** Como o TIPO
+(`DecisionLog.tipoFor`) e o detector C5 são **por-área**, a fabricação do lote agrupa as decididas por
+área → **uma Decisão por (lote × área)**. No lote homogêneo real (o filtro por tipo da UI, D2 → mesma
+área) isso é **exatamente 1 Decisão**; um lote que tocasse áreas distintas dá uma por área (nunca N
+clones numa área) — o invariante correto é "um ato ≤ 1 Decisão por área", que é o eixo do detector.
+
+**C5 fora do escopo (decidido pelo dono).** 3 rejeições **separadas** (fora de lote) na mesma área
+seguem acendendo a nudge — *by-design* (3 atos SÃO tendência; REJECT registra a recusa como Decisão
+normal). O bug era **um ato contar como N**; só isso muda.
+
+**Prova viva** (`/verify`, descartável `:18081` + Postgres efêmero, API real): lote de 3 HIRE_AGENT
+REJECT → **1** Decisão em `estrutura-org` (evidência: *"Lote (ADR-0035): 1 ato do dono, 3 alvos — …"*),
+carta **sem** nudge; as MESMAS 3 rejeições **individuais** → 3 Decisões + a nudge *"Candidata a
+graduação (C5): 3 decisões em 'estrutura-org' … (#2, #3, #4)"* — o detector vivo, provando que a
+diferença é o fix, não uma detecção quebrada.
+
 ## Relaciona
 ADR-0018 (gate pré-hoc; a fila é a MESMA, terceira projeção) · ADR-0020 (grill intocado; no lote o
-probe pula em vez de 422) · ADR-0031 (transporte de personas reusado; A4 segue exclusivo do
-individual) · ADR-0034 (precedente verbatim-sem-paráfrase e do turno-de-sistema na conversa).
+probe pula em vez de 422) · **ADR-0019 (a fábrica única de Decisões da F-C1 — a `GateDecisionFactory`
+que o lote agora usa UMA vez, com a `Anchor.NoLote` nova; R18-A)** · ADR-0031 (transporte de personas
+reusado; A4 segue exclusivo do individual) · ADR-0034 (precedente verbatim-sem-paráfrase e do
+turno-de-sistema na conversa).

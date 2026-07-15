@@ -132,6 +132,12 @@ Inventário: `docs/roadmap-interno.md §Divergências`.
   Moram DENTRO da fábrica: a regra C14 "sem substância → sem Decisão", a maiêutica D10 como
   evidência e a consolidação da carta na MESMA tx. *Rejeitado:* espelhar a fábrica no
   `IssueService` (duas fábricas = o drift que criou os seams mortos que esta frente curou).
+- **[R18-A, 2026-07-14] O LOTE reconciliado com a fábrica (ADR-0035):** acender os writers da F-C1
+  transformou o gate em lote (ADR-0035/PR #12) em **N Decisões clonadas por ato do dono** — um bug
+  de produção vivo (o mesmo racional/área N vezes + nudge C5 falsa). Fechado: o lote suprime a
+  fabricação por-item e registra **UMA** Decisão (por área) com a linhagem dos N na `evidencia`, via
+  a âncora nova **`Anchor.NoLote`** (3ª da fábrica; `approval_id` nulo — a Decisão do lote não tem
+  approval singular, precedente no caso B). Ver ADR-0035, Revisão R18-A.
 
 ## Revisão 2026-07-14 (F-C2 "a assinatura: graduação + cap" — grill da Frente C, C1/C2/C5/C7/C8)
 

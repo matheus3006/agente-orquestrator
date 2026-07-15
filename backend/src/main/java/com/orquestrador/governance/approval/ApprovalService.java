@@ -41,10 +41,12 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * O gate PRÉ-HOC (ADR-0018): {@link #propose} registra a intenção do CEO como Approval PENDING
@@ -181,6 +183,22 @@ public class ApprovalService {
                                 String racional, String reason, ActorType actorType, UUID actorId,
                                 EngineOverride engineOverride, Integer supersedesSeq,
                                 String fraseDoPrincipio) {
+        return decide(companyId, approvalId, decision, racional, reason, actorType, actorId,
+                engineOverride, supersedesSeq, fraseDoPrincipio, true);
+    }
+
+    /**
+     * O núcleo do commit. {@code fabricaDecisaoPorItem} (ADR-0035 × F-C1) governa só o REGISTRO da
+     * Decisão: {@code true} no caminho individual (a porta fabrica a sua, C15); {@code false} no
+     * lote via {@link #decideNoLote} — lá o dispatch da ação real roda igual, mas a Decisão migra
+     * pro fim do lote ({@link #fabricaDecisaoDoLote} registra UMA por área). O skip de
+     * GRADUATE_PRINCIPLE-APPROVE (o dispatch já fabricou o princípio) é INDEPENDENTE desse flag.
+     */
+    @Transactional
+    public DecideOutcome decide(UUID companyId, UUID approvalId, ApprovalDecision decision,
+                                String racional, String reason, ActorType actorType, UUID actorId,
+                                EngineOverride engineOverride, Integer supersedesSeq,
+                                String fraseDoPrincipio, boolean fabricaDecisaoPorItem) {
         Approval approval = approvals.findByIdAndCompanyId(approvalId, companyId)
                 .orElseThrow(() -> new NotFoundException("Approval nao encontrada: " + approvalId));
         if (approval.getStatus() != ApprovalStatus.PENDING) {
@@ -214,11 +232,27 @@ public class ApprovalService {
         // F-C2 (C6): no APPROVE de graduação o dispatch JÁ fabricou a Decisão da passagem — o
         // princípio É o registro do gate (uma passagem, UMA Decisão; uma irmã grau=DECISAO
         // duplicaria o endereço). No REJECT a porta registra a recusa como Decisão comum.
-        if (!(decision == ApprovalDecision.APPROVE
-                && approval.getActionType() == ApprovalActionType.GRADUATE_PRINCIPLE)) {
+        // ADR-0035 × F-C1: no LOTE (fabricaDecisaoPorItem=false) o registro migra pro fim do lote
+        // (fabricaDecisaoDoLote: UMA por área, nunca N clones) — o skip da graduação é ORTOGONAL.
+        if (fabricaDecisaoPorItem
+                && !(decision == ApprovalDecision.APPROVE
+                    && approval.getActionType() == ApprovalActionType.GRADUATE_PRINCIPLE)) {
             fabricaDecisaoDoGate(approval, decision, supersedesId);
         }
         return new DecideOutcome.Committed(approval);
+    }
+
+    /**
+     * O item do LOTE (ADR-0035 × F-C1): decide + dispara a ação real, mas NÃO fabrica a Decisão
+     * por item — {@link #fabricaDecisaoDoLote} a registra UMA vez depois do loop. Cada item na
+     * própria tx: o {@link ApprovalBatchService} é deliberadamente não-transacional (D9). Sem
+     * override de motor nem supersede no lote (D11/D12) — o que viaja é decisão + racional + reason.
+     */
+    @Transactional
+    public DecideOutcome decideNoLote(UUID companyId, UUID approvalId, ApprovalDecision decision,
+                                      String racional, String reason, ActorType actorType, UUID actorId) {
+        return decide(companyId, approvalId, decision, racional, reason, actorType, actorId,
+                null, null, null, false);
     }
 
     @Transactional(readOnly = true)
@@ -246,6 +280,51 @@ public class ApprovalService {
                 oQueMudou, approval.getRacional(), approval.getRacionalTipo(),
                 approval.isRacionalArrancado(), supersedesId, DecisionGrau.DECISAO, null,
                 new Anchor.NaApproval(approval.getId())));
+    }
+
+    /**
+     * 1 Decisão por (lote × área) — ADR-0035 × F-C1: um ato do dono com N alvos NÃO vira N Decisões
+     * clonadas (que envenenariam o log append-only e acenderiam a nudge C5 falsa na carta). A
+     * linhagem dos N vai na {@code evidencia}, como a graduação registra suas fontes (C5). Agrupa por
+     * área porque o TIPO ({@link DecisionLog#tipoFor}) e o detector C5 são POR-ÁREA — no lote
+     * homogêneo real (mesmo tipo → mesma área) é UMA Decisão. Pula GRADUATE_PRINCIPLE-APPROVE (o
+     * dispatch já fabricou o princípio — simetria com o skip por-item do {@link #decide}). FORA de
+     * tx: cada {@code fabricate} abre a sua (uma por área), respeitando o não-transacional do lote —
+     * a Decisão reflete só as {@code decididas} (os itens que de fato commitaram).
+     */
+    public void fabricaDecisaoDoLote(ApprovalDecision decision, String racional, List<Approval> decididas) {
+        Map<String, List<Approval>> porArea = new LinkedHashMap<>();
+        for (Approval approval : decididas) {
+            if (decision == ApprovalDecision.APPROVE
+                    && approval.getActionType() == ApprovalActionType.GRADUATE_PRINCIPLE) {
+                continue; // o dispatch já fabricou o princípio (uma passagem, uma Decisão)
+            }
+            porArea.computeIfAbsent(approval.getArea(), area -> new ArrayList<>()).add(approval);
+        }
+        porArea.forEach((area, doGrupo) -> fabricaUmaDoLote(decision, racional, area, doGrupo));
+    }
+
+    /** A Decisão única de um grupo do lote (uma área): a linhagem dos alvos vai na evidência (C5). */
+    private void fabricaUmaDoLote(ApprovalDecision decision, String racional, String area,
+                                  List<Approval> doGrupo) {
+        Approval amostra = doGrupo.get(0);
+        DecisionOrigem origem = decision == ApprovalDecision.APPROVE
+                ? DecisionOrigem.PROPOSTA_CEO   // conteúdo do CEO, selado pelo dono
+                : DecisionOrigem.DONO_NO_GATE;  // o dono barrou/redirecionou o quadro
+        String alvos = doGrupo.stream().map(ApprovalService::resumoDe).collect(Collectors.joining("; "));
+        String oQueMudou = "[" + decision.name() + " " + amostra.getActionType().name() + " ×"
+                + doGrupo.size() + "] " + alvos;
+        String evidencia = "Lote (ADR-0035): 1 ato do dono, " + doGrupo.size() + " alvos — " + alvos;
+        gateDecisions.fabricate(new GatePassage(amostra.getCompanyId(), area, origem, oQueMudou,
+                racional, amostra.getRacionalTipo(), amostra.isRacionalArrancado(), null,
+                DecisionGrau.DECISAO, evidencia, new Anchor.NoLote()));
+    }
+
+    /** O resumo humano da approval — o rótulo do alvo na linhagem do lote (fallback: ação + alvo). */
+    private static String resumoDe(Approval approval) {
+        return approval.getResumo() != null && !approval.getResumo().isBlank()
+                ? approval.getResumo()
+                : approval.getActionType().name() + " " + approval.getTargetDetail();
     }
 
     /** APPROVE dispara a ação REAL com ator=aprovador (ADR-0018); os IDs criados vão no detail. */

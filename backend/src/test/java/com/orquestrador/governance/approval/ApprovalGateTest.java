@@ -567,7 +567,7 @@ class ApprovalGateTest {
         // O probe maiêutico (D10) fica como EVIDÊNCIA da Decisão, não como bloqueio.
         Decision decisao = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId).get(0);
         assertThat(decisao.getRacionalTipo()).isEqualTo(RacionalTipo.INTUICAO);
-        assertThat(decisao.getEvidencia()).contains("maieutico");
+        assertThat(decisao.getEvidencia()).contains("maiêutico");
     }
 
     @Test
