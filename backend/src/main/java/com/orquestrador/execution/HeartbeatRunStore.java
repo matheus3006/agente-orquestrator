@@ -25,13 +25,18 @@ public class HeartbeatRunStore {
     private final HeartbeatRunEventRepository events;
     private final AgentWakeupRequestRepository wakeups;
     private final BudgetService budgets;
+    private final RepeatedFailureBreaker breaker;
+    private final RepeatedFailureNotice breakerNotice;
 
     public HeartbeatRunStore(HeartbeatRunRepository runs, HeartbeatRunEventRepository events,
-                             AgentWakeupRequestRepository wakeups, BudgetService budgets) {
+                             AgentWakeupRequestRepository wakeups, BudgetService budgets,
+                             RepeatedFailureBreaker breaker, RepeatedFailureNotice breakerNotice) {
         this.runs = runs;
         this.events = events;
         this.wakeups = wakeups;
         this.budgets = budgets;
+        this.breaker = breaker;
+        this.breakerNotice = breakerNotice;
     }
 
     /** Claim por CAS: retorna true se este worker pegou o Run (QUEUED -> RUNNING + lease). */
@@ -144,6 +149,24 @@ public class HeartbeatRunStore {
                 .map(wakeup -> SpawnLineage.decode(wakeup.getSpawnLineage()))
                 .max(java.util.Comparator.comparingInt(SpawnLineage::depth))
                 .orElse(SpawnLineage.root());
+
+        // Circuit-breaker de erro repetido (ADR-0018 teto (c), R18-B): o promote-on-finalize e o
+        // 2o ponto de (re)enfileiramento. Se o par travou e os deferidos sao trabalho AUTOMATICO
+        // (nenhuma mao humana direta na cadeia), NAO promove: avisa o dono uma vez e descarta os
+        // deferidos (CANCELLED — nao se perdem em loop; o dono retoma pelo wakeup manual, que fura
+        // o breaker). "Para so o pedaco travado." A mao humana direta na cadeia promove normal.
+        if (issueId != null && !deepestLineage.isRoot()) {
+            Optional<RepeatedFailureBreaker.Tripped> tripped = breaker.avalia(run.getAgentId(), issueId);
+            if (tripped.isPresent()) {
+                breakerNotice.avisaSeInedito(run.getCompanyId(), run.getAgentId(), issueId, tripped.get());
+                for (AgentWakeupRequest wakeup : deferred) {
+                    wakeup.attach(null, WakeupStatus.CANCELLED);
+                }
+                run.setNeedsFollowup(false);
+                return;
+            }
+        }
+
         HeartbeatRun next = runs.save(new HeartbeatRun(UUID.randomUUID(), run.getCompanyId(),
                 run.getAgentId(), issueId, RunStatus.QUEUED, deepestLineage));
         for (AgentWakeupRequest wakeup : deferred) {
