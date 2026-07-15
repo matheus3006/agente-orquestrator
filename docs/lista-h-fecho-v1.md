@@ -8,6 +8,12 @@
 > Fora desta lista por construção: tudo da Frente C em voo (F-C2/F-C3) e os textos
 > C14/graduação — entram no **fecho residual** pós-F-C3.
 
+> **▸ Nota do fecho residual (2026-07-15).** As 5 decisões desta pauta **foram tomadas** na sessão
+> R17-B (2026-07-14) — o *"Nada aqui foi decidido"* acima é o estado da compilação, não o de hoje.
+> Racional verbatim do dono + o trabalho que cada uma implicou: `docs/handoff-decisoes-lista-h.md`.
+> As **correções de fato** que a pauta precisava (o §6 daquele handoff) estão anotadas abaixo como
+> **notas datadas** ⚠️, item a item; o texto original é **preservado** (documento histórico de pauta).
+
 ## 1. Feedback do revisor → Issue (ADR-0011)
 
 - **A decisão:** no reject de review, o feedback do revisor fica preso em
@@ -22,6 +28,13 @@
   ADR-0037); uma superfície de edição de Issue é obra nova sem outra demanda registrada, e a
   regra anti-círculo manda não abrir obra pós-congelamento. Vira candidata natural quando o
   reject-com-re-run doer em uso real.
+- **⚠️ Correção (fecho residual 2026-07-15 · `handoff-decisoes-lista-h.md` §6 nº 3 — R17-B):** a
+  frase *"o feedback do revisor fica preso em `review.decision_reason`"* estava **desatualizada**
+  (a pauta citava a auditoria de 2026-07-11, anterior à F-C1/PR #25). Em `main`: o REJECT já
+  **exige** motivo e ele já vira **Decisão** endereçada (`#N`, grau=DECISAO, ancorada na review
+  **e** na issue). O buraco real era **ENTREGA** (o executor não recebia memória) — fechado no v1
+  pela **terceira via (PUSH): R19-A / PR #31** materializa o feedback ao executor no re-run
+  (ADR-0011 emendada). A recomendação "aceitar como está no v1" foi **superada** por essa decisão do dono.
 
 ## 2. Veto de redação dos textos shippados (lote único)
 
@@ -51,6 +64,19 @@
 - **Recomendação:** **confirmar o default (v1.1)** — a exposição real hoje é baixa (M9 corta
   reincidência, budget drena, gate segura mutação estrutural); o que os 2 tetos ausentes
   adicionam é conforto de autonomia LONGA, que é exatamente o tema do v1.1.
+- **⚠️ Correção (fecho residual 2026-07-15 · `handoff-decisoes-lista-h.md` §6 nºs 1, 2 e 5 — R17-B):**
+  três acertos de fato nesta pauta, colhidos no grill R17-B e já landados —
+  - **nº 2 —** *"Só o primeiro existe (`BudgetPolicy.orchestrationLimitCents`)"* está **errado duas
+    vezes**: o teto (a) gasto/token é **dispensado pela própria ADR-0018** no v1, e o campo citado é o
+    teto de **atos** da **ADR-0016/T.4** (anti-enxame), não de gasto. Dos 3 tetos da 0018, **zero** existiam.
+  - **nº 1 —** *"M9 corta reincidência"* é **falso**: os `M9` são marcadores locais por ADR (rede do
+    resume-cirúrgico na 0030; issue da 2ª porta na 0037) — **nenhum olha erro repetido**.
+  - **nº 5 (contexto, sem alvo literal na pauta) —** a ADR-0018 prometia uma **cascata** de escalação
+    (executor→arquiteto→líder→CEO→dono) que **nunca existiu**; decidido **não construir** — escalação
+    **direta ao dono**, cascata **emendada para FORA**.
+  - **Desfecho:** o teto (c) **circuit-breaker de erro repetido entrou no v1** (**R18-B / PR #30**); o
+    teto (b) contador-de-riscos foi para **v1.1** (candidata #11); ADR-0018 emendada. A recomendação
+    "confirmar o default (v1.1)" vale **só para o (b)**.
 
 ## 4. Bump do pino claude 2.1.201 → 2.1.206
 
@@ -80,6 +106,13 @@
 - **Recomendação:** **seguir o precedente** — manter; se os 27 PENDING poluírem a demo, a
   própria tela de lote (`/approvals`, ADR-0035) rejeita todos numa ação, que é em si mais uma
   prova viva.
+- **⚠️ Correção (fecho residual 2026-07-15 · `handoff-decisoes-lista-h.md` §6 nº 4 — R17-B):**
+  *"a própria tela de lote rejeita todos numa ação, que é em si mais uma prova viva"* estava
+  **desaconselhado como estava** — o grill R17-B descobriu que a rejeição em lote fabricava **N
+  Decisões clonadas + nudge C5 falsa na carta** (ADR-0035 nunca reconciliada com a F-C1/PR #25:
+  🔴 bug de produção vivo em `main`). **Consertado no v1** (**R18-A / PR #29**: 1 Decisão por lote,
+  linhagem dos N na `evidencia`; ADR-0035 emendada). Rejeitar os 27 PENDING vira prova viva
+  **depois** do fix — passo do **OPERADOR** na prova final, não desta pauta.
 
 ---
 
