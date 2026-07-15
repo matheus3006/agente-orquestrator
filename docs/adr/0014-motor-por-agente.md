@@ -77,6 +77,12 @@ ADR-0016 (Docker/isolamento — reservado, fatia futura F.8).
   A F-N3 (ADR-0039) MANTEVE o pino deliberadamente: dois cintos no backend
   (`requireWellFormed` na ida + malformado→WARN+fallback regex na volta) cobrem a gotcha do
   `--json-schema` silencioso <2.1.205. A decisão de bump é do dono.
+- **Desfecho do candidato de bump (2026-07-15, fecho residual — decisão do dono, R17-B item 4):** **pino
+  2.1.201 MANTIDO.** O bump só entra numa **fatia de infra própria** (rebuild + smoke dos 2 motores), quando
+  houver um **SEGUNDO motivo** para mexer na imagem, **com racional no PR** — nunca de carona, nunca na
+  véspera do fecho. A gotcha do `--json-schema` silencioso <2.1.205 já está **cintada** pelos 2 cintos do
+  backend (ADR-0039 §D2.2, ~:111: o ganho erro-duro-vs-silêncio de subir para ≥2.1.205 é **marginal** frente
+  ao custo/risco de mexer no pino). Este é o **gatilho registrado**; até ele aparecer, nada muda.
 - **Gotcha codex `--model` explícito** (achado do /verify da F-AT2, 2026-07-13): quando o
   `config.toml` do host está pinado num modelo que o CLI 0.142.5 não aceita, o `codex exec` é
   REJEITADO — runs de codex em prova/VENDO devem passar `--model` explícito em vez de herdar o
