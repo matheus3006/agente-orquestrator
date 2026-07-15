@@ -11,12 +11,19 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * O LOTE do gate (ADR-0035, D4/D9/D14): decide N approvals reaproveitando o {@link ApprovalService#decide}
- * item a item, SEQUENCIAL. Deliberadamente NÃO transacional: cada decide() abre a própria tx —
- * um item cujo dispatch quebra desfaz SÓ a si mesmo (deny-by-default por item) e o lote segue.
- * Item que não commita (já decidida, inexistente, grelhada pelo probe, alvo malformado) vira
- * linha em {@code puladas} — a contagem sai do loop de graça, sem maquinário de resumo parcial
- * (sistema single-user por design, D9).
+ * O LOTE do gate (ADR-0035, D4/D9/D14): decide N approvals reaproveitando o
+ * {@link ApprovalService#decideNoLote} item a item, SEQUENCIAL. Deliberadamente NÃO transacional:
+ * cada decide() abre a própria tx — um item cujo dispatch quebra desfaz SÓ a si mesmo
+ * (deny-by-default por item) e o lote segue. Item que não commita (já decidida, inexistente,
+ * grelhada pelo probe, alvo malformado) vira linha em {@code puladas} — a contagem sai do loop de
+ * graça, sem maquinário de resumo parcial (sistema single-user por design, D9).
+ *
+ * <p><b>UMA Decisão por lote</b> (ADR-0035 × F-C1): o lote é UM ato do dono com N alvos, não N
+ * atos. Por isso o {@code decideNoLote} SUPRIME a fabricação da Decisão por item e o
+ * {@link ApprovalService#fabricaDecisaoDoLote} registra UMA (por área) depois do loop, com a
+ * linhagem dos N na evidência — senão N Decisões clonadas envenenariam o log append-only e
+ * acenderiam a nudge C5 falsa na carta (o buraco que a R17-B pegou: o PR #12 nunca fora
+ * reconciliado com os writers de Decision que o PR #25 acendeu).
  *
  * <p>Sem override de motor no lote (D12): o decide() roda sem {@code EngineOverride} — sempre o
  * motor protocolado na proposta. Recusas commitadas voltam ao proponente num kickback AGREGADO
@@ -41,7 +48,7 @@ public class ApprovalBatchService {
         List<RecusaKickback.Recusa> recusadas = new ArrayList<>();
         for (Item item : items) {
             try {
-                DecideOutcome outcome = approvals.decide(companyId, item.approvalId(), decision,
+                DecideOutcome outcome = approvals.decideNoLote(companyId, item.approvalId(), decision,
                         racional, decisionReason(motivo, item.observacao()), actorType, actorId);
                 switch (outcome) {
                     case DecideOutcome.Grilled grilled ->
@@ -59,6 +66,9 @@ public class ApprovalBatchService {
             }
         }
         recusaKickback.notificar(companyId, recusadas); // agregado por conversa (D7); vazio = no-op
+        // ADR-0035 × F-C1: o lote é UM ato do dono — a fabricação por item foi suprimida no
+        // decideNoLote; UMA Decisão (por área) nasce aqui, refletindo só as decididas (D5).
+        approvals.fabricaDecisaoDoLote(decision, racional, decididas);
         return new BatchOutcome(decididas, puladas);
     }
 

@@ -83,7 +83,7 @@ class GateDecisionFactoryTest {
                 DecisionGrau.DECISAO, null,
                 new Anchor.NaReview(UUID.randomUUID(), issueId))).orElseThrow();
 
-        assertThat(daReview.getEvidencia()).contains("maieutico");
+        assertThat(daReview.getEvidencia()).contains("maiêutico");
         assertThat(daReview.getReviewId()).isNotNull();  // a coluna morta da V18 acorda (D5)
         assertThat(daReview.getIssueId()).isEqualTo(issueId);
     }

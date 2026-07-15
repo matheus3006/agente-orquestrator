@@ -60,23 +60,23 @@ public class RacionalPolicy {
     public Optional<String> grillProbe(RacionalTipo tipo, String racional) {
         if (racional == null || racional.isBlank()) {
             return Optional.of(tipo == RacionalTipo.INTUICAO
-                    ? "Registro obrigatorio (ADR-0020): o que te agradou (ou incomodou) aqui?"
-                    : "Registro obrigatorio (ADR-0020): qual e a razao desta decisao?");
+                    ? "Registro obrigatório (ADR-0020): o que te agradou (ou incomodou) aqui?"
+                    : "Registro obrigatório (ADR-0020): qual é a razão desta decisão?");
         }
         String normalized = normalize(racional);
         if (CONFAB_FORMS.stream().anyMatch(normalized::contains)) {
-            return Optional.of("\"Porque quis\" nao e razao nem intuicao (ADR-0020/D7). "
+            return Optional.of("\"Porque quis\" não é razão nem intuição (ADR-0020/D7). "
                     + (tipo == RacionalTipo.INTUICAO
-                    ? "Diga a preferencia real: o que te agradou?"
-                    : "Diga a razao substantiva: que premissa sustenta isso?"));
+                    ? "Diga a preferência real: o que te agradou?"
+                    : "Diga a razão substantiva: que premissa sustenta isso?"));
         }
         return Optional.empty(); // presença satisfeita — qualidade NUNCA é julgada (D6)
     }
 
     /** O probe maiêutico da intuição (D10) — registrado como evidência, nunca bloqueia. */
     public String maieuticProbe() {
-        return "Probe maieutico (ADR-0020/D10): o que exatamente te agrada aqui? "
-                + "O que voce notou que o agente nao viu?";
+        return "Probe maiêutico (ADR-0020/D10): o que exatamente te agrada aqui? "
+                + "O que você notou que o agente não viu?";
     }
 
     /**
@@ -89,8 +89,8 @@ public class RacionalPolicy {
     public String reviewProbe(RacionalTipo tipo) {
         return tipo == RacionalTipo.INTUICAO
                 ? maieuticProbe()
-                : "Alguma ressalva ou risco que valha registrar? (nao bloqueia o approve; "
-                        + "sem resposta, nada vira memoria)";
+                : "Alguma ressalva ou risco que valha registrar? (não bloqueia o approve; "
+                        + "sem resposta, nada vira memória)";
     }
 
     private static String normalize(String text) {

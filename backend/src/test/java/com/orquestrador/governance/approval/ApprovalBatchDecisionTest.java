@@ -5,6 +5,11 @@ import com.orquestrador.conversation.Conversation;
 import com.orquestrador.conversation.ConversationService;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.conversation.ConversationTurnRepository;
+import com.orquestrador.memory.CompanyMemoryRepository;
+import com.orquestrador.memory.Decision;
+import com.orquestrador.memory.DecisionGrau;
+import com.orquestrador.memory.DecisionRepository;
+import com.orquestrador.memory.MemoryKind;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -45,6 +50,10 @@ class ApprovalBatchDecisionTest {
     private com.orquestrador.org.team.TeamRepository teams;
     @Autowired
     private com.orquestrador.org.agent.AgentRepository agents;
+    @Autowired
+    private DecisionRepository decisions;
+    @Autowired
+    private CompanyMemoryRepository memories;
 
     private UUID idFrom(String json) throws Exception {
         return UUID.fromString(om.readTree(json).get("id").asText());
@@ -81,6 +90,63 @@ class ApprovalBatchDecisionTest {
                 new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
                         "{\"dominio\":\"Dev\",\"foco\":\"Backlog\",\"title\":\"" + titulo + "\"}",
                         titulo, "backlog")).getId();
+    }
+
+    /**
+     * Um HIRE_AGENT PENDING DISTINTO (área default "estrutura-org") — o alvo real do bug do
+     * lote×F-C1. O {@code nome} varia o {@code target_detail} (logo o fingerprint): sem isso o
+     * dedupe da {@code propose} devolveria a MESMA approval e o lote não teria N alvos.
+     */
+    private UUID propoeHire(UUID companyId, UUID ceoId, String nome) {
+        return approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
+                        "{\"name\":\"" + nome + "\",\"role\":\"executor\"}", "Contratar " + nome,
+                        null)).getId();
+    }
+
+    private String cartaCorrente(UUID companyId) {
+        return memories.findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, MemoryKind.CARTA)
+                .map(com.orquestrador.memory.CompanyMemory::getBody).orElse("");
+    }
+
+    /** Uma CREATE_ISSUE de área "direcao-roadmap" (tipo DIRECAO): a carta só nasce com uma direção. */
+    private UUID propoeDirecao(UUID companyId, UUID ceoId, String titulo) {
+        return approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.CREATE_ISSUE,
+                        "{\"dominio\":\"Dev\",\"foco\":\"Backlog\",\"title\":\"" + titulo + "\"}",
+                        titulo, "direcao-roadmap")).getId();
+    }
+
+    private void aprovaDirecao(UUID board, UUID companyId, UUID ceoId, String titulo) throws Exception {
+        UUID dir = propoeDirecao(companyId, ceoId, titulo);
+        mvc.perform(post("/api/companies/" + companyId + "/approvals/" + dir + "/decision")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"APPROVE\",\"racional\":\"o nicho dental tem dor aguda\"}"))
+                .andExpect(status().isOk());
+    }
+
+    private void rejeitaEmLote(UUID board, UUID companyId, UUID... hires) throws Exception {
+        List<String> itens = new java.util.ArrayList<>();
+        for (UUID h : hires) {
+            itens.add("{\"approvalId\":\"" + h + "\"}");
+        }
+        mvc.perform(post("/api/companies/" + companyId + "/approvals/batch-decision")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECT\",\"racional\":\"quadro acima do caixa atual\","
+                                + "\"motivo\":\"sem orcamento neste trimestre\",\"items\":["
+                                + String.join(",", itens) + "]}"))
+                .andExpect(status().isOk());
+    }
+
+    private void rejeitaIndividual(UUID board, UUID companyId, UUID hire) throws Exception {
+        mvc.perform(post("/api/companies/" + companyId + "/approvals/" + hire + "/decision")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECT\",\"racional\":\"quadro acima do caixa atual\","
+                                + "\"reason\":\"sem orcamento neste trimestre\"}"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -290,5 +356,81 @@ class ApprovalBatchDecisionTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.title == 'Landing nova')]").exists())
                 .andExpect(jsonPath("$[?(@.title == 'Fluxo de onboarding')]").exists());
+    }
+
+    /**
+     * 🔴 O BUG que a R17-B pegou (ADR-0035 × F-C1, PR #12 × PR #25): o lote é UM ato do dono com
+     * N alvos, mas cada {@code decide()} fabricava a sua Decisão — N Decisões clonadas (mesmo
+     * racional, mesma área) no Decision-log append-only. Agora o lote fabrica UMA Decisão, com a
+     * linhagem dos N na {@code evidencia} (como a graduação faz com suas fontes, C5).
+     */
+    @Test
+    void loteRejeitaTresNaMesmaAreaFabricaUMADecisaoComOsTresNaEvidencia() throws Exception {
+        UUID board = UUID.randomUUID();
+        UUID companyId = novaCompany(board);
+        UUID ceoId = novoCeo(board, companyId);
+        UUID h1 = propoeHire(companyId, ceoId, "backend");
+        UUID h2 = propoeHire(companyId, ceoId, "frontend");
+        UUID h3 = propoeHire(companyId, ceoId, "design");
+
+        mvc.perform(post("/api/companies/" + companyId + "/approvals/batch-decision")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECT\",\"racional\":\"quadro acima do caixa atual\","
+                                + "\"motivo\":\"sem orcamento neste trimestre\","
+                                + "\"items\":[{\"approvalId\":\"" + h1 + "\"},"
+                                + "{\"approvalId\":\"" + h2 + "\"},"
+                                + "{\"approvalId\":\"" + h3 + "\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decided").value(3));
+
+        List<Decision> log = decisions.findByCompanyIdOrderByDecidedAtDesc(companyId);
+        assertThat(log).as("1 lote = 1 ato do dono = 1 Decisão, nunca 3 clones").hasSize(1);
+        Decision doLote = log.get(0);
+        assertThat(doLote.getGrau()).isEqualTo(DecisionGrau.DECISAO);
+        assertThat(doLote.getArea()).isEqualTo("estrutura-org");
+        assertThat(doLote.getRacional()).isEqualTo("quadro acima do caixa atual");
+        assertThat(doLote.getEvidencia()).as("a linhagem dos N alvos vai na evidência (C5)")
+                .contains("Contratar backend")
+                .contains("Contratar frontend")
+                .contains("Contratar design");
+    }
+
+    /**
+     * 🔴 O DANO que o bug causava (o mais valioso do achado): N Decisões clonadas acendiam a nudge
+     * FALSA de "candidata a graduação" na carta — o detector C5 conta grau≠PRINCIPIO por área SEM
+     * filtrar tipo, e a carta é o que os AGENTES leem. Com o fix, o LOTE (1 ato do dono) NÃO acende;
+     * mas 3 rejeições SEPARADAS na mesma área acendem, by-design — 3 atos SÃO tendência (C5 fora do
+     * escopo). O bug era "um ato contar como N"; é só isso que muda.
+     */
+    @Test
+    void loteNaoAcendeANudgeFalsaQueTresAtosSeparadosAcendem() throws Exception {
+        UUID board = UUID.randomUUID();
+
+        // (a) O LOTE — 1 ato do dono. A carta precisa existir (uma direção) pra nudge poder aparecer.
+        UUID comLote = novaCompany(board);
+        UUID ceoLote = novoCeo(board, comLote);
+        aprovaDirecao(board, comLote, ceoLote, "Focar no nicho dental");
+        rejeitaEmLote(board, comLote,
+                propoeHire(comLote, ceoLote, "backend"),
+                propoeHire(comLote, ceoLote, "frontend"),
+                propoeHire(comLote, ceoLote, "design"));
+        assertThat(cartaCorrente(comLote))
+                .as("1 ato do dono com 3 alvos não é tendência — sem nudge falsa")
+                .doesNotContain("Candidata a graduação");
+
+        // (b) O CONTRASTE — 3 atos SEPARADOS na mesma área acendem a nudge (comportamento correto).
+        UUID comAvulso = novaCompany(board);
+        UUID ceoAvulso = novoCeo(board, comAvulso);
+        aprovaDirecao(board, comAvulso, ceoAvulso, "Focar no nicho dental");
+        rejeitaIndividual(board, comAvulso, propoeHire(comAvulso, ceoAvulso, "backend"));
+        rejeitaIndividual(board, comAvulso, propoeHire(comAvulso, ceoAvulso, "frontend"));
+        rejeitaIndividual(board, comAvulso, propoeHire(comAvulso, ceoAvulso, "design"));
+        assertThat(decisions.findByCompanyIdOrderByDecidedAtDesc(comAvulso))
+                .as("3 atos avulsos = 3 Decisões (+ a direção) — cada porta fabrica a sua").hasSize(4);
+        assertThat(cartaCorrente(comAvulso))
+                .as("3 atos separados na mesma área SÃO tendência — a nudge acende (by-design)")
+                .contains("Candidata a graduação")
+                .contains("estrutura-org");
     }
 }

@@ -52,6 +52,12 @@ public class GateDecisionFactory {
         switch (passage.anchor()) {
             case Anchor.NaApproval aprovacao -> decisao.anchoredToApproval(aprovacao.approvalId());
             case Anchor.NaReview review -> decisao.anchoredToReview(review.reviewId(), review.issueId());
+            // ADR-0035 × F-C1: o lote nasceu de N approvals — nenhuma singular o ancora; a linhagem
+            // das N vive na evidência (C5, como a graduação com suas fontes). O approval_id fica nulo,
+            // com precedente no caso B (Decisão ancorada só na issue). O no-op nomeado documenta a
+            // escolha e mantém o switch exaustivo sobre a sealed Anchor.
+            case Anchor.NoLote semAncoraSingular -> {
+            }
         }
         if (passage.evidencia() != null && !passage.evidencia().isBlank()) {
             decisao.withEvidencia(passage.evidencia()); // F-C2: a linhagem da graduação (C5)
@@ -88,6 +94,14 @@ public class GateDecisionFactory {
         }
 
         record NaReview(UUID reviewId, UUID issueId) implements Anchor {
+        }
+
+        /**
+         * O LOTE (ADR-0035 × F-C1): 1 ato do dono com N alvos → 1 Decisão SEM âncora singular (não
+         * há uma "approval do lote"); a linhagem das N approvals vive na {@code evidencia} da
+         * passagem, exatamente como a graduação registra suas fontes (C5).
+         */
+        record NoLote() implements Anchor {
         }
     }
 }

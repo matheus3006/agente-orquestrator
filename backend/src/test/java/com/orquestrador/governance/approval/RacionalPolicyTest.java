@@ -26,6 +26,9 @@ class RacionalPolicyTest {
         assertThat(policy.deriveTipo("design-visual")).isEqualTo(RacionalTipo.INTUICAO);
         assertThat(policy.deriveTipo("marketing-criativo")).isEqualTo(RacionalTipo.INTUICAO);
         assertThat(policy.deriveTipo("video de lancamento")).isEqualTo(RacionalTipo.INTUICAO);
+        // Cinto da carona (item 2 lista H): as CREATIVE_AREA_MARKS têm de ficar SEM acento — o
+        // matcher compara contra texto normalizado; acentuar "estetica" cegaria esta detecção.
+        assertThat(policy.deriveTipo("estetica pura")).isEqualTo(RacionalTipo.INTUICAO);
     }
 
     @Test
@@ -40,6 +43,10 @@ class RacionalPolicyTest {
         assertThat(policy.grillProbe(RacionalTipo.LOGICO, "porque quis")).isPresent();
         assertThat(policy.grillProbe(RacionalTipo.LOGICO, "Porque sim.")).isPresent();
         assertThat(policy.grillProbe(RacionalTipo.INTUICAO, "porque eu quis")).isPresent();
+        // Cinto da carona: as CONFAB_FORMS também são comparadas sem acento — acentuar "sem razao"
+        // ou "so porque sim" na constante cegaria o grill a essas formas de não-razão (D7).
+        assertThat(policy.grillProbe(RacionalTipo.LOGICO, "sem razao")).isPresent();
+        assertThat(policy.grillProbe(RacionalTipo.INTUICAO, "so porque sim")).isPresent();
     }
 
     /**
