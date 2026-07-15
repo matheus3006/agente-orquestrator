@@ -63,3 +63,37 @@ para o `description` da Issue. O REOPEN re-executa a Issue com o texto original 
 não vê o motivo do reject. É a única ficha MÉDIA da auditoria que segue **genuinamente em
 aberto como decisão do dono** — registrada na **lista H do fecho do v1**
 (`docs/lista-h-fecho-v1.md`, item 1, com recomendação). Corpo original intocado.
+
+## Emenda 2026-07-14 (R19-A — fecho do v1: a premissa morta vira ENTREGA materializada)
+
+**A premissa da §Revisão 2026-07-02 ("no reject, o feedback do revisor entra na edição da Issue
+antes do REOPEN") está SUPERSEDIDA — e a divergência MÉDIA da nota de reconciliação acima está
+RESOLVIDA.** O grill da R17-B (lista H, item 1) achou que a pergunta original ("puxar fatia de
+edição de Issue × aceitar como está") era uma **falsa dicotomia**: existe uma **terceira via**, e
+ela é curta.
+
+**O que mudou desde a premissa (Frente C, PRs #25–#28):** o REJECT já **exige motivo** e esse
+motivo já **É uma Decisão** endereçada por `#N` — grau `DECISAO`, racional = o feedback, **ancorada
+na review E na issue** (`GateDecisionFactory` via `Anchor.NaReview`, que grava o `issue_id`). O
+feedback **não fica mais preso em `review.decision_reason`**. O buraco real nunca foi "falta um
+endpoint": era **falta de ENTREGA** — o executor rodava sem receber esse átomo no re-run.
+
+**A decisão (R19-A):** **materializar (PUSH) no `memoryFile` do run de Issue as Decisões ancoradas
+naquela issue.** No REOPEN → re-run, o executor **RECEBE** o motivo do reject (e as demais Decisões
+da issue) como uma dieta direcionada, **sem depender de escolher buscar** — feedback de reject não é
+opcional (PUSH, não pull). O agente selado não tem canal inbound; a materialização É esse canal.
+
+- **Fio no código:** `DecisionRepository.findByCompanyIdAndIssueIdOrderBySeqAsc` (finder novo) →
+  `CompanyMemoryMaterializer` (a dieta direcionada, renderizada com `#N` + racional) ←
+  `AdapterRunExecutor` passa o `runContext.issueId()` na materialização. Cobre o reject
+  (`anchoredToReview`) **e** as Decisões do caso B (`anchoredToIssue`).
+- **NÃO se faz:** endpoint de edição de Issue (a superfície do `IssueController` segue intocada).
+- **Convive com o trilho JIT selado (C10.b do `MemoryQuery`), sem alargá-lo:** a entrega é um
+  caminho **NOVO e DIRECIONADO** (só as Decisões da issue do run). A Decisão do reject (grau
+  `DECISAO`, tipo `OPERACIONAL`/`TECNICA`) **continua FORA** do `memory_fetch` — o log cru segue
+  board-only. Os dois convivem por construção: um ENTREGA (direcionado à issue), o outro é o índice
+  durável selado (`grau=PRINCIPIO || tipo=DIRECAO`).
+- **Ponta do CEO inalterada:** turno de conversa tem `issueId` nulo → nenhuma seção de issue.
+- **Lentes:** `human-architect-mindset` (o canal inbound que faltava ao agente selado; entrega ≠
+  busca) + `codebase-design` (seam pequeno — o `issueId` que já existia no `RunContext` passa a
+  fluir para a dieta; módulo fundo no materializer).

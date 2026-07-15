@@ -237,9 +237,14 @@ public class AdapterRunExecutor implements RunExecutor {
         // material de executor. Antes da F-C3 o executor não recebia memória nenhuma (D12 letra
         // morta + cegueira-de-retrieval). Falha de I/O no turno liquida o turno (o claim já ocorreu
         // — FAILED visível > PENDING pendurado); no executor vira falha do run como qualquer outra.
+        // R19-A (fecho v1, ADR-0011 emendada): o run de Issue passa o issueId — o materializer PUXA
+        // as Decisões ancoradas naquela issue (o motivo do REJECT do review + caso B) e as ENTREGA
+        // como dieta direcionada, para o executor RECEBER o feedback no re-run (PUSH, não pull). O
+        // turno do CEO tem issueId nulo → nenhuma seção de issue (a ponta do CEO fica inalterada).
         MemoryAudience audience = turno != null ? MemoryAudience.CEO : MemoryAudience.EXECUTOR;
         try {
-            memoryMaterializer.materialize(workDir, convention.memoryFile(), runContext.companyId(), audience);
+            memoryMaterializer.materialize(workDir, convention.memoryFile(), runContext.companyId(),
+                    audience, runContext.issueId());
             // Faxina permanente (ADR-0032/D6), lado da memória: o memoryFile das convenções INATIVAS
             // some. A regra é "QUEM MATERIALIZA, FAXINA" — e agora o executor também materializa, então
             // ele também varre (o mesmo movimento que o F-N6 fez pelos hooks). Troca de motor nunca

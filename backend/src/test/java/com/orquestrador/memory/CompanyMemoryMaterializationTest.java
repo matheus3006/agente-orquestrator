@@ -36,6 +36,10 @@ class CompanyMemoryMaterializationTest {
     @Autowired
     private CompanyMemoryRepository memories;
     @Autowired
+    private DecisionLog decisionLog;
+    @Autowired
+    private MemoryQuery memoryQuery;
+    @Autowired
     private ConversationService conversations;
     @Autowired
     private HeartbeatDispatcher dispatcher;
@@ -169,6 +173,176 @@ class CompanyMemoryMaterializationTest {
         assertThat(Files.readString(claudeMd))
                 .contains("#7 validar canal antes de escalar")
                 .doesNotContain("cobrar por assento");
+    }
+
+    /**
+     * O feedback R19-A no RUN REAL (dispatchOnce, motor {@code process}): uma Issue com uma Decisão
+     * de REJECT ancorada nela → o workspace do run do executor recebe o feedback LITERAL, com o
+     * {@code #N}. Prova de ponta-a-ponta de que o issueId FLUI do {@code RunContext} até a
+     * materialização (o gap exato que a fatia fecha).
+     */
+    @Test
+    void runRealDoExecutorMaterializaOFeedbackDoRejectDaIssue() throws Exception {
+        UUID companyId = novaCompany();
+        Agent executor = new Agent(UUID.randomUUID(), companyId, "Vega", "executor", null);
+        executor.configureRuntime("process", "echo ok", "LOCAL");
+        UUID executorId = agents.save(executor).getId();
+        UUID issueId = issues.create(companyId, "Login flow", null).getId();
+        // O dono reprovou a entrega no review: a Decisão do reject nasce ancorada NA issue.
+        Decision reject = decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.DONO_NO_GATE, "[REJECT REVIEW] #1 Login flow",
+                "faltou tratar o refresh token expirado", RacionalTipo.LOGICO, false)
+                .anchoredToReview(UUID.randomUUID(), issueId));
+
+        wakeups.enqueue(companyId, executorId, issueId, "retrabalhar");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        Path claudeMd = workspaces.resolve(companyId, executorId, issueId).resolve(".claude/CLAUDE.md");
+        assertThat(Files.readString(claudeMd))
+                .as("o re-run do executor recebe o feedback literal do reject, com o #N")
+                .contains("#" + reject.getSeq())
+                .contains("faltou tratar o refresh token expirado");
+    }
+
+    /**
+     * A FATIA C do fecho do v1 (R19-A, ADR-0011 emendada): o feedback do dono no review NÃO é mais
+     * "editado na Issue antes do REOPEN" (premissa morta) — ele já É uma Decisão endereçada por
+     * {@code #N}, ancorada na review E na issue. A dieta NOVA e DIRECIONADA do executor PUXA
+     * (materializa) as Decisões ancoradas NAQUELA issue: o agente RECEBE o motivo do reject no
+     * re-run, sem depender de escolher buscar (PUSH, não pull — feedback de reject não é opcional).
+     */
+    @Test
+    void executorDeIssueRecebeOFeedbackDoRejectAncoradoNaIssue() throws Exception {
+        UUID companyId = novaCompany();
+        Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
+        UUID issueId = issues.create(companyId, "Login flow", null).getId();
+        Decision reject = decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.DONO_NO_GATE, "[REJECT REVIEW] #1 Login flow",
+                "faltou tratar o refresh token expirado", RacionalTipo.LOGICO, false)
+                .anchoredToReview(UUID.randomUUID(), issueId));
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR, issueId);
+
+        assertThat(Files.readString(claudeMd))
+                .as("o executor recebe o racional do reject com o endereço #N")
+                .contains("#" + reject.getSeq())
+                .contains("faltou tratar o refresh token expirado");
+    }
+
+    /**
+     * Issue SEM Decisão ancorada: a dieta do executor fica EXATAMENTE a durável — byte-idêntica ao
+     * run sem issue. O caminho novo é ADITIVO e só acende quando há feedback (nenhuma seção nasce
+     * do nada), preservando o contrato de hoje.
+     */
+    @Test
+    void issueSemDecisoesAncoradas_dietaIdenticaAoDuravel() throws Exception {
+        UUID companyId = novaCompany();
+        Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.PLAYBOOK,
+                "# Playbook da empresa\n- #7 validar canal antes de escalar", 1));
+        UUID issueSemDecisoes = issues.create(companyId, "tarefa nova", null).getId();
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR, issueSemDecisoes);
+        String comIssueId = Files.readString(claudeMd);
+
+        Files.deleteIfExists(claudeMd);
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR);
+        String semIssue = Files.readString(claudeMd);
+
+        assertThat(comIssueId)
+                .as("issue sem feedback → dieta durável intocada, sem seção de issue")
+                .isEqualTo(semIssue)
+                .doesNotContain("Feedback do dono");
+    }
+
+    /**
+     * Todas as Decisões ancoradas na issue entram, com seu {@code #N} e em ordem de ENDEREÇO — o
+     * REJECT do review ({@code anchoredToReview} grava o issueId) E as do caso B
+     * ({@code anchoredToIssue}). Feedback de OUTRA issue nunca vaza no workspace deste run.
+     */
+    @Test
+    void materializaTodasAsDecisoesDaIssueEmOrdem_semVazarDeOutraIssue() throws Exception {
+        UUID companyId = novaCompany();
+        Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
+        UUID issueId = issues.create(companyId, "Login flow", null).getId();
+        UUID outraIssue = issues.create(companyId, "Outra tarefa", null).getId();
+
+        Decision reject = decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.DONO_NO_GATE, "[REJECT REVIEW] #1 Login flow",
+                "faltou tratar o refresh token expirado", RacionalTipo.LOGICO, false)
+                .anchoredToReview(UUID.randomUUID(), issueId));
+        Decision casoB = decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.DONO_NO_GATE, "corrigir o contrato do endpoint",
+                "o front espera 204 sem corpo", RacionalTipo.LOGICO, false)
+                .anchoredToIssue(issueId));
+        decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.DONO_NO_GATE, "[REJECT REVIEW] #2 Outra tarefa",
+                "SIGILO_DE_OUTRA_ISSUE", RacionalTipo.LOGICO, false)
+                .anchoredToReview(UUID.randomUUID(), outraIssue));
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR, issueId);
+        String dieta = Files.readString(claudeMd);
+
+        assertThat(dieta)
+                .contains("#" + reject.getSeq()).contains("faltou tratar o refresh token expirado")
+                .contains("#" + casoB.getSeq()).contains("o front espera 204 sem corpo")
+                .doesNotContain("SIGILO_DE_OUTRA_ISSUE");
+        assertThat(dieta.indexOf("#" + reject.getSeq() + " "))
+                .as("ordem de endereço: o #N menor (o reject) vem antes do caso B")
+                .isLessThan(dieta.indexOf("#" + casoB.getSeq() + " "));
+    }
+
+    /**
+     * A ponta do CEO fica INALTERADA (R19-A): o turno tem issueId nulo, então nenhuma seção de
+     * issue entra — mesmo quando a company TEM Decisões ancoradas em issues. O CEO recebe carta +
+     * playbook, como antes; o feedback de issue é material do EXECUTOR daquela issue, não do CEO.
+     */
+    @Test
+    void ceoNaoRecebeSecaoDeIssue_mesmoComDecisoesAncoradasNaCompany() throws Exception {
+        UUID companyId = novaCompany();
+        Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA,
+                "# Carta de interesses da empresa\n- #3 cobrar por assento", 1));
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.PLAYBOOK,
+                "# Playbook da empresa\n- #7 validar canal antes de escalar", 1));
+        UUID issueId = issues.create(companyId, "Login flow", null).getId();
+        decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.DONO_NO_GATE, "[REJECT REVIEW] #1 Login flow",
+                "FEEDBACK_QUE_NAO_E_DO_CEO", RacionalTipo.LOGICO, false)
+                .anchoredToReview(UUID.randomUUID(), issueId));
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.CEO);
+
+        assertThat(Files.readString(claudeMd))
+                .contains("Carta de interesses").contains("#3 cobrar por assento")
+                .contains("Playbook da empresa").contains("#7 validar canal antes de escalar")
+                .doesNotContain("Feedback do dono").doesNotContain("FEEDBACK_QUE_NAO_E_DO_CEO");
+    }
+
+    /**
+     * A CONVIVÊNCIA (R19-A × C10.b): o MESMO reject que o materializer ENTREGA ao executor
+     * (grau=DECISAO, tipo OPERACIONAL) segue RECUSADO no {@code memory_fetch}. O caminho novo é
+     * DIRECIONADO (só a issue do run) e NÃO alarga o trilho JIT selado — as duas decisões do dono
+     * (R17-B) convivem por construção, sem tensão a resolver.
+     */
+    @Test
+    void oFeedbackEntregueConviveComOMemoryFetchSelado() throws Exception {
+        UUID companyId = novaCompany();
+        Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
+        UUID issueId = issues.create(companyId, "Login flow", null).getId();
+        Decision reject = decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.DONO_NO_GATE, "[REJECT REVIEW] #1 Login flow",
+                "faltou tratar o refresh token expirado", RacionalTipo.LOGICO, false)
+                .anchoredToReview(UUID.randomUUID(), issueId));
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR, issueId);
+
+        assertThat(Files.readString(claudeMd))
+                .as("o executor RECEBE o feedback pelo caminho direcionado (PUSH)")
+                .contains("faltou tratar o refresh token expirado");
+        assertThat(memoryQuery.fetch(companyId, reject.getSeq()))
+                .as("o MESMO #N segue FORA do memory_fetch (log cru board-only, C10.b intocada)")
+                .isEmpty();
     }
 
     @Test

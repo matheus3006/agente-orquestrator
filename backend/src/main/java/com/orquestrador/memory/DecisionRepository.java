@@ -21,4 +21,14 @@ public interface DecisionRepository extends JpaRepository<Decision, UUID> {
 
     /** O endereço humano #N → a linha (company-scoped: o espaço de endereços nunca vaza). */
     Optional<Decision> findByCompanyIdAndSeq(UUID companyId, int seq);
+
+    /**
+     * As Decisões ancoradas numa Issue, em ordem de endereço (R19-A, fecho v1): o motivo do REJECT
+     * do review ({@code anchoredToReview} grava o {@code issue_id}) e as do caso B
+     * ({@code anchoredToIssue}). É a fonte da dieta DIRECIONADA que o executor recebe no re-run —
+     * um caminho NOVO e ESTREITO (só a issue do run), fora do trilho JIT selado do {@link MemoryQuery}
+     * (que serve grau=PRINCIPIO || tipo=DIRECAO); por isso lê o repositório cru, não a fronteira C10.b.
+     * Company-scoped: o feedback de uma company nunca vaza no workspace de outra.
+     */
+    List<Decision> findByCompanyIdAndIssueIdOrderBySeqAsc(UUID companyId, UUID issueId);
 }
