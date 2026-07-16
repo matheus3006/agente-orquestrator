@@ -7,6 +7,7 @@ import com.orquestrador.conversation.TurnStatus;
 import com.orquestrador.execution.RepeatedFailureNotice;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.handoff.ContinuationSentinel;
+import com.orquestrador.handoff.ConversationContinuationGuard;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
@@ -38,7 +39,7 @@ import java.util.UUID;
  * </ul>
  */
 @Component
-public class PersonaContinuationPoster {
+public class PersonaContinuationPoster implements ConversationContinuationGuard {
 
     static final int MAX_KICKBACKS_SEGUIDOS = 5;
 
@@ -181,6 +182,18 @@ public class PersonaContinuationPoster {
         return true;
     }
 
+    /**
+     * Park-for-human (ADR-0011): a conversa está travada esperando o dono responder a lacuna que o
+     * kickback (Re-grelha) já perguntou. É o veto que o {@link com.orquestrador.handoff.ContinuationTurnPoster}
+     * consulta antes de retomar por contexto (ADR-0030) — retomar aqui só re-bateria a MESMA lacuna
+     * (o loop kickback↔continuação, invisível às duas travas isoladas). Uma fala real do dono destrava.
+     */
+    @Override
+    public boolean parkedForHuman(UUID companyId, UUID conversationId) {
+        return awaitingOwnerGrilling(
+                turns.findByConversationIdAndCompanyIdOrderByCreatedAtAsc(conversationId, companyId));
+    }
+
     private void postTurno(UUID companyId, UUID conversationId, Agent alvo, String ownerMessage,
                            String reasonPrefix) {
         ConversationTurn turno = turns.save(new ConversationTurn(
@@ -218,6 +231,27 @@ public class PersonaContinuationPoster {
             }
         }
         return count;
+    }
+
+    /**
+     * O park-for-human do kickback (ADR-0011): há um kickback (Re-grelha) no tail SEM uma fala real
+     * do dono depois dele — o Questionador perguntou a lacuna e ESPERA. Anda do tail pulando os
+     * turnos internos (continuações/avisos); o primeiro kickback ⟹ parado, a primeira fala real do
+     * dono ⟹ livre. É a régua M9 pela ótica "está esperando o dono AGORA?" (booleana, sem teto) — a
+     * peça que faltava: cada trava de contagem só via o próprio tipo de turno, então a alternância
+     * kickback/continuação zerava as duas e o loop nunca cortava.
+     */
+    static boolean awaitingOwnerGrilling(List<ConversationTurn> doConv) {
+        for (int i = doConv.size() - 1; i >= 0; i--) {
+            String message = doConv.get(i).getOwnerMessage();
+            if (KickbackTurn.isKickback(message)) {
+                return true;
+            }
+            if (donoDeVoltaNaConversa(message)) {
+                return false;
+            }
+        }
+        return false;
     }
 
     /** Já houve um "prossiga" desde a última fala do dono? — reincidir depois dele é corte. */

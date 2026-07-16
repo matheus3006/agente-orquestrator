@@ -5,10 +5,12 @@ import com.orquestrador.conversation.ConversationService;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.conversation.ConversationTurnRepository;
 import com.orquestrador.conversation.TurnStatus;
+import com.orquestrador.conversation.persona.KickbackTurn;
 import com.orquestrador.execution.HeartbeatDispatcher;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.agent.CeoPersona;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -138,5 +140,51 @@ class ContinuationTurnPosterTest {
 
         assertThat(thread).noneMatch(t -> ContinuationSentinel.isContinuation(t.getOwnerMessage()));
         assertThat(thread).extracting(ConversationTurn::getOwnerMessage).containsExactly("pergunta do dono");
+    }
+
+    // ── Park-for-human (ADR-0011): o handoff de contexto NÃO retoma enquanto um kickback espera o dono.
+    // Sem isto, o resume re-bate a mesma lacuna e nasce o loop kickback↔continuação (nenhuma das duas
+    // travas isoladas o via — cada uma conta só o próprio tipo de turno; a alternância zera as duas).
+
+    @Test
+    void naoContinuaEnquantoUmKickbackEsperaRespostaDoDono() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeoEcho(companyId);
+        Conversation conv = conversations.open(companyId, "Grilling");
+        // O Questionador re-grelhou o dono (kickback já respondido) e ESPERA a resposta da lacuna.
+        ConversationTurn kickback = new ConversationTurn(UUID.randomUUID(), conv.getId(), companyId, ceoId,
+                KickbackTurn.ownerMessage(CeoPersona.PLANEJADOR, "confirma o ICP clínicas odontológicas?"));
+        kickback.answer("Qual é o cliente-alvo? Confirma clínicas odontológicas?");
+        turns.save(kickback);
+
+        poster.postContinuation(companyId, ceoId, conv.getId()); // a ADR-0030 tentaria retomar o plano
+
+        // PARK: nenhuma continuação nasce — a conversa espera o dono (o loop não começa).
+        long continuacoes = turns.findByConversationIdAndCompanyIdOrderByCreatedAtAsc(conv.getId(), companyId)
+                .stream().filter(t -> ContinuationSentinel.isContinuation(t.getOwnerMessage())).count();
+        assertThat(continuacoes).isZero();
+    }
+
+    @Test
+    void continuaQuandoODonoJaRespondeuOKickback() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeoEcho(companyId);
+        Conversation conv = conversations.open(companyId, "Respondido");
+        ConversationTurn kickback = new ConversationTurn(UUID.randomUUID(), conv.getId(), companyId, ceoId,
+                KickbackTurn.ownerMessage(CeoPersona.PLANEJADOR, "confirma o ICP?"));
+        kickback.answer("Confirma clínicas odontológicas como ICP?");
+        turns.save(kickback);
+        // O dono VOLTOU e respondeu a lacuna — a régua zera; o plano pode retomar por contexto.
+        ConversationTurn doDono = new ConversationTurn(UUID.randomUUID(), conv.getId(), companyId, ceoId,
+                "Sim, confirmo clínicas odontológicas como ICP inicial");
+        doDono.answer("Ótimo — sigo com esse ICP.");
+        turns.save(doDono);
+
+        poster.postContinuation(companyId, ceoId, conv.getId());
+
+        // NÃO está parado: o dono respondeu depois do kickback — a continuação nasce normalmente.
+        long continuacoes = turns.findByConversationIdAndCompanyIdOrderByCreatedAtAsc(conv.getId(), companyId)
+                .stream().filter(t -> ContinuationSentinel.isContinuation(t.getOwnerMessage())).count();
+        assertThat(continuacoes).isEqualTo(1);
     }
 }

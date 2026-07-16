@@ -36,10 +36,13 @@ public class ContinuationTurnPoster {
 
     private final ConversationTurnRepository turns;
     private final WakeupService wakeups;
+    private final List<ConversationContinuationGuard> guards;
 
-    public ContinuationTurnPoster(ConversationTurnRepository turns, WakeupService wakeups) {
+    public ContinuationTurnPoster(ConversationTurnRepository turns, WakeupService wakeups,
+                                  List<ConversationContinuationGuard> guards) {
         this.turns = turns;
         this.wakeups = wakeups;
+        this.guards = guards;
     }
 
     /** Cria o turno-continuação (sentinela) e acorda o agente — guardado por idempotência + trava (M10). */
@@ -51,6 +54,15 @@ public class ContinuationTurnPoster {
         // Idempotência (M10, risco #10): já existe uma continuação PENDING nesta conversa? Então este
         // disparo já está coberto — não dobra (guarda o settle reexecutado antes do claim da 1ª).
         if (hasPendingContinuation(doConv)) {
+            return;
+        }
+        // Park-for-human (ADR-0011): a persona travou numa lacuna e ESPERA o dono — retomar por
+        // contexto aqui só re-bate a MESMA lacuna (o loop kickback↔continuação, que nenhuma das duas
+        // travas de contagem isoladas enxerga). O kickback ("Re-grelha", VISÍVEL) já é o aviso; uma
+        // fala real do dono destrava. Sem novo turno, sem novo Run — a conversa espera.
+        if (parkedForHuman(companyId, conversationId)) {
+            log.debug("handoff: conversa {} parada aguardando o dono — continuação suprimida (park-for-human)",
+                    conversationId);
             return;
         }
         // Trava anti-loop (D7): N continuações seguidas → corta com um turno visível, sem sumir.
@@ -70,6 +82,21 @@ public class ContinuationTurnPoster {
         return doConv.stream().anyMatch(turno ->
                 turno.getStatus() == TurnStatus.PENDING
                         && ContinuationSentinel.isContinuation(turno.getOwnerMessage()));
+    }
+
+    /** Algum guard pede park? Best-effort (D9): um guard que explode NÃO suprime (fail-open = retoma). */
+    private boolean parkedForHuman(UUID companyId, UUID conversationId) {
+        for (ConversationContinuationGuard guard : guards) {
+            try {
+                if (guard.parkedForHuman(companyId, conversationId)) {
+                    return true;
+                }
+            } catch (RuntimeException exception) {
+                log.warn("handoff: guard de park {} falhou (ignorado, fail-open): {}",
+                        guard.getClass().getSimpleName(), exception.getMessage());
+            }
+        }
+        return false;
     }
 
     /** Quantas continuações seguidas fecham a conversa AGORA (da mais nova para trás até um não-cont.). */
