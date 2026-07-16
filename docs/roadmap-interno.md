@@ -42,6 +42,13 @@ tokens* no código; o loop automático é a Fatia 1. A camada de **orquestraçã
 > segue como "princípio praticado" (a Fatia 1 do loop landou; a régua a 50-60% roda). **Código do v1 COMPLETO
 > (PRs #1–#31)** — resta a **PROVA FINAL**. Estado atual nas Frentes B e C.
 
+> **▸▸ v1 DECLARADO FECHADO PELO DONO (2026-07-16).** A prova final (R21-A) rodou as pernas
+> (a)–(f) com motor real, achou o **bug #1** (DONE fantasma) + 4 achados, e o dono decidiu:
+> o v1 FECHA; o que sobrou vira **roadmap de ajustes** (seção própria abaixo, antes da Frente D).
+> A fase atual é **descoberta de bugs**: as ADRs viram a especificação, cada funcionalidade é
+> testada AO VIVO e classificada funciona/não-funciona (plano da caça = R22-B,
+> `docs/plano-descoberta-bugs.md`). PRs #1–#33 MERGED · main `83c5fe9` · piso 738/294.
+
 ---
 
 ## Frente A — Fundação implementada (VENDO/FECHADO)
@@ -89,7 +96,7 @@ tokens* no código; o loop automático é a Fatia 1. A camada de **orquestraçã
 | Capacidade | Verdict · Estágio | Evidência-âncora | Ponteiro |
 |------------|-------------------|------------------|----------|
 | Enforcement de governança em runtime (budget + revisão) | ✅ IMPLEMENTADA · VENDO | preflight real `execution/HeartbeatDispatcher.java:53` (`budgets.invocationBlocked` cancela QUEUED) | ADR-0006 ⚠ *(§ Div: corpo vs T.4)* |
-| Recovery de Issue travada por Run FAILED (park-for-human) | ✅ IMPLEMENTADA · VENDO | `work/issue/IssueService.java:108` (`tryBlock` guardado por runId + `ISSUE_BLOCKED`) | ADR-0011 |
+| Recovery de Issue travada por Run FAILED (park-for-human **de ISSUE** — não confundir com o park-for-human **de CONVERSA** do fix #33, que estaciona a retomada de contexto enquanto o kickback espera o dono) | ✅ IMPLEMENTADA · VENDO | `work/issue/IssueService.java:185` (`tryBlock` guardado por runId + `ISSUE_BLOCKED`; a citação anterior `:108` era o meio da corretiva do caso B — o código andou) | ADR-0011 (emendada R19-A + **R22-A: run no-op nunca fecha issue** — cai neste mesmo BLOCKED) |
 | Review gate pós-hoc por risco (runtime-enforced) | ✅ IMPLEMENTADA · VENDO | `V11__review.sql:4` (`risk_level` + tabela `review` + `uq_review_pending`) | ADR-0012 · `handoff-grilling-approval(-fechado)` |
 
 ### A.6 — Teams & orquestração do CEO
@@ -130,7 +137,7 @@ tokens* no código; o loop automático é a Fatia 1. A camada de **orquestraçã
 
 ---
 
-## Frente B — v1 do CEO (a camada de ORQUESTRAÇÃO) — **CONSTRUÍDA (código do v1 completo — PRs #1–#31)**
+## Frente B — v1 do CEO (a camada de ORQUESTRAÇÃO) — **CONSTRUÍDA (v1 FECHADO pelo dono 2026-07-16 — PRs #1–#33)**
 
 Sequência: **Fatia 1 (fundação do transporte)** e **Fatia 2** são **PARALELAS** (o grill fechado da Fatia 2
 tornou o bilhete conversation-scoped — ver § Div). **Fatia 1 IMPLEMENTADA (ADR-0030, PR #1); Fatia 2
@@ -178,18 +185,26 @@ front **269**).
 
 | **Feedback do review → executor (R19-A)** — a 3ª e ÚLTIMA fatia de código do fecho do v1 (lista H item 1): o motivo do REJECT já É Decisão (grau=DECISAO, ancorada na review+issue), mas o executor NUNCA o recebia no re-run — faltava ENTREGA, não endpoint | ✅ IMPLEMENTADA · **suíte verde (729)** · **`/verify` live PASS (`:18081` + pg efêmero, cenário real reject→re-run)** · **MERGED (PR #31, main `fd3be27`)** | Suíte **729** back (piso 723 + 6) / **294** front (intocado): `DecisionRepository.findByCompanyIdAndIssueIdOrderBySeqAsc` (finder novo) · `CompanyMemoryMaterializer` ganha o `issueId` (5-arg + overload 4-arg=null) e materializa a dieta DIRECIONADA — as Decisões ancoradas na issue do run (reject `anchoredToReview` + caso B `anchoredToIssue`), renderizadas com `#N` + racional (**PUSH, não pull:** o agente RECEBE, não escolhe buscar — feedback de reject não é opcional) · `AdapterRunExecutor` passa o `runContext.issueId()` (o gap exato: o issueId que ele já tinha não fluía pra dieta) · **fronteira C10.b do `MemoryQuery` INTOCADA** — a Decisão do reject (grau=DECISAO, tipo OPERACIONAL/TECNICA) segue board-only no `memory_fetch`; a entrega é caminho NOVO e DIRECIONADO, não alargamento do trilho JIT (convivem por construção) · ponta do CEO inalterada (issueId nulo → sem seção) · prova: `CompanyMemoryMaterializationTest` (+6: tracer feedback · parity issue-sem-decisão byte-idêntica · N decisões por seq + isolamento entre issues · CEO sem seção · convivência R19-A×fetch-selado · run REAL `dispatchOnce` com feedback literal) | **ADR-0011 emendada** (Emenda R19-A: a premissa "editar Issue antes do REOPEN" morta → entrega materializada) + comentário `IssueService.java:221` atualizado · **sem ADR nova** (ADR-0043 livre) · **sem migração** (V30 livre) · branch `feat/feedback-review-executor-adr0011` · `docs/handoff-decisoes-lista-h.md` item 1 |
 
-> **A lista H (R17-B, 2026-07-14) destravou 3 fatias de v1 novas** ("o v1 cresceu") — a F-C3 era a última fatia PLANEJADA, não a última do v1. Ordem: **(1) lote×Decision [R18-A ✅ MERGED PR #29] · (2) circuit-breaker de erro repetido [R18-B ✅ MERGED PR #30] · (3) feedback do review→executor [R19-A ✅ MERGED PR #31 — a última de código]**. **AS 3 LANDARAM (`main fd3be27`)** — o resto do fecho do v1 é documental (esta faixa) + prova final. Racional e recorte em `docs/handoff-decisoes-lista-h.md`.
+| **Fix do loop kickback↔continuação (PR #33)** — achado da PROVA FINAL (R21-A): as 2 travas de loop contavam só o próprio tipo consecutivo e a ALTERNÂNCIA kickback↔continuação zerava as duas — a conversa girava sem o dono | ✅ MERGED (PR #33, main `83c5fe9`, 2026-07-16) | `PersonaContinuationPoster.parkedForHuman`/`awaitingOwnerGrilling` (park-for-human **de CONVERSA**: kickback no tail sem fala real do dono depois → a retomada por contexto NÃO re-posta; uma fala real destrava) · consultado pelo `ContinuationTurnPoster` (seam `ConversationContinuationGuard`) · piso **738** back / **294** front | **ADR-0030 emendada** (emenda 2026-07-16) · branch `fix/persona-kickback-park-for-human` · `docs/handoffs/HANDOFF-prova-final-v1.md` |
 
-> **▸ Estado final do v1 (fecho residual, 2026-07-15).** **Código do v1 COMPLETO — PRs #1–#31 todos MERGED**
-> (`main fd3be27`; piso canônico **736** back / **294** front). **ZERO fatia de código restante.** Desfechos das
-> 5 decisões da lista H (R17-B): **(1)** feedback→executor **feito** (R19-A/#31) · **(3c)** circuit-breaker
-> **feito** (R18-B/#30) · **(5)** lote×Decision **feito** (R18-A/#29) · **(4)** **pino 2.1.201 MANTIDO** por
-> decisão do dono — gatilho registrado na ADR-0014 (bump só em fatia de infra própria, com um 2º motivo,
-> racional no PR; gotcha <2.1.205 já cintada — ADR-0039 ~:111) · **(2)** **veto de redação: os 6 textos MANTIDOS**
-> como shippados (decisão do dono), a única correção sendo a **acentuação das 7 strings de usuário do
-> `RacionalPolicy`** — aplicada de carona na R18-A/#29 (`CONFAB_FORMS`/`CREATIVE_AREA_MARKS` intocadas). **Resta
-> só a PROVA FINAL** (sentada do OPERADOR: rebuild+boot do `:8080` da `fd3be27` + **rejeitar os 27 HIRE_AGENT
-> PENDING em lote** = prova viva do fix #29) → **declaração "v1 FECHADO"** (não é desta faixa).
+> **A lista H (R17-B, 2026-07-14) destravou 3 fatias de v1 novas** ("o v1 cresceu") — a F-C3 era a última fatia PLANEJADA, não a última do v1. Ordem: **(1) lote×Decision [R18-A ✅ MERGED PR #29] · (2) circuit-breaker de erro repetido [R18-B ✅ MERGED PR #30] · (3) feedback do review→executor [R19-A ✅ MERGED PR #31]**. Depois delas landaram ainda o **#32** (docs do fecho residual, R20-A) e o **#33** (fix do loop de persona, achado da prova final — linha acima). Racional e recorte em `docs/handoff-decisoes-lista-h.md`.
+
+> **▸ Estado final do v1 — ATUALIZADO 2026-07-16 (R22-A).** **v1 DECLARADO FECHADO PELO DONO
+> (2026-07-16)** — decisão registrada em `docs/handoffs/HANDOFF-prova-final-v1.md` §1. **PRs #1–#33
+> todos MERGED** (`main 83c5fe9`; piso canônico **738** back / **294** front). A versão anterior
+> deste bloco (2026-07-15, "PRs #1–#31 · ZERO fatia de código restante") ficou **duplamente
+> falsa**: o **#33** landou CÓDIGO depois do carimbo (fix do loop de persona, achado da prova) e a
+> fatia do **bug #1 do roadmap de ajustes reabre código** (R22-A, em voo). Desfechos das 5 decisões
+> da lista H (R17-B): **(1)** feedback→executor **feito** (R19-A/#31) · **(3c)** circuit-breaker
+> **feito** (R18-B/#30) · **(5)** lote×Decision **feito** (R18-A/#29) · **(4)** **pino 2.1.201
+> MANTIDO** por decisão do dono — gatilho registrado na ADR-0014 (bump só em fatia de infra
+> própria, com um 2º motivo, racional no PR; gotcha <2.1.205 já cintada — ADR-0039 ~:111) ·
+> **(2)** **veto de redação: os 6 textos MANTIDOS** como shippados (decisão do dono), a única
+> correção sendo a **acentuação das 7 strings de usuário do `RacionalPolicy`** — aplicada de
+> carona na R18-A/#29. A **PROVA FINAL rodou (R21-A, 2026-07-16)**: pernas (a)–(f) PASS com motor
+> real; achou o **bug #1** (DONE fantasma — o run de issue não tinha compositor) + 4 achados; as
+> pernas (g)/(h)/(i) fecham no /verify da fatia do conserto. **Fase atual = descoberta de bugs /
+> roadmap de ajustes (ver a seção "Roadmap de ajustes" abaixo).**
 
 ## Frente C — Método de memória do CEO (2º cérebro) — **COMPLETA (F-C1 → F-C2 → F-C3)**
 
@@ -203,6 +218,32 @@ a *assinatura* (anti-inchaço) e o *índice + navegação JIT* estão no código
 | **F-C1 "o átomo completo"** (R15-A, 2026-07-14): endereço `#N` + `grau` (V29) · fábrica ÚNICA `GateDecisionFactory` (C15) · **writers D5/D11 ACESOS** (review fabrica Decisão com área do ARTEFATO; `supersedesSeq` nas 2 portas → carta se auto-cura) · triviabilidade C14 (silêncio-após-perguntado; probe da política no FE) · `render()` emite `#N` | ✅ IMPLEMENTADA · VENDO na descartável | `memory/{GateDecisionFactory, DecisionGrau}` · `V29__decision_seq_grau.sql` · `IssueService.review` (review_id acordou) · suíte 691 back / 290 front | ADR-0019+0020 **emendadas** (nota D5/D11 + triviabilidade FECHADAS) · `handoff-grilling-frente-c-memoria.md` §RESULTADO |
 | **F-C2 "a assinatura: graduação + cap"** (R16-A, 2026-07-14): `MemoryKind.PLAYBOOK` (tier durável ÚNICO — residual 2 da ADR-0019 FECHADO) · **`GRADUATE_PRINCIPLE` = 7ª ação do gate** (CEO propõe a FRASE, dono sela com frase EDITÁVEL no card — writer-of-record; nasce `grau=PRINCIPIO` com `approval_id`; linhagem C5 em `evidencia`) · `GraduationDetector` determinístico (N=3/área desde o último princípio, carona no commit do gate) · **caps 12/12 por projeção** (hard, provados por teste) · 2ª projeção gêmea (`grau=PRINCIPIO`→PLAYBOOK, mesma tx) · nudges determinísticas (candidata + estouro citando os `#N`) | ✅ IMPLEMENTADA · VENDO na descartável (`:18081` + `fc2-pg`) · **MERGED (PR #26, main `124fcfa`)** | `memory/{GraduationDetector, CompanyMemoryConsolidator(caps), MemoryKind, DecisionGrau}` · `ApprovalService.dispatchAction(GRADUATE_PRINCIPLE)` · FE card com frase editável · suíte 702 back / 294 front · **zero migração** (grau/kind text sem check) | ADR-0019 (residual 2 FECHADO + cap/projeções) + ADR-0020 (**D12 concretizado**: ritual = 7ª ação; judgment call do dono: emenda venceu ADR-0043) **emendadas** · branch `feat/frente-c-graduacao-cap` |
 | **F-C3 "índice + navegação JIT"** (R17-A, 2026-07-14 — **ÚLTIMA fatia de código do v1**): **split do sempre-on (C9)** — CEO = carta+princípios · **EXECUTOR = princípios SÓ** (`MemoryAudience`; até aqui o executor não recebia memória nenhuma → D12 era letra morta + cegueira-de-retrieval) · **`memory_search` (livre, casa por TERMOS) + `memory_fetch` (`#N` → racional/evidência/linhagem/cluster)** no **MESMO bridge MCP da F-AT2** (zero canal novo, C10) · **teto D6 da frente: cap=3 corpos distintos/run + dedup + recusa-com-motivo não-fatal** (espelha o `CAP_BODIES_POR_RUN`, teto PRÓPRIO) · **fronteira C10.b:** só o durável selado — o log cru `OPERACIONAL`/`TECNICA` segue **board-only, inalcançável nem com o `#N` em mãos** · trilho nas **2 pontas** (`McpToolProfile`: executor vê KnowAll+memória; **CEO só memória** — F-AT2/D6 "personas FORA" preservado) | ✅ IMPLEMENTADA · **/verify PASS nos 2 motores REAIS** (`:18081` + `fc3-pg`): executor busca mid-run → usa → **termina no MESMO run** (claude E codex) · 3 servidos + 4º/5º **recusados com motivo** (run segue) · `#N` repetido = 1 slot · **turno do CEO cita a evidência LITERAL** do princípio (string que só existe no corpo) · `#N` do log cru **recusado** e o racional sigiloso não vazou pro workspace · split: executor com `AGENTS.md`/`CLAUDE.md` = **playbook sem carta**; CEO = carta+playbook | `memory/{MemoryQuery ✚, MemoryAudience ✚, CompanyMemoryMaterializer}` · `skills/mcp/{KnowAllMcpBridge(+memory tools, cap), KnowAllMcpBridgeController(/internal/mcp/memory/*), KnowAllMcpMaterializer(tools por perfil), McpToolProfile ✚, McpRunScope}` · `execution/AdapterRunExecutor` (2 pontas + memoryFile em todo run) · suíte **721 back / 294 front** · **zero migração** | ADR-0003 **emendada** (o bridge ganha as tools de memória) + ADR-0019 **emendada** (split C9 + memoryFile = território do produto, judgment call do dono) · branch `feat/frente-c-indice-jit` · `handoff-grilling-frente-c-memoria.md` §F-C3 |
+
+## Roadmap de ajustes — fase de DESCOBERTA DE BUGS (aberta 2026-07-16, com o v1 FECHADO pelo dono)
+
+> **Método (decisão do dono, verbatim no `docs/handoffs/HANDOFF-prova-final-v1.md` §10):** as ADRs
+> viram a ESPECIFICAÇÃO; cada funcionalidade descrita nelas é testada **ao vivo** (motor real) e
+> classificada **funciona / não funciona**; o resultado alimenta esta seção. Plano da caça =
+> **R22-B** (`docs/plano-descoberta-bugs.md`, untracked de contrato). Lições de como caçar
+> (§10 do handoff): a ADR afirma/o dado decide · o bug mora no CRUZAMENTO entre ADRs · testar
+> pelo produtor REAL, nunca por fixture · não julgar sistema em voo.
+
+| # | Item | Origem | Estágio |
+|---|------|--------|---------|
+| 1 | **A organização contratada não consegue trabalhar — e declara DONE** (run de issue sem compositor de prompt + no-op verde + settle completa; medido: run `e67ff7dd`, 58ms, zero motor, #1→DONE) | prova final §2 (R21-A) | ✅ **EM PR — R22-A** (`fix/issue-compositor-adr0037`): compositor da issue (#N+título+descrição+ESTRATÉGIA) · trava "run no-op nunca fecha issue" · `runtime_command` = só script `process` · **V30** (`conversation.bastao_path` anotado do bloco `handoff`, last-wins) · ADRs 0037/0011/0004 emendadas — 4 decisões GRELHADAS pelo dono 2026-07-16 |
+| 2 | **Vão ADR-0037 §7(8) × ADR-0030** — "anti-loop = freio humano por construção" é FALSO na prática: a continuação de contexto RETOMA o para-e-avisa sem o dono (re-triagem + aviso duplicado; run real queimado). Mesma assinatura do #33 — o `parkedForHuman` só estaciona em kickback, e para-e-avisa não é kickback | prova final §6.1 (o mais importante) | 💡 A GRELHAR |
+| 3 | **`HIRE_AGENT` não carrega time** — o gate cria o time, contrata o executor desenhado para ele, e o executor nasce FORA (`team_id` NULL; `assignAgent` só no arquiteto do CREATE_TEAM e na porta manual) | prova final §6.2 | 💡 A GRELHAR |
+| 4 | **`FILTRO_TIPOS` stale no front** (`frontend/src/lib/approvals.ts:12-22`: 3 tipos; o gate tem 7 ações) — a fila lista card em que não consegue agir; não-bloqueador (o `ApprovalThreadCard` decide individualmente) | prova final §6.3 | 💡 A GRELHAR |
+| 5 | **"você" em turno que o SISTEMA escreveu** (`issue-conversa-section.tsx:44` chumba `<span>você</span>` em todo `ownerMessage` — o dono lê "você: Absorção da #1 … [gatilho <uuid>]" sobre algo que nunca escreveu) | prova final §6.4 | 💡 A GRELHAR |
+| 6 | Cosmético: `..` duplicado no texto do para-e-avisa ("verificador de fontes.. Nada foi atribuído") | prova final §6.5 | 💡 A GRELHAR |
+| 7 | **Aprovação em LOTE sem feedback na UI** (o dono aprovou 27 e a tela "não fez nada" — o ato commitou; sem sinal de retorno, um dono real re-clicaria) — herdada do P1 da prova | ledger R21-A · candidata herdada | 💡 A GRELHAR |
+| 8 | **`launch.json` sem config `frontend-prova`** (a config `frontend` tracked força `BACKEND_ORIGIN=:18081` morto — `preview_start {name:"frontend"}` leva o dono a tela cega) | ledger R21-A §3 | 💡 A GRELHAR |
+| 9 | Fraseado do `oQueMudou` da review (mistura os 2 espaços de `#N`) — candidata v1.1 #14 absorvida por esta fase | candidatas v1.1 #14 | 💡 A GRELHAR |
+| 10 | Rename mecânico `KnowAllMcpBridge` → `McpBridge` (pós-F-C3 o bridge serve 2 famílias; rename puro) — candidata v1.1 #15 absorvida por esta fase | candidatas v1.1 #15 | 💡 A GRELHAR |
+
+> **Massa de teste pós-merge do item 1:** a reabertura/re-execução da **#1 da `prova-v1`** (DONE
+> incorreta no VIVO) é da 1ª bateria da descoberta, com o dono — fora da fatia R22-A (decisão do
+> controle: o vivo é intocável na fatia).
 
 ## Frente D — Backlog / ADIADOS (saem de grills futuros)
 
@@ -237,8 +278,8 @@ a *assinatura* (anti-inchaço) e o *índice + navegação JIT* estão no código
 | 11 | **Teto (b) da ADR-0018 — contador de riscos-do-plano** (o CEO te chama quando o plano acumula riscos): falta o artefato para o agente DECLARAR os riscos que viu — o `TurnOutputSchema` só conhece `handoff`/`absorcao`/`proposta[…]` → bloco novo por-persona + parser + limiar + escalação. Os outros dois tetos SAÍRAM daqui: (a) gasto/token a própria ADR dispensa no v1; (c) **circuit-breaker de erro repetido entrou no v1** (R18-B). ⚠️ Corrige a frase refutada: NÃO é "só o teto de gasto existe — `BudgetPolicy.orchestrationLimitCents`" — esse campo é o teto de **atos** da ADR-0016/T.4, outro mecanismo | lista H (R17-B) item 3 · ADR-0018 emenda R18-B |
 | 12 | **Paridade Docker** (transporte de arquivo + visibilidade de volume: o schema-arquivo da F-N3 e o side-channel da F-N5 caem em fail-soft/loud sob DOCKER) | fechamento da rodada 8 do ledger · ADR-0041 §Consequências |
 | 13 | **Grill do ARQUITETO** (invariante de nascimento na porta manual · `setArquiteto(null)` · multi-arquiteto · divisão em 2 personas · clone por ociosidade >30min) — decisão explicitamente do DONO (toca o norte "arquiteto como mente de cada grupo") | semente verbatim §G.1 de `handoff-grilling-absorcao-issues.md` |
-| 14 | **Fraseado do `oQueMudou` da review** (os 2 espaços de `#N`: `"#6 … [APPROVE REVIEW] #5 …"`) — mistura os dois espaços de `#N`; cosmético, reversível, mexe em texto de decisões vivas. NÃO implementado nesta faixa | `docs/handoffs/HANDOFF-frente-c.md` §Pendências 3 · **decisão do controle (fecho residual 2026-07-15): v1.1** (anti-círculo; se o dono discordar no review → micro-fatia) |
-| 15 | **Rename mecânico `KnowAllMcpBridge`/`KnowAllMcpBridgeController` → `McpBridge`** — pós-F-C3 o bridge serve DUAS famílias (skill KnowAll + memória do CEO); o nome honesto é `McpBridge` (rename puro, zero comportamento). NÃO implementado nesta faixa | `docs/handoffs/HANDOFF-frente-c.md` §Pendências 4 · **decisão do controle (fecho residual 2026-07-15): v1.1** |
+| 14 | ~~**Fraseado do `oQueMudou` da review**~~ → **movida p/ o Roadmap de ajustes (item 9)** em 2026-07-16 | `docs/handoffs/HANDOFF-frente-c.md` §Pendências 3 |
+| 15 | ~~**Rename mecânico `KnowAllMcpBridge` → `McpBridge`**~~ → **movida p/ o Roadmap de ajustes (item 10)** em 2026-07-16 | `docs/handoffs/HANDOFF-frente-c.md` §Pendências 4 |
 
 ---
 

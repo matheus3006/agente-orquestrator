@@ -1,5 +1,6 @@
 package com.orquestrador.conversation.persona;
 
+import com.orquestrador.conversation.ConversationRepository;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.conversation.ConversationTurnRepository;
 import com.orquestrador.conversation.ProposalDescarteNotice;
@@ -46,12 +47,15 @@ public class PersonaContinuationPoster implements ConversationContinuationGuard 
     private static final Logger log = LoggerFactory.getLogger(PersonaContinuationPoster.class);
 
     private final ConversationTurnRepository turns;
+    private final ConversationRepository conversations;
     private final AgentRepository agents;
     private final WakeupService wakeups;
 
-    public PersonaContinuationPoster(ConversationTurnRepository turns, AgentRepository agents,
+    public PersonaContinuationPoster(ConversationTurnRepository turns,
+                                     ConversationRepository conversations, AgentRepository agents,
                                      WakeupService wakeups) {
         this.turns = turns;
+        this.conversations = conversations;
         this.agents = agents;
         this.wakeups = wakeups;
     }
@@ -74,6 +78,16 @@ public class PersonaContinuationPoster implements ConversationContinuationGuard 
         postTurno(companyId, conversationId, alvo,
                 PersonaContinuationSentinel.bastao(origem, handoff.para(), handoff.bastao(), handoff.resumo()),
                 "persona-baton");
+        // V30 (R22-A, ADR-0037 emendada): o endereço do entregável sai do texto do sentinela e é
+        // ANOTADO na conversa — last-wins (dossiê no Q→P, estratégia no P→E; quem batiza é o CEO).
+        // SÓ quando o bastão foi de fato postado (o dedup acima não move o endereço): é por esta
+        // coluna que o compositor da issue entrega a ESTRATÉGIA a quem trabalha.
+        conversations.findById(conversationId)
+                .filter(conversa -> companyId.equals(conversa.getCompanyId()))
+                .ifPresent(conversa -> {
+                    conversa.anotarBastao(handoff.bastao());
+                    conversations.save(conversa);
+                });
         return true;
     }
 

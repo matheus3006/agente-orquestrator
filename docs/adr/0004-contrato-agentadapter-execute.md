@@ -96,3 +96,17 @@ registro do desenho da época.** Verificação re-feita na main `60ac302`:
    própria e é terminal (um turno de destilação, sessão descartada); o invariante que o
    "1 call site" protege — nenhuma rota alternativa de execução de trabalho — segue de pé.
    Evidência: `AdapterRunExecutor.java:339,356` · `ContextHandoffLoop.java:99`.
+
+## Emenda 2026-07-16 (R22-A — bug #1 do roadmap de ajustes: `Result.noop` + `command` da issue composto por-run)
+
+1. **`Result` ganha o sinal `noop`** (factory `okNoop(session)`): o adapter declara que o motor
+   **nunca foi invocado** (comando/prompt vazio). Só o adapter sabe disso — é ele quem decide
+   no-op — mas quem dá SIGNIFICADO é o executor: sobre uma Issue vira `RunOutcome.noop` e a
+   Issue **nunca fecha** (ADR-0011 emendada); fora de Issue o no-op segue verde (o "loop verde"
+   de agente não configurado). Antes o no-op era `Result.ok` indistinguível de trabalho real —
+   o elo 2 do DONE fantasma.
+2. **O `command` do run de ISSUE passa a ser montado por-run** (o espelho da Revisão 2026-07-04,
+   que fez isso para o turno): `IssuePromptComposer` compõe `#N`+título+descrição+estratégia e o
+   seam T.3 o entrega (`acceptsPromptAsCommand` → command; env `ORQ_PROMPT` no process). O
+   `runtimeCommand` estático fica sendo **SÓ o comando de script do arquétipo `process`**
+   (decisão 2 do dono, 2026-07-16 — ADR-0037 emendada): adapter rico não o lê mais.

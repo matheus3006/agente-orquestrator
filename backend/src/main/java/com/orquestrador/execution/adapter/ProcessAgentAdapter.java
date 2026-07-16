@@ -36,8 +36,9 @@ public class ProcessAgentAdapter implements AgentAdapter {
     @Override
     public Result execute(Context context, StepSink steps) {
         if (context.command() == null || context.command().isBlank()) {
-            // Sem comando: no-op bem-sucedido (mantem o loop verde para agentes ainda nao configurados).
-            return Result.ok(context.priorSession());
+            // Sem comando: no-op SINALIZADO (R22-A) — verde fora de Issue (agente ainda nao
+            // configurado), mas o executor sabe que nada rodou (sobre Issue, ela nunca fecha).
+            return Result.okNoop(context.priorSession());
         }
         ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
                 context.workDir(),

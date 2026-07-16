@@ -75,7 +75,7 @@ public class CodexAdapter implements AgentAdapter {
     @Override
     public Result execute(Context context, StepSink steps) {
         if (context.command() == null || context.command().isBlank()) {
-            return Result.ok(context.priorSession()); // no-op verde; não gasta token
+            return Result.okNoop(context.priorSession()); // no-op verde SINALIZADO (R22-A); zero token
         }
 
         // F-N3 (ADR-0039, D2): a saída estruturada nativa. O codex exige o schema num ARQUIVO

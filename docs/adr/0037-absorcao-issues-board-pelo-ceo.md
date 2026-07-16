@@ -1,6 +1,6 @@
 # ADR-0037: Absorção de issues do board pelo CEO — issue do dono vira triagem do Planejador; issue = conversa direcionada
 
-**Status:** Aceito (2026-07-11) · grill fechado em 2026-07-11 (`handoff-grilling-absorcao-issues.md`, D1–D10/M1–M13) · migração **V27**
+**Status:** Aceito (2026-07-11) · grill fechado em 2026-07-11 (`handoff-grilling-absorcao-issues.md`, D1–D10/M1–M13) · migração **V27** · **emendado 2026-07-16 (R22-A: o §2 ganha o COMPOSITOR — a issue INSTRUI; V30)**
 
 ## Contexto
 Uma issue criada pelo dono no board ficava **ÓRFÃ**: o checkout é agent-driven e a UI não tem
@@ -102,3 +102,40 @@ régua M9=5. Idempotência do protocolo: marcador `[gatilho <turnoId>]` (molde d
 ## Forward-refs aplicadas
 0017 (2ª porta de criação de time), 0018 (4ª ação + CREATE_ISSUE com time + transporte inverso),
 0031 (4º bloco do Planejador), 0033 (2º consumidor do lookup #N), 0034 (o irmão inverso).
+
+## Emenda 2026-07-16 (R22-A — o §2 completo: se a issue é conversa DIRECIONADA, ela INSTRUI; V30)
+
+**O bug #1 do roadmap de ajustes contradiz o modelo de domínio DESTA ADR.** O verbatim do dono no
+Contexto — *"a abertura de uma issue nada mais é do que uma conversation, só que uma
+direcionada"* — implica que a issue **instrui quem trabalha**; mas o run de issue não tinha
+compositor de prompt (o run de TURNO tem: `ConversationTurnCoordinator.composePrompt`) e recebia
+só o `agent.runtime_command` estático. O agente contratado pelo gate (runtimeCommand `null`)
+nascia **mudo**: run de 58ms, zero motor, DONE fantasma. Grelhado pelo dono em 2026-07-16
+(4 decisões, handoff da prova §4); esta emenda aplica as decisões 2/3/4 — a trava (decisão 1b)
+mora na ADR-0011.
+
+1. **O compositor do lado da ISSUE** (`IssuePromptComposer`, o par simétrico do de turno,
+   IÇADO acima do galho turno/issue no `AdapterRunExecutor`): todo run de issue recebe o
+   briefing **`#N` + título + descrição + a ESTRATÉGIA do Planejador** pelo MESMO seam T.3
+   (`acceptsPromptAsCommand` → command dos adapters ricos; env `ORQ_PROMPT` no `process`).
+   Sem estratégia → só a issue, **nunca null**; estratégia anotada-mas-ilegível → a lacuna é
+   SINALIZADA no próprio briefing (anti-silêncio). Recusadas no grill: "só a issue, o arquiteto
+   repassa" (o arquiteto também não enxerga a estratégia) e "pela memória R19-A" (mistura memória
+   durável com briefing e reabriria a fronteira C10.b); "derivar prompt do role" e "campo de
+   prompt proposto pelo CEO" viram o agente robô-de-tarefa-única e conflatam "quem você é" com
+   "o que fazer agora".
+2. **`runtime_command` = SÓ comando de script do arquétipo `process`** (decisão 2). O campo tinha
+   dois significados (pedido pra IA × comando de terminal) e a mistura abriu o buraco. Adapter
+   rico **nunca mais o lê** — o `null` do gate (`ApprovalService`, HIRE e o gêmeo do CREATE_TEAM)
+   **deixa de ser bug e vira correto**. Custo aceito: agentes velhos da Teams Demo têm o campo
+   ignorado.
+3. **V30 — o sistema ANOTA o endereço da estratégia** (`conversation.bastao_path`): o Planejador
+   já declara o caminho no campo `bastao` do bloco ```` ```handoff ````; o endereço sai do texto
+   do sentinela e vira coluna, gravada em `PersonaContinuationPoster.postBaton` — **last-wins**
+   (o nome VARIA por etapa: `dossie.md` no Q→P, `estrategia.md` no P→E; quem batiza é o CEO).
+   Índice, nunca conteúdo (ADR-0019): o arquivo segue no workspace da conversa, lido pelo
+   `readWorkspaceFile` provado no loop de handoff (LOCAL e DOCKER). Recusadas: convenção ditada
+   (falha SILENCIOSA se o CEO batizar diferente) e estratégia no banco (contraria o
+   índice-não-conteúdo).
+4. **Report intacto:** "report = saída final do run concluinte" (ADR-0010/0019) não muda — o
+   briefing apenas pede o report explicitamente (ajuste de prompt, não arquitetura).

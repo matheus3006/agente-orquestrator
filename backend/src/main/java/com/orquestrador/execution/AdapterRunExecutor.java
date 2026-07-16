@@ -30,6 +30,7 @@ import com.orquestrador.skills.mcp.McpCallbackAddress;
 import com.orquestrador.skills.mcp.McpRunScope;
 import com.orquestrador.skills.mcp.McpToolProfile;
 import com.orquestrador.work.issue.CheckoutResult;
+import com.orquestrador.work.issue.Issue;
 import com.orquestrador.work.issue.IssueService;
 import org.springframework.stereotype.Component;
 
@@ -81,6 +82,7 @@ public class AdapterRunExecutor implements RunExecutor {
     private final KnowAllMcpMaterializer mcpMaterializer;
     private final KnowAllMcpBridge mcpBridge;
     private final McpCallbackAddress mcpAddress;
+    private final IssuePromptComposer issueComposer;
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
@@ -92,7 +94,7 @@ public class AdapterRunExecutor implements RunExecutor {
                               PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
                               ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate,
                               KnowAllMcpMaterializer mcpMaterializer, KnowAllMcpBridge mcpBridge,
-                              McpCallbackAddress mcpAddress) {
+                              McpCallbackAddress mcpAddress, IssuePromptComposer issueComposer) {
         this.agents = agents;
         this.issues = issues;
         this.workspaces = workspaces;
@@ -115,6 +117,7 @@ public class AdapterRunExecutor implements RunExecutor {
         this.mcpMaterializer = mcpMaterializer;
         this.mcpBridge = mcpBridge;
         this.mcpAddress = mcpAddress;
+        this.issueComposer = issueComposer;
     }
 
     @Override
@@ -202,11 +205,14 @@ public class AdapterRunExecutor implements RunExecutor {
         }
 
         // Amarração slice 1<->2<->3: o Run detem a Issue via checkout atomico com o proprio runId.
+        // R22-A: a Issue do checkout é o INSUMO do compositor abaixo — quem instrui o run é ela.
+        Issue issueDoRun = null;
         if (runContext.issueId() != null) {
             CheckoutResult checkout = issues.checkout(runContext.companyId(), runContext.issueId(), runContext.agentId(), runContext.runId());
             if (!checkout.acquired()) {
                 return RunOutcome.failure("checkout da issue falhou (ja em execucao por outro run)");
             }
+            issueDoRun = checkout.issue();
             // F.10 (ADR-0023 §3b): o run novo vai mutar o workspace — o preview vivo do estado
             // anterior morre AQUI (best-effort: o supervisor nunca lanca; o run segue).
             previewServers.teardownOnCheckout(runContext.companyId(), runContext.issueId());
@@ -221,8 +227,20 @@ public class AdapterRunExecutor implements RunExecutor {
         ConversationTurnCoordinator.TurnAssignment turno = runContext.issueId() == null
                 ? turnCoordinator.claimFor(runContext.companyId(), runContext.agentId(), runContext.runId()).orElse(null)
                 : null;
-        String command = agent.getRuntimeCommand();
-        Map<String, String> env = Map.of();
+        // R22-A (ADR-0037 §2 emendada): a composição do prompt IÇADA acima do galho turno/issue —
+        // o turno traz o prompt do coordinator; a ISSUE traz o briefing do compositor (a simetria
+        // que faltava: antes o run de issue recebia só o runtime_command estático e o agente do
+        // gate nascia mudo — bug #1). O prompt viaja pelos DOIS canais do seam T.3: vira o command
+        // dos adapters ricos (acceptsPromptAsCommand) e chega pelo env ORQ_PROMPT no arquétipo
+        // process. Decisão 2 do dono: runtime_command agora é SÓ comando de script do process —
+        // adapter rico nunca mais o lê (agente de IA não precisa do campo; null do gate é correto).
+        String prompt = turno != null
+                ? turno.prompt()
+                : issueDoRun != null
+                        ? issueComposer.compose(issueDoRun, target, adapter.engineContainer().image())
+                        : null;
+        String command = adapter.acceptsPromptAsCommand() ? prompt : agent.getRuntimeCommand();
+        Map<String, String> env = prompt != null ? Map.of(PROMPT_ENV, prompt) : Map.of();
         // F-AT1 (grill agente-como-tool): SEMPRE coletado (não só em turno) — o Run de Issue não
         // tem saída "em forma de turno" (sem outputSchema), então o pedido-skill do executor é
         // lido do MESMO texto reconstruído que já serve o reply de turno e o report-por-Issue
@@ -259,13 +277,6 @@ public class AdapterRunExecutor implements RunExecutor {
                 turnCoordinator.settleFailed(turno.turnId());
             }
             return RunOutcome.failure("falha ao materializar a memória durável: " + exception.getMessage());
-        }
-
-        if (turno != null) {
-            env = Map.of(PROMPT_ENV, turno.prompt());
-            if (adapter.acceptsPromptAsCommand()) {
-                command = turno.prompt();
-            }
         }
 
         // Escritor de workspace (par do leitor F.9/ADR-0021): a arvore que os materializers
@@ -314,11 +325,11 @@ public class AdapterRunExecutor implements RunExecutor {
         // F-N1/F-N2 (ADR-0038): a continuidade nativa liga AQUI — o handle gravado da conversa (turno)
         // ou da Issue (heartbeat) volta como priorSession, e o adapter religa o --resume no caminho
         // NORMAL. Era `null` literal (a regressão-mãe do laudo). Turno: o handle vem no TurnAssignment
-        // (lido sob o claim). Issue: resolvido por (agent, issue.conversation_id) — só quando a Issue
-        // tem conversa (absorvida, V27); Issue sem conversa segue fresca (sem migração, sem regressão).
-        // A conversa da Issue é resolvida UMA vez (reusada no record pós-run, mais abaixo).
-        UUID issueConversationId = turno == null && runContext.issueId() != null
-                ? issues.conversationIdOf(runContext.companyId(), runContext.issueId())
+        // (lido sob o claim). Issue: o conversation_id vem da própria Issue do checkout (V27) — só
+        // quando ela tem conversa (absorvida); Issue sem conversa segue fresca (sem regressão).
+        // Resolvido UMA vez (reusado no record pós-run, mais abaixo).
+        UUID issueConversationId = turno == null && issueDoRun != null
+                ? issueDoRun.getConversationId()
                 : null;
         String priorSession = turno != null
                 ? turno.priorSession()
@@ -439,6 +450,15 @@ public class AdapterRunExecutor implements RunExecutor {
 
         if (!result.succeeded()) {
             return RunOutcome.failure(result.error());
+        }
+        // R22-A (ADR-0011 emendada): o adapter sinalizou NO-OP (motor nunca invocado). Sobre uma
+        // Issue isso não é sucesso — é o run relâmpago do DONE fantasma (bug #1): vira outcome
+        // no-op LEGÍVEL e o settle estaciona a Issue em BLOCKED. Fora de Issue, o loop verde de
+        // agente não configurado segue valendo (nada a mentir).
+        if (result.noop() && runContext.issueId() != null) {
+            return RunOutcome.noop("run no-op: o motor nunca foi invocado (agente '"
+                    + agent.getAdapterType() + "' sem instrução executável) — a issue não fecha em"
+                    + " cima de um run vazio");
         }
         return RunOutcome.success();
     }

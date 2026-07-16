@@ -171,7 +171,10 @@ public class IssueService {
      */
     @Transactional
     public IssueSettlement settleAfterRun(UUID companyId, UUID issueId, UUID runId, RunOutcome outcome) {
-        if (outcome.succeeded()) {
+        // R22-A (ADR-0011 emendada): run NO-OP nunca fecha issue — nem DONE nem review (não há
+        // entregável a revisar). O guard mora AQUI, no chokepoint que cunha o DONE: mesmo um
+        // outcome "verde" com noop cai no park-for-human abaixo (o board não volta a mentir).
+        if (outcome.succeeded() && !outcome.noop()) {
             Issue settling = issues.findByIdAndCompanyId(issueId, companyId).orElse(null);
             if (settling != null && settling.getRiskLevel() >= reviewRiskThreshold) {
                 return submitForReview(companyId, issueId, runId, settling.getAssigneeAgentId());
