@@ -181,3 +181,29 @@ quando a janela realmente enche** (destila e recomeça) — o papel que a D1 sem
 detector (55%) e o restart passam a disparar raro. O `--resume` cirúrgico (D6/M9) continua válido como
 uma das camadas da rede. O bilhete mantém o papel de registro durável/auditável que a continuação lê.
 Racional na ADR-0038.
+
+## Emenda (2026-07-15 — park-for-human: o loop kickback↔continuação)
+
+**Bug vivo (achado na PROVA FINAL do v1, conversa real):** quando o Questionador re-grelha o dono
+(kickback `Re-grelha`, ADR-0031/D7) e o run que ENTREGA a pergunta cruza o limiar de contexto, esta
+rede pós-settle retomava o plano (`[continuação] … retome o plano`) — mas o resume só **re-batia a
+MESMA lacuna** ainda sem resposta do dono → outro kickback → outra continuação. Loop que **queima run
+atrás de run sem nunca dar a vez ao dono**. As duas travas de corte NÃO o pegavam: a desta ADR
+(`consecutiveContinuationsAtTail`, N=5) conta continuações **consecutivas** — o kickback no meio zera;
+a da persona (`kickbacksSeguidosNoTail`, M9=5, ADR-0031) conta kickbacks **consecutivos** — a
+continuação no meio some da conta (e uma fala do dono zera). **Cada trava só enxergava o próprio tipo
+de turno; a alternância derrotava as duas.**
+
+**Correção — park-for-human (reusa o primitivo da ADR-0011):** o `ContinuationTurnPoster` ganha um
+veto, `ConversationContinuationGuard`. Antes de enfileirar a continuação, se a conversa está **parada
+esperando o dono** (há um kickback no tail sem uma fala REAL do dono depois dele), o resume é
+**suprimido** — sem novo turno, sem novo Run. A pergunta do kickback (VISÍVEL na thread) já É o aviso;
+a próxima fala real do dono destrava. Inversão de dependência: a interface mora aqui (handoff), a
+regra a implementa a persona (`PersonaContinuationPoster`, que já conhece kickback + "dono de volta")
+— a direção `persona → handoff` que já existia, sem ciclo. Best-effort (D9): guard que explode NÃO
+suprime (fail-open = retoma, o comportamento de antes).
+
+**Fronteira:** o corte por N=5 continua para o encadeamento LEGÍTIMO (plano longo de fato, sem
+kickback); o park é ortogonal — trata só o "esperando o dono". ZERO migração (derivado do histórico de
+turnos, como o breaker da ADR-0018); ZERO ADR nova. Relaciona: ADR-0031 (o kickback do outro lado da
+alternância) · ADR-0011 (o park-for-human reusado como conceito).
