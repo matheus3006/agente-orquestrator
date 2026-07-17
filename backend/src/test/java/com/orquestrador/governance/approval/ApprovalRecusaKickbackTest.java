@@ -1,6 +1,6 @@
 package com.orquestrador.governance.approval;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.conversation.Conversation;
 import com.orquestrador.conversation.ConversationService;
 import com.orquestrador.conversation.ConversationTurn;

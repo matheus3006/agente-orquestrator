@@ -1,6 +1,6 @@
 package com.orquestrador.conversation.persona;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;

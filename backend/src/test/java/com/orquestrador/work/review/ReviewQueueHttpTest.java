@@ -1,7 +1,7 @@
 package com.orquestrador.work.review;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.execution.HeartbeatRun;
 import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.RunOutcome;

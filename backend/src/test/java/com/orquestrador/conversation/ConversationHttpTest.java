@@ -1,6 +1,6 @@
 package com.orquestrador.conversation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.execution.HeartbeatDispatcher;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

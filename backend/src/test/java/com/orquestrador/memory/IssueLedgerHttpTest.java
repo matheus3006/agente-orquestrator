@@ -1,6 +1,6 @@
 package com.orquestrador.memory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.execution.HeartbeatDispatcher;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.org.agent.Agent;

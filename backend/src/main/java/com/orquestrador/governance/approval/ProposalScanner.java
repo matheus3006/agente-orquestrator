@@ -1,9 +1,10 @@
 package com.orquestrador.governance.approval;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.JsonNodeFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -40,8 +41,9 @@ public class ProposalScanner {
     private static final Pattern PROPOSTA_BLOCK =
             Pattern.compile("(?m)^```proposta[ \\t]*\\n(.*?)^```", Pattern.DOTALL);
 
-    private static final ObjectMapper CANONICAL = new ObjectMapper()
-            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
+    private static final ObjectMapper CANONICAL = JsonMapper.builder()
+            .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+            .build();
 
     public Scan scan(String reply) {
         if (reply == null || reply.isBlank()) {
