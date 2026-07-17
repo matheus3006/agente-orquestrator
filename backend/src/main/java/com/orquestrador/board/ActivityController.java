@@ -1,6 +1,5 @@
 package com.orquestrador.board;
 
-import com.fasterxml.jackson.annotation.JsonRawValue;
 import com.orquestrador.activitylog.ActivityLog;
 import com.orquestrador.activitylog.ActivityLogRepository;
 import com.orquestrador.common.security.CompanyAccessGuard;
@@ -10,6 +9,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,10 +31,12 @@ public class ActivityController {
 
     private final ActivityLogRepository activity;
     private final CompanyAccessGuard guard;
+    private final ObjectMapper json;
 
-    public ActivityController(ActivityLogRepository activity, CompanyAccessGuard guard) {
+    public ActivityController(ActivityLogRepository activity, CompanyAccessGuard guard, ObjectMapper json) {
         this.activity = activity;
         this.guard = guard;
+        this.json = json;
     }
 
     @GetMapping
@@ -42,17 +46,22 @@ public class ActivityController {
         int safeLimit = Math.clamp(limit, 1, MAX_LIMIT);
         return activity.findByCompanyIdOrderByCreatedAtDesc(companyId, PageRequest.of(0, safeLimit))
                 .stream()
-                .map(ActivityEntry::from)
+                .map(entry -> ActivityEntry.from(entry, json))
                 .toList();
     }
 
     public record ActivityEntry(UUID id, String actorType, UUID actorId, String action,
                                 String entityType, UUID entityId,
-                                @JsonRawValue String detail, Instant createdAt) {
-        static ActivityEntry from(ActivityLog entry) {
-            return new ActivityEntry(entry.getId(), entry.getActorType(), entry.getActorId(),
-                    entry.getAction(), entry.getEntityType(), entry.getEntityId(),
-                    entry.getDetail(), entry.getCreatedAt());
+                                JsonNode detail, Instant createdAt) {
+        static ActivityEntry from(ActivityLog entry, ObjectMapper json) {
+            try {
+                return new ActivityEntry(entry.getId(), entry.getActorType(), entry.getActorId(),
+                        entry.getAction(), entry.getEntityType(), entry.getEntityId(),
+                        entry.getDetail() == null ? null : json.readTree(entry.getDetail()),
+                        entry.getCreatedAt());
+            } catch (JacksonException exception) {
+                throw new IllegalStateException("activity_log contém detail JSON inválido", exception);
+            }
         }
     }
 }
