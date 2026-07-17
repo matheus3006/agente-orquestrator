@@ -158,9 +158,12 @@ posterior, métricas de `SHADOW` e decisão humana.
 
 ## Apêndice — Contexto e estágios (verbatim do dono)
 
-Texto entregue pelo dono em 2026-07-17 e preservado verbatim. Para não duplicar a norma já registrada nesta
-ADR, o trecho-fonte `LIMITES ARQUITETURAIS` é substituído abaixo por uma referência explícita ao
-[§3 — Limite arquitetural do Spring AI](#3-limite-arquitetural-do-spring-ai).
+Texto entregue pelo dono em 2026-07-17 e preservado verbatim, na íntegra e sem corte. Fonte canônica do
+NORTE da frente: é ele que governa o gate do `ACTIVE` e as fatias F-SAI2+. A norma desta ADR sobre o mesmo
+tema vive no [§3 — Limite arquitetural do Spring AI](#3-limite-arquitetural-do-spring-ai); o §3 **não**
+substitui o apêndice — as proibições do parágrafo `LIMITES ARQUITETURAIS` abaixo são mais específicas que
+ele (segredos/PII, log sensível, tools, pull automático de modelos, transação aberta, falha de provider) e
+valem como entregues.
 
 CONTEXTO: POR QUE ESTAMOS USANDO SPRING AI
 
@@ -225,8 +228,12 @@ identificar riscos pré-execução; classificar/priorizar findings; sugerir cont
 handoff; verificações de qualidade do contexto; sinais estruturados para
 observabilidade e revisão humana.
 
-O trecho `LIMITES ARQUITETURAIS` do texto-fonte está normativamente incorporado no
-[§3 — Limite arquitetural do Spring AI](#3-limite-arquitetural-do-spring-ai) e não é repetido aqui.
+LIMITES ARQUITETURAIS — o Spring AI fica atrás do contrato ContextIntelligence. NÃO
+deve: acoplar o domínio às APIs do Spring AI; receber segredos/PII sem política
+explícita; registrar prompts/respostas sensíveis; executar tools; ter memória de chat
+implícita; fazer pull automático de modelos; manter transações abertas durante
+chamadas; bloquear/invalidar run quando o provider falhar; substituir o pacote de
+contexto determinístico.
 
 Em resumo: Spring AI como camada de inteligência AUXILIAR, SUBSTITUÍVEL e CONTROLADA —
 prova de valor em SHADOW antes de qualquer influência real no comportamento do
