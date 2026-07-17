@@ -60,7 +60,7 @@ tokens* no código; o loop automático é a Fatia 1. A camada de **orquestraçã
 
 | Capacidade | Verdict · Estágio | Evidência-âncora | Ponteiro |
 |------------|-------------------|------------------|----------|
-| Stack + estrutura + invariantes (multi-tenant, checkout atômico, deny-by-default) | ✅ IMPLEMENTADA · VENDO | `backend/pom.xml:9-10,21` (Spring Boot 3.5.0 + Java 21) · `frontend/package.json:22-24` (Next 16.2.9/React 19.2.4) · checkout `work/issue/IssueRepository.java:48-64` · escopo `common/security/CompanyAccessGuard.java:25-41` | ADR-0001 ⚠ *(3 divergências: jOOQ, SKIP LOCKED, wrapper — § Div)* |
+| Stack + estrutura + invariantes (multi-tenant, checkout atômico, deny-by-default) | ✅ IMPLEMENTADA · VENDO | `backend/pom.xml:7-35,73-75` (Boot 4.1.0 + Java 25 + Spring AI 2.0) · `backend/.mvn/wrapper/maven-wrapper.properties:1-3` (Maven 3.9.16) · `frontend/package.json:22-24` (Next 16.2.9/React 19.2.4) · checkout `work/issue/IssueRepository.java:48-64` · escopo `common/security/CompanyAccessGuard.java:25-41` | ADR-0001 + ADR-0043 ⚠ *(2 divergências sobreviventes: jOOQ e SKIP LOCKED — § Div)* |
 | Nomes que carregam o fluxo + módulos profundos (regra de ouro) | ✅ IMPLEMENTADA · VENDO | `skills/LineCursor.java:17-48` (3 métodos, seam package-private) | ADR-0010 · `handoff-limpeza-codigo-raso-linecursor` |
 
 ### A.2 — Skills & KnowAll
@@ -255,7 +255,6 @@ a *assinatura* (anti-inchaço) e o *índice + navegação JIT* estão no código
 | ~~Levar o loop de handoff pros EXECUTORES (não só o CEO)~~ | Fatia 1 §G | ⚫ **MORTA — SUPERSEDIDA** pelo D3 do grill motor-nativo: o executor continua por **resume nativo por Issue** (F-N2/PR #16, ADR-0038 §F-N2); o bilhete ficou restrito a troca de AGENTE (varrida no fecho documental 2026-07-14) |
 | ~~Agente-como-tool (attach por agente + KnowAll body inline)~~ | ADR-0003 rev · 7c | ✅ **F-AT1/PR #23 + F-AT2/PR #24** (grill R11-A descongelou e fatiou; emendas ADR-0003/0006; a metade (ii)-docker ficou candidata v1.1 — varrida no fecho documental 2026-07-14) |
 | ~~Propose-then-commit de molde (CEO cria molde; drift-badge)~~ | Teams T.1-FE residual 3 | ✅ IMPLEMENTADA (R10-A, ver Frente B) |
-| _(próximo grill — a definir)_ | — | 💡 IDEIA |
 
 ### Candidatas v1.1 acumuladas (registro do fecho documental parcial, 2026-07-14)
 
@@ -280,6 +279,15 @@ a *assinatura* (anti-inchaço) e o *índice + navegação JIT* estão no código
 | 13 | **Grill do ARQUITETO** (invariante de nascimento na porta manual · `setArquiteto(null)` · multi-arquiteto · divisão em 2 personas · clone por ociosidade >30min) — decisão explicitamente do DONO (toca o norte "arquiteto como mente de cada grupo") | semente verbatim §G.1 de `handoff-grilling-absorcao-issues.md` |
 | 14 | ~~**Fraseado do `oQueMudou` da review**~~ → **movida p/ o Roadmap de ajustes (item 9)** em 2026-07-16 | `docs/handoffs/HANDOFF-frente-c.md` §Pendências 3 |
 | 15 | ~~**Rename mecânico `KnowAllMcpBridge` → `McpBridge`**~~ → **movida p/ o Roadmap de ajustes (item 10)** em 2026-07-16 | `docs/handoffs/HANDOFF-frente-c.md` §Pendências 4 |
+
+---
+
+## Frente E — Evolução do backend e inteligência de contexto
+
+| Item | Origem | Estágio |
+|------|--------|---------|
+| **Migração do baseline backend** — Java 25 + Boot 4.1 + Jackson 3 + Spring AI 2.0 | decisão do dono 2026-07-16 · **ADR-0043** · `docs/plano-implementacao-spring-ai.md` §6 | ✅ **EXECUTADA — F-PLAT0**: Java 25.0.3, Wrapper 3.9.16, Boot 4.1.0, Jackson 3 e BOM Spring AI 2.0.0; 757 testes H2, PostgreSQL/Flyway V30 e Docker Temurin 25.0.3 verdes |
+| **Spring AI — controle de contexto** (Pacote + Manifesto → lint `SHADOW` → handoff/contexto flexível → KnowAll híbrido) | **ADR-0043** · análise arquitetural 2026-07-16 · `docs/plano-implementacao-spring-ai.md` | 🟡 **F-SAI0/F-SAI1 EXECUTADAS EM OFF/SHADOW** — Pacote/Manifesto determinísticos e lint Ollama isolado; fallback vivo sem interferência. `ACTIVE`, F-SAI2, F-SAI3 e F-SAI4 seguem não iniciados e dependem de métricas + decisão humana |
 
 ---
 
@@ -538,4 +546,8 @@ do cronograma pausado** (Frente B, o v1 do CEO). É só **sinalização** — a 
 | 2026-07-10 | **Renovação de lease (ADR-0005) — EXECUTADA** (/tdd, D1–D6/M1–M5) | `LeaseRenewer` (timer por run, pulso 30s→lease cheio) + `renewLease` CAS por dono + `RUN_LEASE_LOST` anti-silêncio + `LeaseRenewalTest` 4 provas; ADR-0005 emendada (Recovery); divergência 🔴 ALTA do lease FECHADA; suíte **474** (piso 470 + 4); `AdapterRunExecutor` intocado; pende VENDO live do pulso + zumbi D5 (operador) |
 | 2026-07-10 | **CASO B (melhoria de task entregue) — grill fechado em sessão própria (R3-C do ledger)** | `handoff-grilling-caso-b.md` (D1–D8: ```` ```correcao ```` Q-direto · corrente quebrada=para-e-avisa · verbatim=cópia do banco · sistema cria/arquiteto é dono (divergência da LETRA do B2, registrada) · `corrige_issue_id` V26 · Decision determinística origem-AGENTE (1º writer) · sem trava, sinal de linhagem · **ADR-0034** a criar) → PLANEJADO; kickoff de execução emitido (branch de main, piso 474/246); seams D5/D11 da 0019 checados = intocados |
 | 2026-07-10 | **CASO B (ADR-0034) — EXECUTADA + VENDO PASS na descartável** (/tdd + /verify, D1–D8/M1–M7) | `CorrecaoDeEntregaRouter` (seam de 1 método) + 3º padrão do scanner + V26 `corrige_issue_id` + `createCorretiva` (chokepoint da 0033) + **1ª Decision origem-AGENTE do produto** + confirmação ANSWERED sem run + selo "corrige #N" (lista+detail); suítes **489** backend (piso 474 + 15) · **248** front (246 + 2), tsc/lint limpos; **VENDO §D 10/10 no 18081+pg efêmero** (:8080 intocado) — feliz com **run claude REAL** (opus emitiu o bloco de 1ª; md5 verbatim true; carta intocada) · corrente quebrada/DONE/linhagem/fail-soft PASS · carona D10: zero sub-agentes no rastro (registro no §RESULTADO do handoff); **pendências de veto no PR** (formato do bloco · textos M6 · título) |
-| _próximo_ | Fatia 2 (CEO em 3 personas, ADR-0031) — destravada pelo merge da G3; Frente C idem | — |
+| 2026-07-16 | **Spring AI + controle de contexto — análise arquitetural e plano** | Recomendação: Pacote de Contexto + Manifesto determinístico antes da IA; Spring AI como adapter opcional (`OFF→SHADOW→ACTIVE`); handoff/flexível depois da prova; KnowAll híbrido em frente secundária. `docs/plano-implementacao-spring-ai.md` → **GRILLANDO** |
+| 2026-07-16 | **Baseline backend moderno — decisão aceita** | O dono escolheu migrar durante a construção: **Java 25 + Boot 4.1 + Jackson 3 + Spring AI 2.0**; **ADR-0043 ACEITA**; plataforma → **PLANEJADO (A)**, sem autorizar `ACTIVE` |
+| 2026-07-17 | **ADR-0043/F-PLAT0 — EXECUTADA** | Commits `ca026ed`→`ef4c315`: Boot 3.5.15 intermediário, Boot 4.1.0, Jackson 3 sem ponte residual, Java 25.0.3, Wrapper 3.9.16 e BOM Spring AI 2.0.0; H2 **757/757**, PostgreSQL/Flyway V30 e Docker Temurin 25.0.3 verdes |
+| 2026-07-17 | **F-SAI0/F-SAI1 — EXECUTADAS EM OFF/SHADOW** | Commits `2e21356`, `1362523`, `50db7ff`; manifesto byte-idêntico, Ollama único starter, worker/fila limitados e fallback não fatal. Prova viva: hash `8d558ff…` idêntico em OFF LOCAL/DOCKER e SHADOW; provider fora → `FALLBACK/TIMEOUT`, Run `SUCCEEDED`. Claude/Codex reais passaram em LOCAL/DOCKER; sessão, handoff e MCP provados no alvo LOCAL suportado |
+| _próximo_ | Coletar métricas de `SHADOW` e fechar H1/H2 antes de qualquer ADR de promoção; não iniciar `ACTIVE` ou F-SAI2+ por inferência | — |

@@ -2,6 +2,10 @@
 
 **Status:** Aceito (2026-06-30)
 
+> **Revisão 2026-07-16:** a escolha de baseline do backend (Java 21 + Spring Boot 3.5) foi **substituída pela
+> ADR-0043**: Java 25 + Spring Boot 4.1 + Jackson 3 + Spring AI 2.0. Frontend, estrutura e invariantes desta ADR
+> permanecem aceitos.
+
 ## Contexto
 Novo control-plane de orquestração de agentes derivado do Paperclip (TS/Express/Drizzle/React), mas com restrições do dono: backend em Java, frontend no padrão NutriApp (Next.js), execução em Docker, e operação de vários produtos (várias companies).
 
