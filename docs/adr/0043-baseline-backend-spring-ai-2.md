@@ -156,6 +156,82 @@ A migração da plataforma só pode ser marcada como concluída quando:
 O modo `ACTIVE`, F-SAI2, F-SAI3 e F-SAI4 permanecem não iniciados. A promoção continua dependendo de ADR
 posterior, métricas de `SHADOW` e decisão humana.
 
+## Apêndice — Contexto e estágios (verbatim do dono)
+
+Texto entregue pelo dono em 2026-07-17 e preservado verbatim. Para não duplicar a norma já registrada nesta
+ADR, o trecho-fonte `LIMITES ARQUITETURAIS` é substituído abaixo por uma referência explícita ao
+[§3 — Limite arquitetural do Spring AI](#3-limite-arquitetural-do-spring-ai).
+
+CONTEXTO: POR QUE ESTAMOS USANDO SPRING AI
+
+O orquestrador já executa agentes reais, como Claude Code e Codex. O Spring AI não está
+sendo introduzido para substituir esses engines, controlar suas sessões ou transformar
+todo o backend em uma aplicação dependente de LLM.
+
+Ele foi adotado para oferecer ao backend Spring uma porta pequena e padronizada para
+capacidades adicionais de inteligência sobre o contexto de uma execução.
+
+A separação pretendida é:
+
+- Claude Code e Codex continuam responsáveis pelo raciocínio e pela execução dos agentes.
+- O compilador determinístico continua responsável por produzir o pacote de contexto oficial.
+- O Spring AI poderá analisar esse contexto e produzir avaliações auxiliares.
+- A execução principal deve continuar funcionando normalmente quando nenhum modelo
+  estiver disponível.
+
+POR QUE USAR SPRING AI
+
+1. Integração natural com o backend Spring — abstração compatível com a arquitetura
+   existente, evitando espalhar chamadas HTTP específicas de um provider, formatos
+   proprietários e tratamento de erros por todo o domínio.
+2. Possibilidade de trocar o provider — a aplicação não deve ficar estruturalmente
+   acoplada ao Ollama. O starter Ollama é o primeiro adaptador usado para validação
+   local, não uma decisão definitiva sobre o provider de produção. Antes do ACTIVE,
+   decidir: provider; envio de dados a serviços externos; quais dados podem sair;
+   limites de custo, latência e retenção; segurança e compliance.
+3. Inteligência opcional, sem contaminar o núcleo determinístico — o resultado do
+   modelo não pode ser a fonte de verdade do contexto. Primeiro o sistema compila,
+   ordena e calcula os hashes das fontes de maneira determinística; só depois o Spring
+   AI recebe uma visão limitada. Indisponibilidade ou resposta inconsistente NÃO altera:
+   arquivos oficiais do contexto, hashes, proveniência, materialização dos agentes,
+   execução normal do run.
+4. Evolução segura por evidência — o SHADOW permite observar qualidade, latência,
+   estabilidade e custo sem influenciar a execução real; a promoção ao ACTIVE se
+   decide com evidência.
+
+COMO PLANEJAMOS UTILIZAR (estágios)
+
+OFF — padrão: nenhuma chamada a modelo; nenhuma dependência de Ollama/provider; o
+pacote de contexto compila normalmente; execução determinística; zero assessments.
+
+SHADOW — estágio atual: análise assíncrona fora do caminho crítico; o run não espera
+nem depende do modelo; o modelo recebe só uma View estreita; resultado validado antes
+de persistir; findings/metadados armazenados para avaliação; timeout/erro/resposta
+inválida/indisponibilidade/fila cheia → fallback; NENHUMA resposta SHADOW modifica o
+contexto ou a decisão do agente. Objetivo: coletar evidências de utilidade/precisão
+dos findings, falsos positivos/negativos, latência, taxa de fallback, estabilidade por
+modelo/provider, consumo de tokens/custo, riscos de privacidade e data egress.
+
+ACTIVE — somente após decisão humana. NÃO implementado nem autorizado. Exigirá:
+métricas SHADOW suficientes; decisão explícita de provider; política de data egress;
+definição de quais findings podem influenciar o sistema; ADR específica; novos testes
+e critérios de rollback; garantia de degradação segura. Mesmo em ACTIVE, o Spring AI
+não altera arquivos, não executa ferramentas, não assume controle dos agentes — a
+saída entra por contratos explícitos e limitados, com validação e rastreabilidade.
+
+EXEMPLOS DE USO PLANEJADO (não autorizam implementação; cada um entra por F-SAI2+ com
+contrato, testes e critérios próprios): detectar contexto incompleto/contraditório;
+identificar riscos pré-execução; classificar/priorizar findings; sugerir conteúdo de
+handoff; verificações de qualidade do contexto; sinais estruturados para
+observabilidade e revisão humana.
+
+O trecho `LIMITES ARQUITETURAIS` do texto-fonte está normativamente incorporado no
+[§3 — Limite arquitetural do Spring AI](#3-limite-arquitetural-do-spring-ai) e não é repetido aqui.
+
+Em resumo: Spring AI como camada de inteligência AUXILIAR, SUBSTITUÍVEL e CONTROLADA —
+prova de valor em SHADOW antes de qualquer influência real no comportamento do
+orquestrador.
+
 ## Referências verificadas em 2026-07-16
 
 - [Spring Boot 4.1.0](https://spring.io/blog/2026/06/10/spring-boot-4/)
