@@ -104,6 +104,30 @@ class CompanyMemoryMaterializationTest {
         assertThat(Files.exists(agentsMd)).isFalse();
     }
 
+    @Test
+    void bytesEOrdemDaDietaCanonicaSaoIdenticosNosPathsClaudeECodex() throws Exception {
+        UUID companyId = novaCompany();
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.CARTA,
+                "# Carta canonica\n- direcao LARANJA-17", 1));
+        memories.save(new CompanyMemory(UUID.randomUUID(), companyId, MemoryKind.PLAYBOOK,
+                "# Playbook canonico\n- principio VERDE-42", 1));
+
+        String bytesCeo = "# Carta canonica\n- direcao LARANJA-17"
+                + "\n\n"
+                + "# Playbook canonico\n- principio VERDE-42";
+        String bytesExecutor = "# Playbook canonico\n- principio VERDE-42";
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.CEO);
+        materializer.materialize(workDir, "AGENTS.md", companyId, MemoryAudience.CEO);
+        assertThat(Files.readString(workDir.resolve(".claude/CLAUDE.md"))).isEqualTo(bytesCeo);
+        assertThat(Files.readString(workDir.resolve("AGENTS.md"))).isEqualTo(bytesCeo);
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR);
+        materializer.materialize(workDir, "AGENTS.md", companyId, MemoryAudience.EXECUTOR);
+        assertThat(Files.readString(workDir.resolve(".claude/CLAUDE.md"))).isEqualTo(bytesExecutor);
+        assertThat(Files.readString(workDir.resolve("AGENTS.md"))).isEqualTo(bytesExecutor);
+    }
+
     /**
      * O SPLIT do sempre-on (F-C3, C9): as duas pontas recebem DIETAS diferentes da mesma memória.
      * O CEO recebe a carta (direções vigentes) + os princípios; o EXECUTOR recebe os PRINCÍPIOS e
