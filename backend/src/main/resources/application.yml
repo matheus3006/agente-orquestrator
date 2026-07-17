@@ -1,6 +1,11 @@
 spring:
   application:
     name: agente-orquestrator
+  autoconfigure:
+    exclude:
+      # F-SAI1 não usa continuidade nem tools do Spring AI. A continuidade segue nos adapters
+      # Claude/Codex e no Decision-log/MCP existentes.
+      - org.springframework.ai.model.chat.memory.autoconfigure.ChatMemoryAutoConfiguration
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/orquestrador}
     username: ${SPRING_DATASOURCE_USERNAME:orquestrador}
@@ -16,6 +21,20 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: false
+  ai:
+    chat:
+      client:
+        enabled: false
+      observations:
+        include-error-logging: false
+        log-prompt: false
+        log-completion: false
+    ollama:
+      init:
+        pull-model-strategy: never
+      chat:
+        options:
+          model: ${ORQ_CONTEXT_OLLAMA_MODEL:qwen3:0.6b}
 
 management:
   endpoints:
@@ -33,6 +52,16 @@ management:
 orquestrador:
   handoff:
     context-threshold-percent: 55
+  context:
+    intelligence:
+      mode: "off"
+      timeout: 5s
+      max-input-bytes: 65536
+      prompt-version: context-lint-v1
+      provider: ollama
+      model: qwen3:0.6b
+      worker-threads: 1
+      queue-capacity: 32
 
 ---
 spring:

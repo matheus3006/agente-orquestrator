@@ -4,6 +4,7 @@ import com.orquestrador.conversation.ConversationTurnCoordinator;
 import com.orquestrador.context.ContextCompilationException;
 import com.orquestrador.context.ContextPackage;
 import com.orquestrador.context.RunContextCompiler;
+import com.orquestrador.context.intelligence.ContextIntelligence;
 import com.orquestrador.execution.adapter.AdapterRegistry;
 import com.orquestrador.execution.adapter.AgentAdapter;
 import com.orquestrador.execution.adapter.McpServerSpec;
@@ -62,6 +63,7 @@ public class AdapterRunExecutor implements RunExecutor {
     private final HeartbeatRunStore store;
     private final SkillSetService skillSets;
     private final RunContextCompiler contextCompiler;
+    private final ContextIntelligence contextIntelligence;
     private final BudgetService budget;
     private final ConversationTurnCoordinator turnCoordinator;
     private final AgentSessionStore agentSessions;
@@ -78,7 +80,8 @@ public class AdapterRunExecutor implements RunExecutor {
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
-                              SkillSetService skillSets, RunContextCompiler contextCompiler, BudgetService budget,
+                              SkillSetService skillSets, RunContextCompiler contextCompiler,
+                              ContextIntelligence contextIntelligence, BudgetService budget,
                               ConversationTurnCoordinator turnCoordinator, AgentSessionStore agentSessions,
                               PreviewArtifactCapturer previews, PreviewServerManifestRegistrar serverManifests,
                               PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
@@ -93,6 +96,7 @@ public class AdapterRunExecutor implements RunExecutor {
         this.store = store;
         this.skillSets = skillSets;
         this.contextCompiler = contextCompiler;
+        this.contextIntelligence = contextIntelligence;
         this.budget = budget;
         this.turnCoordinator = turnCoordinator;
         this.agentSessions = agentSessions;
@@ -224,6 +228,9 @@ public class AdapterRunExecutor implements RunExecutor {
                 "hash=" + shortHash(contextPackage.manifest().finalHash())
                         + " bytes=" + contextPackage.manifest().totalBytes()
                         + " sources=" + contextPackage.manifest().sources().size());
+        // F-SAI1: a porta só agenda SHADOW (ou é NoOp em OFF). O adapter recebe o pacote canônico
+        // original imediatamente; diagnóstico derivado nunca participa de prompt, arquivos ou settle.
+        contextIntelligence.inspect(ContextIntelligence.View.from(contextPackage));
 
         String command = adapter.acceptsPromptAsCommand()
                 ? contextPackage.prompt()
