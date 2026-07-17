@@ -141,8 +141,9 @@ API; o provider de inferência auxiliar é uma decisão de deployment separada.
 
 - Commits: `ca026ed` (caracterização), `5aade0e` (Boot 3.5.15), `4f31fdd` (Boot 4.1), `bde1e04`
   (Jackson 3), `b183600` (Java 25 + Wrapper), `ef4c315` (BOM Spring AI), `2e21356` (Pacote/Manifesto),
-  `1362523` (remoção Jackson 2 residual) e `50db7ff` (`OFF/SHADOW`).
-- H2: 757/757 verdes. PostgreSQL/Flyway: V30 verde em banco limpo. Docker: build e execução em Temurin
+  `1362523` (remoção Jackson 2 residual), `50db7ff` (`OFF/SHADOW`) e `300f703` (reserva Flyway V31).
+- H2: 757/757 verdes. PostgreSQL/Flyway: V31 verde em banco limpo, renumerada porque `main` passou a usar V30
+  para uma migration independente. Docker: build e execução em Temurin
   25.0.3.
 - Claude Code e Codex reais: materialização e Run verdes em LOCAL e DOCKER; continuidade de sessão por handle
   nativo e handoffs com bilhete/retomada exercitados em LOCAL. MCP passou em LOCAL; DOCKER preserva o limite

@@ -136,7 +136,8 @@ A migração da plataforma só pode ser marcada como concluída quando:
   `2.0.0`. A árvore efetiva contém somente o starter Ollama; não há import nem ponte Jackson 2 no código da
   aplicação.
 - Suíte completa H2: **757 testes**, zero falhas, erros ou skips. PostgreSQL/Flyway em banco limpo: migration
-  `V30`, tabelas `run_context_manifest` e `context_assessment` presentes.
+  `V31`, tabelas `run_context_manifest` e `context_assessment` presentes. A versão foi reservada após `main`
+  avançar com uma `V30` independente, evitando colisão na integração.
 - Docker: build verde e runtime Temurin `25.0.3`. Claude Code e Codex reais concluíram materialização e Runs
   em LOCAL e DOCKER. Sessão e handoff foram exercitados ao vivo no alvo LOCAL; o bridge MCP atual também foi
   provado em LOCAL, seu alvo suportado. O executor continua deliberadamente sem MCP dentro do DOCKER nesta
@@ -147,7 +148,7 @@ A migração da plataforma só pode ser marcada como concluída quando:
   `8d558ff61e83441e7755417f9b5f1f749e2c9469c0915350562e278a88b2b2b2`, 2.471 bytes e 618 tokens
   estimados já observados nos Runs OFF LOCAL e DOCKER.
 - Commits verdes e restritos: `ca026ed`, `5aade0e`, `4f31fdd`, `bde1e04`, `b183600`, `ef4c315`,
-  `2e21356`, `1362523` e `50db7ff`.
+  `2e21356`, `1362523`, `50db7ff` e `300f703`.
 - Caveat de runtime preservado: Codex CLI `0.142.5` rejeitou o modelo herdado `gpt-5.6-sol`; a prova passou
   após pinar o agente de teste em `gpt-5.4-mini` com effort `low`. Isso não altera os adapters nem cria
   fallback silencioso.
