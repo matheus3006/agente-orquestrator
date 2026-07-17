@@ -1,7 +1,7 @@
 package com.orquestrador.activitylog;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.common.security.ActorType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +39,7 @@ public class ActivityLogService {
     private String toJson(Map<String, Object> detail) {
         try {
             return objectMapper.writeValueAsString(detail);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             return "{\"_detail_error\":\"nao serializavel\"}";
         }
     }

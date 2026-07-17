@@ -1,6 +1,10 @@
 package com.orquestrador.execution;
 
 import com.orquestrador.conversation.ConversationTurnCoordinator;
+import com.orquestrador.context.ContextCompilationException;
+import com.orquestrador.context.ContextPackage;
+import com.orquestrador.context.RunContextCompiler;
+import com.orquestrador.context.intelligence.ContextIntelligence;
 import com.orquestrador.execution.adapter.AdapterRegistry;
 import com.orquestrador.execution.adapter.AgentAdapter;
 import com.orquestrador.execution.adapter.McpServerSpec;
@@ -12,7 +16,6 @@ import com.orquestrador.governance.approval.SkillRequestGate;
 import com.orquestrador.governance.budget.BudgetService;
 import com.orquestrador.handoff.ContextHandoffLoop;
 import com.orquestrador.handoff.DistillationSkill;
-import com.orquestrador.memory.CompanyMemoryMaterializer;
 import com.orquestrador.memory.MemoryAudience;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -21,8 +24,6 @@ import com.orquestrador.preview.PreviewArtifactCapturer;
 import com.orquestrador.preview.server.PreviewServerManifestRegistrar;
 import com.orquestrador.preview.server.PreviewServerSupervisor;
 import com.orquestrador.skills.CompanySkillVersion;
-import com.orquestrador.skills.HookMaterializer;
-import com.orquestrador.skills.SkillMaterializer;
 import com.orquestrador.skills.SkillSetService;
 import com.orquestrador.skills.mcp.KnowAllMcpBridge;
 import com.orquestrador.skills.mcp.KnowAllMcpMaterializer;
@@ -34,16 +35,10 @@ import com.orquestrador.work.issue.Issue;
 import com.orquestrador.work.issue.IssueService;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 /**
  * Executor real (slice 3): resolve o Workspace, faz o checkout da Issue com o runId, invoca o
@@ -67,12 +62,11 @@ public class AdapterRunExecutor implements RunExecutor {
     private final AdapterRegistry adapters;
     private final HeartbeatRunStore store;
     private final SkillSetService skillSets;
-    private final SkillMaterializer materializer;
-    private final HookMaterializer hookMaterializer;
+    private final RunContextCompiler contextCompiler;
+    private final ContextIntelligence contextIntelligence;
     private final BudgetService budget;
     private final ConversationTurnCoordinator turnCoordinator;
     private final AgentSessionStore agentSessions;
-    private final CompanyMemoryMaterializer memoryMaterializer;
     private final PreviewArtifactCapturer previews;
     private final PreviewServerManifestRegistrar serverManifests;
     private final PreviewServerSupervisor previewServers;
@@ -86,11 +80,10 @@ public class AdapterRunExecutor implements RunExecutor {
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
-                              SkillSetService skillSets, SkillMaterializer materializer,
-                              HookMaterializer hookMaterializer, BudgetService budget,
+                              SkillSetService skillSets, RunContextCompiler contextCompiler,
+                              ContextIntelligence contextIntelligence, BudgetService budget,
                               ConversationTurnCoordinator turnCoordinator, AgentSessionStore agentSessions,
-                              CompanyMemoryMaterializer memoryMaterializer, PreviewArtifactCapturer previews,
-                              PreviewServerManifestRegistrar serverManifests,
+                              PreviewArtifactCapturer previews, PreviewServerManifestRegistrar serverManifests,
                               PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
                               ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate,
                               KnowAllMcpMaterializer mcpMaterializer, KnowAllMcpBridge mcpBridge,
@@ -102,12 +95,11 @@ public class AdapterRunExecutor implements RunExecutor {
         this.adapters = adapters;
         this.store = store;
         this.skillSets = skillSets;
-        this.materializer = materializer;
-        this.hookMaterializer = hookMaterializer;
+        this.contextCompiler = contextCompiler;
+        this.contextIntelligence = contextIntelligence;
         this.budget = budget;
         this.turnCoordinator = turnCoordinator;
         this.agentSessions = agentSessions;
-        this.memoryMaterializer = memoryMaterializer;
         this.previews = previews;
         this.serverManifests = serverManifests;
         this.previewServers = previewServers;
@@ -163,45 +155,18 @@ public class AdapterRunExecutor implements RunExecutor {
                 ? turnCoordinator.pendingConversationOf(runContext.agentId()).orElse(null)
                 : null;
 
-        // Fatia 7a: prepara o workspace ANTES do checkout — materializa a UNIÃO base∪anexos-da-Issue
-        // (resolveForRun colapsa por skill com ANEXO-VENCE-A-BASE; anexos de Issue fechada não entram).
-        // Uma falha de I/O aqui vira RunOutcome.failure; por ser ANTES do checkout, não deixa a Issue
-        // travada por um run morto (o checkout ainda não ocorreu).
+        // A seleção permanece antes do checkout: resolveForRun colapsa base∪anexos por skill com
+        // ANEXO-VENCE-A-BASE. A materialização/publicação passa pela entrada única do compilador.
         Path workDir = conversaCompartilhada != null
                 ? workspaces.resolveConversation(runContext.companyId(), conversaCompartilhada)
                 : workspaces.resolve(runContext.companyId(), runContext.agentId(), runContext.issueId());
+        List<CompanySkillVersion> skills;
         try {
-            // M4 (ADR-0030): o CEO ganha a skill `distillation` (capacidade de plataforma, injetada
-            // por-run — zero migração, invisível à biblioteca da company). Demais agentes: set intacto.
-            List<CompanySkillVersion> skills = distillationSkill.augment(
+            skills = distillationSkill.augment(
                     skillSets.resolveForRun(runContext.companyId(), runContext.agentId(), runContext.issueId()),
                     agent.getRole());
-            materializer.materialize(workDir, convention.skillsSubdir(), skills);
-            // Faxina permanente (ADR-0032/D6): a árvore de skills das convenções INATIVAS some do
-            // host — troca de motor nunca deixa cérebro velho no chão (o .claude/ que o codex nunca
-            // leu mas exploraria por busca). No DOCKER a remoção atravessa pela união dos subtrees.
-            for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
-                if (!inactive.equals(convention)) {
-                    faxinaConvencaoInativa(workDir, inactive.skillsSubdir());
-                }
-            }
         } catch (RuntimeException exception) {
-            return RunOutcome.failure("falha ao materializar o SkillSet: " + exception.getMessage());
-        }
-
-        try {
-            // F-N6 (ADR-0042, D6/D7): o hook PreToolUse materializa em TODO run que recebe skills
-            // (leitura adotada do escopo mínimo — mais simples que restringir a personas; ver
-            // handoff de volta) — skills read-only + cinto de leitura dos dirs de sessão dos motores.
-            hookMaterializer.materialize(workDir, convention);
-            for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
-                if (!inactive.equals(convention)) {
-                    faxinaConvencaoInativa(workDir, inactive.hooksFile());
-                    faxinaConvencaoInativa(workDir, inactive.hooksScript());
-                }
-            }
-        } catch (RuntimeException exception) {
-            return RunOutcome.failure("falha ao materializar os hooks PreToolUse: " + exception.getMessage());
+            return RunOutcome.failure("falha ao resolver o SkillSet: " + exception.getMessage());
         }
 
         // Amarração slice 1<->2<->3: o Run detem a Issue via checkout atomico com o proprio runId.
@@ -234,93 +199,50 @@ public class AdapterRunExecutor implements RunExecutor {
         // dos adapters ricos (acceptsPromptAsCommand) e chega pelo env ORQ_PROMPT no arquétipo
         // process. Decisão 2 do dono: runtime_command agora é SÓ comando de script do process —
         // adapter rico nunca mais o lê (agente de IA não precisa do campo; null do gate é correto).
+        // R23-A: o prompt composto ENTRA no compilador como insumo e volta pelo pacote — daqui para
+        // baixo quem carrega prompt/schema vivos é o ContextPackage (nada disso atravessa para o
+        // manifesto persistido, e o hash do contexto não depende do prompt).
+        MemoryAudience audience = turno != null ? MemoryAudience.CEO : MemoryAudience.EXECUTOR;
         String prompt = turno != null
                 ? turno.prompt()
                 : issueDoRun != null
                         ? issueComposer.compose(issueDoRun, target, adapter.engineContainer().image())
                         : null;
-        String command = adapter.acceptsPromptAsCommand() ? prompt : agent.getRuntimeCommand();
-        Map<String, String> env = prompt != null ? Map.of(PROMPT_ENV, prompt) : Map.of();
+        String outputSchema = turno != null ? turno.outputSchema() : null;
+        String volumeName = conversaCompartilhada != null
+                ? workspaces.conversationVolumeName(runContext.companyId(), conversaCompartilhada)
+                : workspaces.volumeName(runContext.companyId(), runContext.agentId(), runContext.issueId());
+
+        ContextPackage contextPackage;
+        try {
+            contextPackage = contextCompiler.compile(new RunContextCompiler.Request(
+                    runContext, workDir, convention, skills, audience, target,
+                    adapter.engineContainer().image(), volumeName, prompt, outputSchema));
+        } catch (ContextCompilationException exception) {
+            if (turno != null) {
+                turnCoordinator.settleFailed(turno.turnId());
+            }
+            return RunOutcome.failure(exception.getMessage());
+        }
+        store.recordStep(runContext.runId(), "RUN_CONTEXT_COMPILED",
+                "hash=" + shortHash(contextPackage.manifest().finalHash())
+                        + " bytes=" + contextPackage.manifest().totalBytes()
+                        + " sources=" + contextPackage.manifest().sources().size());
+        // F-SAI1: a porta só agenda SHADOW (ou é NoOp em OFF). O adapter recebe o pacote canônico
+        // original imediatamente; diagnóstico derivado nunca participa de prompt, arquivos ou settle.
+        contextIntelligence.inspect(ContextIntelligence.View.from(contextPackage));
+
+        String command = adapter.acceptsPromptAsCommand()
+                ? contextPackage.prompt()
+                : agent.getRuntimeCommand();
+        Map<String, String> env = contextPackage.prompt() != null
+                ? Map.of(PROMPT_ENV, contextPackage.prompt())
+                : Map.of();
         // F-AT1 (grill agente-como-tool): SEMPRE coletado (não só em turno) — o Run de Issue não
         // tem saída "em forma de turno" (sem outputSchema), então o pedido-skill do executor é
         // lido do MESMO texto reconstruído que já serve o reply de turno e o report-por-Issue
         // (RunFinalOutput, a regra única do ADR-0010; ver IssueLedger). Custo é só memória.
         RunFinalOutput replyCollector = new RunFinalOutput();
-
-        // F-C3 (C9): o SPLIT do sempre-on. A dieta durável vira o memoryFile da convenção do adapter
-        // — .claude/CLAUDE.md no Claude Code, AGENTS.md no codex (ADR-0018/0019/0032): memória pelo
-        // canal NATIVO de cada CLI; o prompt carrega só o estado VIVO. AS DUAS PONTAS materializam:
-        // o turno do CEO recebe carta+princípios; o run de EXECUTOR recebe os PRINCÍPIOS (o índice
-        // enxuto, com os #N que abrem o memory_fetch) e NUNCA a carta — direção do dono não é
-        // material de executor. Antes da F-C3 o executor não recebia memória nenhuma (D12 letra
-        // morta + cegueira-de-retrieval). Falha de I/O no turno liquida o turno (o claim já ocorreu
-        // — FAILED visível > PENDING pendurado); no executor vira falha do run como qualquer outra.
-        // R19-A (fecho v1, ADR-0011 emendada): o run de Issue passa o issueId — o materializer PUXA
-        // as Decisões ancoradas naquela issue (o motivo do REJECT do review + caso B) e as ENTREGA
-        // como dieta direcionada, para o executor RECEBER o feedback no re-run (PUSH, não pull). O
-        // turno do CEO tem issueId nulo → nenhuma seção de issue (a ponta do CEO fica inalterada).
-        MemoryAudience audience = turno != null ? MemoryAudience.CEO : MemoryAudience.EXECUTOR;
-        try {
-            memoryMaterializer.materialize(workDir, convention.memoryFile(), runContext.companyId(),
-                    audience, runContext.issueId());
-            // Faxina permanente (ADR-0032/D6), lado da memória: o memoryFile das convenções INATIVAS
-            // some. A regra é "QUEM MATERIALIZA, FAXINA" — e agora o executor também materializa, então
-            // ele também varre (o mesmo movimento que o F-N6 fez pelos hooks). Troca de motor nunca
-            // deixa cérebro velho no chão: o memoryFile das duas convenções é canal do PRODUTO.
-            for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
-                if (!inactive.equals(convention)) {
-                    faxinaConvencaoInativa(workDir, inactive.memoryFile());
-                }
-            }
-        } catch (RuntimeException exception) {
-            if (turno != null) {
-                turnCoordinator.settleFailed(turno.turnId());
-            }
-            return RunOutcome.failure("falha ao materializar a memória durável: " + exception.getMessage());
-        }
-
-        // Escritor de workspace (par do leitor F.9/ADR-0021): a arvore que os materializers
-        // deixaram no workDir do HOST so existe para o Run se atravessar o seam — no DOCKER o
-        // workspace e um volume nomeado que o filesystem do backend nao enxerga (smoke F.9d: a
-        // skill anexada nunca chegou em /workspace/.claude/skills). A carta so entra em run de
-        // turno (espelha QUEM materializou). Falha aqui e failure LEGIVEL, e no turno liquida
-        // FAILED como a carta acima — rodar sem a arvore seria divergencia silenciosa.
-        String volumeName = conversaCompartilhada != null
-                ? workspaces.conversationVolumeName(runContext.companyId(), conversaCompartilhada)
-                : workspaces.volumeName(runContext.companyId(), runContext.agentId(), runContext.issueId());
-        // M6 (ADR-0030, risco #3): NUNCA adicionar `.orq/*` aqui. writeWorkspaceFiles é REPLACE por
-        // subtree (membro ausente no host some do volume); materializar `.orq/handoff` apagaria o
-        // bilhete entre Runs sob Docker e quebraria o loop de handoff. Guard-rail:
-        // WorkspaceWriteOnRunTest.nenhumSubtreeOrqEMaterializado_* FALHA se alguém violar isto.
-        // A lista é a UNIÃO das convenções conhecidas (ADR-0032/D6): a ativa atravessa a árvore
-        // recém-materializada; as inativas, apagadas do host pela faxina acima, somem do volume
-        // pelo próprio replace (rm extra é no-op em volume limpo). Issue: só skills; turno: + carta.
-        List<String> materializedSubtrees = new ArrayList<>();
-        for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
-            materializedSubtrees.add(known.skillsSubdir());
-        }
-        // F-N6 (ADR-0042): hooks materializam em TODO run (junto das skills), então entram na
-        // lista incondicional — não gated por turno != null como o memoryFile abaixo.
-        for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
-            materializedSubtrees.add(known.hooksFile());
-            materializedSubtrees.add(known.hooksScript());
-        }
-        // F-C3 (C9): o memoryFile entra INCONDICIONAL — as duas pontas materializam a dieta durável
-        // (era gated por turno, quando só o CEO a recebia). Sem isto, sob Docker os princípios não
-        // atravessariam o seam e o executor rodaria cego no volume.
-        for (WorkspaceConvention known : WorkspaceConvention.KNOWN) {
-            materializedSubtrees.add(known.memoryFile());
-        }
-        ExecutionTarget.WorkspaceFilesWrite workspaceWrite = target.writeWorkspaceFiles(
-                new ExecutionTarget.Spec(workDir, List.of(), Map.of(),
-                        adapter.engineContainer().image(), volumeName, List.of()),
-                materializedSubtrees);
-        if (workspaceWrite.failed()) {
-            if (turno != null) {
-                turnCoordinator.settleFailed(turno.turnId());
-            }
-            return RunOutcome.failure("falha ao escrever o workspace do run: " + workspaceWrite.error());
-        }
 
         // F-N1/F-N2 (ADR-0038): a continuidade nativa liga AQUI — o handle gravado da conversa (turno)
         // ou da Issue (heartbeat) volta como priorSession, e o adapter religa o --resume no caminho
@@ -336,9 +258,7 @@ public class AdapterRunExecutor implements RunExecutor {
                 : issueConversationId != null
                         ? agentSessions.currentHandle(runContext.agentId(), issueConversationId).orElse(null)
                         : null;
-        // F-N3 (ADR-0039, D2): o schema de saída estruturada só existe em run de TURNO de persona
-        // migrada (o coordinator o construiu no claim); run de Issue e persona não migrada = null.
-        String outputSchema = turno != null ? turno.outputSchema() : null;
+        // Prompt e schema vivos vêm do pacote em memória; o manifesto nunca os persiste.
         // F-AT2 (D2/D6) + F-C3 (C10): o trilho MCP-stdio abre nas DUAS PONTAS em alvo LOCAL — o run de
         // EXECUTOR (turno==null && issueId!=null) e o TURNO DO CEO, que é o consumidor primário da
         // memória ("por que decidimos #7?"). Docker segue v1.1 (D7). O PERFIL diz quais tools cada
@@ -370,7 +290,7 @@ public class AdapterRunExecutor implements RunExecutor {
         AgentAdapter.Context adapterContext = new AgentAdapter.Context(
                 runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(), workDir,
                 command, env, target, volumeName, priorSession,
-                agent.getModel(), agent.getEffort(), outputSchema, mcpServer);
+                agent.getModel(), agent.getEffort(), contextPackage.outputSchema(), mcpServer);
 
         AgentAdapter.Result result;
         try {
@@ -390,7 +310,7 @@ public class AdapterRunExecutor implements RunExecutor {
                 AgentAdapter.Context fresh = new AgentAdapter.Context(
                         runContext.companyId(), runContext.agentId(), runContext.runId(), runContext.issueId(),
                         workDir, command, env, target, volumeName, null, agent.getModel(), agent.getEffort(),
-                        outputSchema, mcpServer);
+                        contextPackage.outputSchema(), mcpServer);
                 result = adapter.execute(fresh, buildSink(runContext.runId(), replyCollector));
             }
         } catch (Exception exception) {
@@ -411,6 +331,12 @@ public class AdapterRunExecutor implements RunExecutor {
         // (catch acima), não há Result nem emissões: um adapter que queira contabilizar deve devolver
         // Result.fail(error, costEvents), não lançar.
         recordCosts(runContext, result.costEvents());
+        long actualInputTokens = result.costEvents().stream()
+                .mapToLong(AgentAdapter.CostEmission::tokensInput)
+                .sum();
+        store.recordStep(runContext.runId(), "RUN_CONTEXT_USAGE",
+                "estimated_tokens=" + contextPackage.manifest().estimatedTokens()
+                        + " actual_input_tokens=" + actualInputTokens);
 
         // Settle do turno (T.3): a resposta capturada vira a thread; falha marca FAILED (o erro
         // detalhado vive no StepTrace). O handle de sessão é persistido por (Agent, Conversation)
@@ -463,46 +389,8 @@ public class AdapterRunExecutor implements RunExecutor {
         return RunOutcome.success();
     }
 
-    /**
-     * O braço da faxina (ADR-0032/D6) no HOST: remove arquivo OU árvore de uma convenção inativa
-     * (no LOCAL o workDir É o workspace; no DOCKER a ausência atravessa pelo replace da união) e
-     * PODA os pais esvaziados até a raiz do workspace — o critério do §VENDO é literal: o
-     * diretório da convenção inativa NÃO existe (um `.claude/` vazio no chão ainda é chão sujo).
-     * Pai não-vazio fica (estado legítimo do agente, ex.: CLAUDE.md dele em workspace de Issue).
-     * Falha vira UncheckedIOException — cai nos mesmos catches dos materializers (falha LEGÍVEL
-     * do run, nunca meia-faxina silenciosa).
-     */
-    private static void faxinaConvencaoInativa(Path workDir, String relativePath) {
-        Path alvo = workDir.resolve(relativePath);
-        deleteRecursively(alvo);
-        Path parent = alvo.getParent();
-        while (parent != null && !parent.equals(workDir)) {
-            try {
-                if (!Files.deleteIfExists(parent)) {
-                    break; // já não existia — nada a podar acima
-                }
-            } catch (IOException naoVazio) {
-                break; // conteúdo legítimo do agente: a poda para aqui
-            }
-            parent = parent.getParent();
-        }
-    }
-
-    private static void deleteRecursively(Path root) {
-        if (!Files.exists(root)) {
-            return;
-        }
-        try (Stream<Path> walk = Files.walk(root)) {
-            walk.sorted(Comparator.reverseOrder()).forEach(path -> {
-                try {
-                    Files.deleteIfExists(path);
-                } catch (IOException exception) {
-                    throw new UncheckedIOException(exception);
-                }
-            });
-        } catch (IOException exception) {
-            throw new UncheckedIOException("falha na faxina de convencao inativa em " + root, exception);
-        }
+    private static String shortHash(String hash) {
+        return hash.substring(0, Math.min(12, hash.length()));
     }
 
     /** O sink de steps do run; embrulhado pelo coletor de reply quando o run é um turno de conversa. */

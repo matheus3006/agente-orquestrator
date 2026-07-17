@@ -1,6 +1,6 @@
 package com.orquestrador.execution.adapter;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;

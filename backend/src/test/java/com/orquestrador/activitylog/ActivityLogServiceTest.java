@@ -1,6 +1,6 @@
 package com.orquestrador.activitylog;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.identity.company.CompanyService;
 import org.junit.jupiter.api.Test;

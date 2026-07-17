@@ -21,10 +21,14 @@ Um deployment self-hosted que roda uma ou mais "empresas" de agentes de IA. Cada
 ## 2. Constituição (regras imutáveis — SDD)
 
 ### 2.1 Stack pinada
+
+> Stack efetiva desde a execução da **ADR-0043** na branch `feat/backend-spring-ai-2`.
+
 | Camada | Escolha | Observação |
 |---|---|---|
-| Linguagem backend | **Java 21 LTS** | (alt: Java 25 LTS) |
-| Framework | **Spring Boot 3.5.x** | confirmar patch exato em start.spring.io no scaffold; 4.0 é caminho futuro |
+| Linguagem backend | **Java 25 LTS** | migração sequencial; Java 21 é etapa intermediária do salto para Boot 4.1 |
+| Framework | **Spring Boot 4.1.0** + Spring Framework 7 + Jackson 3 | versões gerenciadas pelo Boot parent/BOM; nenhuma ponte Jackson 2 residual |
+| IA no control plane | **Spring AI 2.0.0** | adapter auxiliar `OFF→SHADOW`; não substitui Claude Code/Codex nem escreve contexto canônico |
 | Persistência | **PostgreSQL 15+** + JPA/Hibernate (Spring Data `@Query` — SQL nativo/JPQL — p/ queries críticas de concorrência) | `SKIP LOCKED`, `pg_trgm`; `pgvector` plugável p/ KnowAll RAG |
 | Auth | Spring Security (sessão board + API keys de agente + run-JWT por-empresa) | **deny-by-default** |
 | Realtime | **SSE** (streaming de plano/steps) | WebSocket só se bidirecional (ex: chat c/ agente) |
@@ -33,7 +37,7 @@ Um deployment self-hosted que roda uma ou mais "empresas" de agentes de IA. Cada
 | Imagens runtime | base comum + **camadas por-adapter** | reuso + isolamento por runtime |
 | Execução agente | **Docker-first** (`ExecutionTarget` plugável; driver `local` p/ dev) | imprescindível rodar em Docker |
 | Frontend | **Next.js 16 + React 19 + TS** | padrão NutriApp: `@almanutri/tokens`, prototype-first |
-| Build | backend: Maven/Gradle · frontend: pnpm | repo separado em `backend/` + `frontend/` |
+| Build | backend: Maven · frontend: pnpm | Maven Wrapper; dependências backend governadas pelos BOMs oficiais |
 
 ### 2.2 Estrutura de repositório
 ```

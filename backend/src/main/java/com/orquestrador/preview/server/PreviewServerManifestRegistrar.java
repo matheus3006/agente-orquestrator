@@ -1,7 +1,7 @@
 package com.orquestrador.preview.server;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.activitylog.ActivityAction;
 import com.orquestrador.activitylog.ActivityLogService;
 import com.orquestrador.common.security.ActorType;
@@ -17,7 +17,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -125,14 +124,13 @@ public class PreviewServerManifestRegistrar {
         JsonNode root;
         try {
             root = json.readTree(content);
-        } catch (RuntimeException | com.fasterxml.jackson.core.JacksonException exception) {
+        } catch (RuntimeException exception) {
             return null;
         }
         if (root == null || !root.isObject() || root.size() != 2) {
             return null;
         }
-        for (Iterator<String> fields = root.fieldNames(); fields.hasNext(); ) {
-            String field = fields.next();
+        for (String field : root.propertyNames()) {
             if (!field.equals("command") && !field.equals("port")) {
                 return null;
             }

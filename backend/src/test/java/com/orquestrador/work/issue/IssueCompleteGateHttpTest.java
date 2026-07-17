@@ -1,6 +1,6 @@
 package com.orquestrador.work.issue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.orquestrador.execution.HeartbeatRun;
 import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.RunStatus;
@@ -8,7 +8,7 @@ import com.orquestrador.work.review.ReviewRepository;
 import com.orquestrador.work.review.ReviewStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;

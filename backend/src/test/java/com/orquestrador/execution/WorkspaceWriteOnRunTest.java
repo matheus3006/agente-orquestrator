@@ -3,6 +3,8 @@ package com.orquestrador.execution;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.conversation.Conversation;
 import com.orquestrador.conversation.ConversationService;
+import com.orquestrador.context.RunContextManifestRepository;
+import com.orquestrador.context.StoredContextManifest;
 import com.orquestrador.execution.runtime.DockerExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTargets;
@@ -58,6 +60,10 @@ class WorkspaceWriteOnRunTest {
     private ConversationService conversations;
     @Autowired
     private WorkspaceWriteRecorder recorder;
+    @Autowired
+    private RunContextManifestRepository manifests;
+    @Autowired
+    private HeartbeatRunEventRepository events;
 
     @AfterEach
     void limpaRecorder() {
@@ -104,13 +110,24 @@ class WorkspaceWriteOnRunTest {
         // escritor e hermetico: NENHUM volume de credencial entra no Spec.
         assertThat(write.spec().image()).isEqualTo("alpine:3");
         assertThat(write.spec().credentialMounts()).isEmpty();
+
+        StoredContextManifest manifest = manifests
+                .findFirstByCompanyIdAndAgentIdOrderByCompiledAtDesc(companyId, agentId)
+                .orElseThrow();
+        assertThat(manifest.getIssueId()).isEqualTo(issueId);
+        assertThat(manifest.getFinalHash()).matches("[0-9a-f]{64}");
+        assertThat(manifest.getTotalBytes()).isPositive();
+        assertThat(manifest.getEstimatedTokens()).isPositive();
+        assertThat(manifest.getSourcesJson()).contains("workspace:").doesNotContain("tarefa", "trabalhar");
+        assertThat(events.findByRunIdOrderByCreatedAtAsc(manifest.getRunId()))
+                .extracting(HeartbeatRunEvent::getType)
+                .contains("RUN_CONTEXT_COMPILED", "RUN_CONTEXT_USAGE");
     }
 
     @Test
     void runDeTurnoEscreveSkillsECartaNoWorkspaceDoCeo() {
-        // A carta so entra na lista em run de TURNO — espelha QUEM materializou (o
-        // CompanyMemoryMaterializer nao roda em run de Issue; um CLAUDE.md que o agente
-        // escreveu no proprio workspace de Issue nunca e tocado pelo escritor).
+        // O mesmo contrato de paths atende as duas audiências; o conteúdo da memória é que muda:
+        // CEO recebe carta+princípios, executor recebe só princípios e feedback direcionado.
         UUID companyId = novaCompany();
         Agent ceo = new Agent(UUID.randomUUID(), companyId, "Atlas", "ceo", null);
         ceo.configureRuntime("process", "printf '%s' \"$ORQ_PROMPT\"", "LOCAL");
