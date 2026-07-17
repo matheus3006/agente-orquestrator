@@ -49,7 +49,11 @@ class HeartbeatReaperTest {
     void runOrfaoVoltaParaFilaEReprocessa() {
         UUID companyId = companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8),
                 UUID.randomUUID()).getId();
-        UUID agentId = agents.save(new Agent(UUID.randomUUID(), companyId, "A", "worker", null)).getId();
+        // R22-A: agente COM comando — sem ele o run é no-op e a Issue não fecha mais (o DONE
+        // fantasma que este teste, sem querer, pinava era o bug #1 do roadmap de ajustes).
+        Agent agent = new Agent(UUID.randomUUID(), companyId, "A", "worker", null);
+        agent.configureRuntime("process", "echo ok", "LOCAL");
+        UUID agentId = agents.save(agent).getId();
         UUID issueId = issues.create(companyId, "tarefa", null).getId();
 
         UUID runId = wakeups.enqueue(companyId, agentId, issueId, "trabalhar").runId();

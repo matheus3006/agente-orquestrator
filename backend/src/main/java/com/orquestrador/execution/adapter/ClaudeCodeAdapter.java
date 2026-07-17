@@ -67,8 +67,9 @@ public class ClaudeCodeAdapter implements AgentAdapter {
     @Override
     public Result execute(Context context, StepSink steps) {
         if (context.command() == null || context.command().isBlank()) {
-            // Sem prompt: no-op verde (mantém o loop de agentes ainda não configurados). Não gasta token.
-            return Result.ok(context.priorSession());
+            // Sem prompt: no-op verde SINALIZADO (R22-A) — não gasta token, e o executor sabe que o
+            // motor nunca foi invocado (sobre Issue, ela nunca fecha em cima de um run vazio).
+            return Result.okNoop(context.priorSession());
         }
 
         // F-AT2 (grill agente-como-tool D2): o servidor MCP do KnowAll vira um --mcp-config <arquivo>

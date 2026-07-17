@@ -112,33 +112,41 @@ public interface AgentAdapter {
      * arquétipo process. Emitidos no sucesso E na falha (os tokens gastos antes de falhar contam).
      * {@code sessionLost} (F-N2/ADR-0038): a falha foi "a sessão nativa sumiu" num run que resumiu
      * (priorSession) — o executor reage com {@code RUN_SESSION_LOST} + fresh start, em vez de só
-     * marcar FAILED. O construtor compacto blinda: nunca nulo, sempre imutável.
+     * marcar FAILED. {@code noop} (R22-A/ADR-0011 emendada): o adapter NÃO invocou o motor (comando
+     * vazio) — só o adapter sabe disso, então ele sinaliza; o executor decide o que o no-op
+     * significa (sobre uma Issue, vira {@code RunOutcome.noop} e ela nunca fecha). O construtor
+     * compacto blinda: nunca nulo, sempre imutável.
      */
     record Result(boolean succeeded, String error, String session, List<CostEmission> costEvents,
-                  boolean sessionLost) {
+                  boolean sessionLost, boolean noop) {
         public Result {
             costEvents = (costEvents == null) ? List.of() : List.copyOf(costEvents);
         }
 
         public static Result ok(String session) {
-            return new Result(true, null, session, List.of(), false);
+            return new Result(true, null, session, List.of(), false, false);
         }
 
         public static Result ok(String session, List<CostEmission> costEvents) {
-            return new Result(true, null, session, costEvents, false);
+            return new Result(true, null, session, costEvents, false, false);
+        }
+
+        /** No-op verde: nada a executar, motor NUNCA invocado (o "loop verde" fora de Issue). */
+        public static Result okNoop(String session) {
+            return new Result(true, null, session, List.of(), false, true);
         }
 
         public static Result fail(String error) {
-            return new Result(false, error, null, List.of(), false);
+            return new Result(false, error, null, List.of(), false, false);
         }
 
         public static Result fail(String error, List<CostEmission> costEvents) {
-            return new Result(false, error, null, costEvents, false);
+            return new Result(false, error, null, costEvents, false, false);
         }
 
         /** Falha por sessão nativa perdida (resume apontou p/ handle sumido): dispara o fresh start. */
         public static Result failSessionLost(String error, List<CostEmission> costEvents) {
-            return new Result(false, error, null, costEvents, true);
+            return new Result(false, error, null, costEvents, true, false);
         }
     }
 }

@@ -29,6 +29,14 @@ public class Conversation {
     @Column(nullable = false)
     private String subject;
 
+    // V30 (R22-A, ADR-0037 emendada): o endereço do entregável do ÚLTIMO bastão postado nesta
+    // conversa — o campo `bastao` do bloco ```handoff``` sai do texto do sentinela e vira coluna.
+    // LAST-WINS por construção (o nome varia por etapa: dossiê no Q→P, estratégia no P→E — quem
+    // batiza é o CEO). É o índice, nunca o conteúdo (ADR-0019): o arquivo vive no workspace da
+    // conversa; é por aqui que o compositor da issue alcança a ESTRATÉGIA para quem trabalha.
+    @Column(name = "bastao_path")
+    private String bastaoPath;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -52,6 +60,15 @@ public class Conversation {
 
     public String getSubject() {
         return subject;
+    }
+
+    public String getBastaoPath() {
+        return bastaoPath;
+    }
+
+    /** A anotação do bastão (V30): chamada a CADA bastão postado — o último vence. */
+    public void anotarBastao(String bastaoPath) {
+        this.bastaoPath = bastaoPath;
     }
 
     public Instant getCreatedAt() {

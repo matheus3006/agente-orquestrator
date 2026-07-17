@@ -97,3 +97,26 @@ opcional (PUSH, não pull). O agente selado não tem canal inbound; a materializ
 - **Lentes:** `human-architect-mindset` (o canal inbound que faltava ao agente selado; entrega ≠
   busca) + `codebase-design` (seam pequeno — o `issueId` que já existia no `RunContext` passa a
   fluir para a dieta; módulo fundo no materializer).
+
+## Emenda 2026-07-16 (R22-A — bug #1 do roadmap de ajustes: run NO-OP nunca fecha issue)
+
+**O "sucesso → DONE" do corpo ganha uma exceção estrutural:** um run que **não fez nada** — o
+adapter sinalizou que o motor **nunca foi invocado** (`AgentAdapter.Result.noop`, ex.: arquétipo
+`process` sem comando) — **NUNCA completa a Issue**, nem entra em review (não há entregável a
+revisar). O `settleAfterRun` o estaciona em **`BLOCKED`** pelo mesmo park-for-human desta ADR
+(lock liberado, evento `ISSUE_BLOCKED`, destrava = `unblock` do board), com o porquê legível no
+erro do run.
+
+- **Por quê (invariante do dono, grill 2026-07-16):** *"um run que não fez nada nunca mais fecha
+  issue"*. Era o elo 3 do bug #1 (DONE fantasma): gate contratava sem comando + adapters tratavam
+  comando vazio como no-op VERDE + este settle completava. Mesmo com o compositor da issue
+  (ADR-0037 emendada) matando a CAUSA, comando vazio por outra causa voltaria a mentir o board —
+  a trava é independente do conserto.
+- **Onde mora:** o guard fica **no settle** (o chokepoint que cunha o DONE — "um único caminho
+  para DONE", ADR-0012), não só no executor: `RunOutcome` ganhou o marcador `noop` e até um
+  outcome "verde" com noop cai no ramo de bloqueio. O executor traduz o sinal do adapter em
+  `RunOutcome.noop` **só quando há Issue**; fora de Issue o no-op segue verde (o "loop verde" de
+  agente não configurado não tem o que mentir).
+- **Interações:** o run vai a `FAILED` com erro legível (a trilha de runs não finge); o
+  circuit-breaker da ADR-0018 (teto c) conta essas falhas e para o par agente×issue reincidente —
+  comportamento desejado para agente mal-configurado; o wakeup manual destrava, como lá.
