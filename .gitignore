@@ -38,3 +38,14 @@ yarn-error.log*
 
 # === Claude local (mantém launch.json compartilhado; descarta perms locais) ===
 .claude/settings.local.json
+
+# === Untracked-de-contrato da sessão de controle (ler sempre, commitar NUNCA) ===
+# Incidente 8cbac4b (2026-07-17): um `git add` amplo versionou estes arquivos; guarda permanente.
+/HANDOFF-*.md
+docs/controle-paralelismo.md
+docs/laudo-lease-adr0005.md
+docs/handoff-auditoria-doc-codigo-2026-07-11.md
+docs/plano-descoberta-bugs.md
+docs/plano-descoberta-bugs.materiais/
+docs/pesquisa-spring-ai-melhorias.md
+docs/desenho-*.md
