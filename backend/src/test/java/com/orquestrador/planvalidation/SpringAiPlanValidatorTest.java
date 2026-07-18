@@ -72,9 +72,11 @@ class SpringAiPlanValidatorTest {
      * literalmente o que vai serializado no campo {@code think} da requisição do Ollama.
      *
      * <p>Sem esta trava, trocar {@code enableThinking()} por um no-op não quebraria teste nenhum — e
-     * a fatia degradaria em silêncio de 17/18 para 12/18 (medição: {@code
-     * docs/medicao-validador-qwen.md}), que é exatamente o tipo de regressão que nenhum unitário de
-     * comportamento pega porque o modelo é mockado.
+     * a fatia perderia em silêncio a direção medida do think (12/18→14/18 na comparação controlada
+     * da redação CONCRETA; a config completa — 1.7b + think + redação seed — mediu 26/27;
+     * seed+think=false não medido; medição: {@code docs/medicao-validador-qwen.md}), que é
+     * exatamente o tipo de regressão que nenhum unitário de comportamento pega porque o modelo é
+     * mockado.
      */
     @Test
     void aConfiguracaoMedidaChegaNasOptionsDoOllama() {
