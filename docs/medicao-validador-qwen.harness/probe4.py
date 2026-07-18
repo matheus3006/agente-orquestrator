@@ -49,7 +49,7 @@ Troco a implementação por uma baseada em java.time e ajusto os chamadores.
 Não vejo necessidade de cobertura nova, o comportamento é o mesmo.
 """
 
-PLANO_TUDO_MENOS_SEAM = """# Plano — ajustar o rodapé
+PLANO_QUASE_COMPLETO = """# Plano — ajustar o rodapé
 
 1. Trocar o texto do rodapé no arquivo `Footer.tsx:12`.
 2. Atualizar o snapshot em `Footer.test.tsx:8`.
@@ -64,7 +64,7 @@ CASOS = [
     ("magro", PLANO_MAGRO, {"seam": False, "file-line": False, "test": False}),
     ("so-teste", PLANO_SO_TESTE, {"seam": False, "file-line": False, "test": True}),
     ("so-seam", PLANO_SO_SEAM, {"seam": True, "file-line": False, "test": False}),
-    ("quase-tudo", PLANO_TUDO_MENOS_SEAM, {"seam": True, "file-line": True, "test": True}),
+    ("quase-tudo", PLANO_QUASE_COMPLETO, {"seam": True, "file-line": True, "test": True}),
 ]
 # verdade: 10 presentes, 8 ausentes => taxa-base de um chute constante = 10/18
 

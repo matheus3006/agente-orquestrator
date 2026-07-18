@@ -16,7 +16,8 @@ import java.util.List;
  *   <li><b>model {@code qwen3:1.7b}</b> — o {@code qwen3:0.6b} do inspetor de contexto foi medido
  *       como preditor CONSTANTE (respondeu "presente" em 18/18, = a taxa-base do conjunto, em 11
  *       formatos de prompt diferentes): inutilizável como validador.</li>
- *   <li><b>think {@code true}</b> — obrigatório: 12/18 sem, 17/18 com.</li>
+ *   <li><b>think {@code true}</b> — direção medida na redação CONCRETA: 12/18→14/18; a config
+ *       completa (1.7b + think + redação seed) mediu 26/27; seed+think=false não medido.</li>
  *   <li><b>numPredict 1500</b> — com 150 o raciocínio come o orçamento e 14 de 18 respostas vêm
  *       VAZIAS; 300 ainda trunca em plano longo; 800 já basta; 1500 é folga de graça (o modelo
  *       para sozinho, a latência não cresce).</li>
