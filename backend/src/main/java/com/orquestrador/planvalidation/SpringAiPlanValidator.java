@@ -44,6 +44,24 @@ public class SpringAiPlanValidator implements PlanValidator {
 
     public SpringAiPlanValidator(ChatModel chatModel, PlanValidationProperties properties) {
         this.properties = Objects.requireNonNull(properties, "properties");
+        this.chatClient = ChatClient.builder(Objects.requireNonNull(chatModel, "chatModel"))
+                .defaultAdvisors(List.of())
+                .defaultToolCallbacks(List.of())
+                // O ChatClient recebe o BUILDER, não as options prontas (idem SpringAiContextIntelligence).
+                .defaultOptions(optionsBuilder(properties))
+                .build();
+    }
+
+    /**
+     * As options que viajam em CADA requisição — é aqui que a config medida vira comportamento.
+     *
+     * <p>O {@code model} é sobrescrito por-requisição de propósito: o bean {@code ChatModel} vem do
+     * autoconfig do starter, que aponta para o modelo do INSPETOR DE CONTEXTO (ADR-0043, hoje
+     * {@code qwen3:0.6b}). Aquele modelo foi medido como preditor CONSTANTE e não serve de
+     * validador; e trocar o default global mudaria a fatia da 0043 junto. Por isso: reusa-se o bean,
+     * não a configuração dele.
+     */
+    private static OllamaChatOptions.Builder optionsBuilder(PlanValidationProperties properties) {
         // Os setters do builder do Ollama devolvem o tipo ERASED (AbstractBuilder), então encadear
         // até o build() não compila — daí a forma em statements sobre a variável tipada.
         OllamaChatOptions.Builder builder = OllamaChatOptions.builder();
@@ -55,11 +73,12 @@ public class SpringAiPlanValidator implements PlanValidator {
         } else {
             builder.disableThinking();
         }
-        this.chatClient = ChatClient.builder(Objects.requireNonNull(chatModel, "chatModel"))
-                .defaultAdvisors(List.of())
-                .defaultToolCallbacks(List.of())
-                .defaultOptions(builder) // o ChatClient recebe o BUILDER (idem SpringAiContextIntelligence)
-                .build();
+        return builder;
+    }
+
+    /** As options já construídas — o que o teste inspeciona para travar a config no FIO. */
+    static OllamaChatOptions chatOptions(PlanValidationProperties properties) {
+        return optionsBuilder(properties).build();
     }
 
     @Override

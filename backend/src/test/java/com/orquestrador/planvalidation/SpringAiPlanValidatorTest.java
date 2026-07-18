@@ -7,6 +7,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -64,6 +65,35 @@ class SpringAiPlanValidatorTest {
         assertThat(verdicts.get(0).presence()).isEqualTo(Presence.INDETERMINATE);
         assertThat(verdicts.get(0).isHole()).isFalse();
         assertThat(verdicts.get(1).presence()).isEqualTo(Presence.PRESENT);
+    }
+
+    /**
+     * A config MEDIDA tem de chegar ao FIO, não só ao yml. {@code ThinkOption.toJsonValue()} é
+     * literalmente o que vai serializado no campo {@code think} da requisição do Ollama.
+     *
+     * <p>Sem esta trava, trocar {@code enableThinking()} por um no-op não quebraria teste nenhum — e
+     * a fatia degradaria em silêncio de 17/18 para 12/18 (medição: {@code
+     * docs/medicao-validador-qwen.md}), que é exatamente o tipo de regressão que nenhum unitário de
+     * comportamento pega porque o modelo é mockado.
+     */
+    @Test
+    void aConfiguracaoMedidaChegaNasOptionsDoOllama() {
+        PlanValidationProperties properties = new PlanValidationProperties();
+
+        OllamaChatOptions options = SpringAiPlanValidator.chatOptions(properties);
+
+        assertThat(options.getModel()).isEqualTo("qwen3:1.7b");
+        assertThat(options.getNumPredict()).isEqualTo(1500);
+        assertThat(options.getThinkOption().toJsonValue()).isEqualTo(Boolean.TRUE);
+    }
+
+    @Test
+    void thinkDesligadoViajaComoFalseNaRequisicao() {
+        PlanValidationProperties properties = new PlanValidationProperties();
+        properties.setThink(false);
+
+        assertThat(SpringAiPlanValidator.chatOptions(properties).getThinkOption().toJsonValue())
+                .isEqualTo(Boolean.FALSE);
     }
 
     private static PlanValidator validadorQueResponde(String... respostas) {
