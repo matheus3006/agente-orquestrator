@@ -62,6 +62,8 @@ skills, hooks, identidade, gates e output schema continuam determinísticos/verb
 derivada, com proveniência e fallback. A ativação que alterar o contexto efetivo requer uma ADR posterior com
 provider, política de dados/egress, canário, custo, kill switch e critérios de desligamento.
 
+> **[EMENDADO — R28-B (2026-07-18): a **ADR-0044** é essa ADR posterior, para UM uso escopado (validador auxiliar de planos) e atrás dos gates exigidos — registro-sombra sempre, kill-switch global e por-papel, "barrar" o run segue PROIBIDO; ela abre influência no RUN (texto empurrado ao próprio arquiteto), nunca no pacote de contexto determinístico, que permanece intocado.]**
+
 ## Consequências
 
 ### Positivas
