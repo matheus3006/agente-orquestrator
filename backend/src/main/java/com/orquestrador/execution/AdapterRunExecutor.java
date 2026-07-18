@@ -402,10 +402,11 @@ public class AdapterRunExecutor implements RunExecutor {
             skillRequestGate.handle(runContext.companyId(), runContext.agentId(), runContext.issueId(),
                     runContext.runId(), replyCollector.text());
             // Uso B / B-ii (ADR-0044): o MESMO texto do plano vai ao validador local — 2º consumidor
-            // do reply, como o gate de skill. O no-op é pulado AQUI porque o check dele só acontece
-            // mais abaixo (:406, depois do settle-de-falha): sem este guard o validador conferiria o
-            // texto vazio do run relâmpago do bug #1. O portão é assíncrono e best-effort — o que
-            // acontecer lá dentro não volta para este caminho, que é o do settle da Issue (§3.6).
+            // do reply, como o gate de skill. O no-op é pulado AQUI porque o guard de no-op do
+            // executor só vem mais abaixo, depois do settle-de-falha: sem este guard o validador
+            // conferiria o texto vazio do run relâmpago do bug #1. O portão é assíncrono e
+            // best-effort — o que acontecer lá dentro não volta para este caminho, que é o do
+            // settle da Issue (§3.6).
             if (!result.noop()) {
                 planValidationGate.handle(
                         new PlanValidationStore.Scope(runContext.companyId(), runContext.runId(),

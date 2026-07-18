@@ -72,7 +72,9 @@ public class PlanValidationGate {
         }
         try {
             workers.execute(() -> validateQuietly(local, scope, plan, checks));
-        } catch (RuntimeException naoAtravessa) { // inclui RejectedExecutionException (fila cheia)
+        } catch (RuntimeException naoAtravessa) {
+            // inclui RejectedExecutionException — que aqui só ocorre com o executor já em
+            // shutdown: a fila do single-thread executor é ilimitada e não enche
             log.debug("validador de plano não agendado — o run segue: {}", naoAtravessa.toString());
         }
     }

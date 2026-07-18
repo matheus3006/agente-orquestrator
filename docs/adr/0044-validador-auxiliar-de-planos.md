@@ -109,7 +109,7 @@ O motivo não é teórico: **foi medido acontecendo**. Com orçamento de tokens 
 (`docs/medicao-validador-qwen.md`, §Orçamento de tokens). Sem o terceiro valor, aquelas 14 teriam
 virado 14 "checagens ausentes" — **falso negativo sistemático**, empurrando ao arquiteto buracos que
 não existem. Com ele, as 14 viraram `INDETERMINADO` e **zero** virou buraco. É esta a regra que o
-teste trava (`PlanAnswerParserTest.respostaVaziaViraIndeterminadoNuncaAusente`,
+teste trava (`PlanAnswerParserTest.respostaVaziaViraIndeterminado`,
 `prosaSemVereditoViraIndeterminadoNuncaAusente`).
 
 ### 5. Os gates — todos obrigatórios, nenhum opcional
@@ -176,7 +176,9 @@ inspetor de contexto. O harness mediu o contrário do esperado
   falso positivo** contando os planos longos e realistas. No `longo-violado` respondeu **NÃO
   exatamente para as duas checagens violadas de propósito e SIM para a satisfeita** — a forma exata
   da prova §5.
-- **`think=true` é OBRIGATÓRIO** (12/18 sem → 17/18 com) — o inverso do 0.6b, onde o thinking
+- **`think=true` fica na config por direção medida — a magnitude não foi isolada.** As comparações
+  CONTROLADAS da medição: think na redação CONCRETA deu 12/18 → 14/18; a redação do seed (com
+  think) deu 14/18 → 17/18; `seed+think=false` não foi medido — o inverso do 0.6b, onde o thinking
   piorava. E **`num_predict` curto faz a resposta vir vazia** (§4): 1500 é folga de graça, porque a
   latência não cresce com orçamento generoso (o modelo para sozinho).
 - **A redação do SEED (a que o dono escreveu, no banco) venceu a reescrita "concreta"** (17/18 vs

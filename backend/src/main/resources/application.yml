@@ -67,8 +67,10 @@ orquestrador:
   # `mode` é o kill-switch GLOBAL (push→shadow desliga o empurrão sem parar a régua de precisão);
   # `push-disabled-roles` é o kill-switch POR-PAPEL. Os valores abaixo saíram de MEDIÇÃO empírica
   # (docs/medicao-validador-qwen.md): o qwen3:0.6b do inspetor de contexto é preditor CONSTANTE e
-  # NÃO serve aqui; o 1.7b com think=true mediu 26/27 (0 falso-positivo); num_predict curto faz a
-  # resposta vir VAZIA (o raciocínio come o orçamento) — 1500 é folga sem custo de latência.
+  # NÃO serve aqui; a config completa abaixo (1.7b + think=true + redação do seed) mediu 26/27
+  # (0 falso-positivo). think: direção positiva medida (12→14 na redação concreta); seed+think=false
+  # não foi medido — a magnitude do think NÃO foi isolada. num_predict curto faz a resposta vir
+  # VAZIA (o raciocínio come o orçamento) — 1500 é folga sem custo de latência.
   plan-validation:
     mode: "off"
     model: qwen3:1.7b
