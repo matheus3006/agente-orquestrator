@@ -31,9 +31,9 @@ class PreviewArtifactPersistenceTest {
         UUID agentId = UUID.randomUUID();
 
         previews.save(new PreviewArtifact(UUID.randomUUID(), companyId, issueId, agentId,
-                UUID.randomUUID(), 1, "<html>v1</html>", "hash-v1"));
+                UUID.randomUUID(), 1, "<html>v1</html>", "hash-v1", "html", "index.html"));
         previews.save(new PreviewArtifact(UUID.randomUUID(), companyId, issueId, agentId,
-                UUID.randomUUID(), 2, "<html>v2</html>", "hash-v2"));
+                UUID.randomUUID(), 2, "<html>v2</html>", "hash-v2", "html", "index.html"));
 
         List<PreviewArtifact> versoes = previews.findByCompanyIdAndIssueIdOrderByVersionDesc(companyId, issueId, PreviewArtifact.class);
 
@@ -51,9 +51,9 @@ class PreviewArtifactPersistenceTest {
         UUID agentId = UUID.randomUUID();
 
         previews.save(new PreviewArtifact(UUID.randomUUID(), companyId, issueId, agentId,
-                UUID.randomUUID(), 1, "<html>v1</html>", "hash-v1"));
+                UUID.randomUUID(), 1, "<html>v1</html>", "hash-v1", "html", "index.html"));
         previews.save(new PreviewArtifact(UUID.randomUUID(), companyId, issueId, agentId,
-                UUID.randomUUID(), 2, "<html>v2</html>", "hash-v2"));
+                UUID.randomUUID(), 2, "<html>v2</html>", "hash-v2", "html", "index.html"));
 
         assertThat(previews.findTopByCompanyIdAndIssueIdOrderByVersionDesc(companyId, issueId))
                 .hasValueSatisfying(ultima -> assertThat(ultima.getContentHash()).isEqualTo("hash-v2"));
@@ -66,10 +66,10 @@ class PreviewArtifactPersistenceTest {
         UUID agentId = UUID.randomUUID();
 
         previews.save(new PreviewArtifact(UUID.randomUUID(), companyId, issueId, agentId,
-                UUID.randomUUID(), 1, "<html>a</html>", "hash-a"));
+                UUID.randomUUID(), 1, "<html>a</html>", "hash-a", "html", "index.html"));
 
         assertThatThrownBy(() -> previews.saveAndFlush(new PreviewArtifact(UUID.randomUUID(), companyId,
-                issueId, agentId, UUID.randomUUID(), 1, "<html>b</html>", "hash-b")))
+                issueId, agentId, UUID.randomUUID(), 1, "<html>b</html>", "hash-b", "html", "index.html")))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

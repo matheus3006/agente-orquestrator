@@ -1,7 +1,17 @@
 import type { PreviewArtifactSummary } from "./api";
+import { renderMarkdownDoc } from "./markdown-doc";
 
 // Helpers puros do preview real (F.9/ADR-0021). A lista de versões chega do
 // servidor da mais nova para a mais antiga (version desc) — assumido aqui.
+
+/**
+ * O srcDoc do PreviewFrame (emenda R29-A): o TIPO persistido roteia — html entra
+ * como veio (caminho de hoje, byte a byte); markdown vira documento docs-style
+ * autocontido (convertido + sanitizado). Sempre dentro do MESMO iframe sandbox.
+ */
+export function srcDocFor(artifact: PreviewArtifactSummary, content: string): string {
+  return artifact.contentType === "markdown" ? renderMarkdownDoc(content) : content;
+}
 
 const NOVO_WINDOW_MS = 60 * 60 * 1000;
 

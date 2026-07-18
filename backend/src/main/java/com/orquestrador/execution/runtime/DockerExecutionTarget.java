@@ -82,6 +82,18 @@ public class DockerExecutionTarget implements ExecutionTarget {
     }
 
     /**
+     * argv do listador de workspace (emenda R29-A) — mesmo molde hermetico do leitor
+     * ({@link #buildReadArgs}): find raso ({@code -maxdepth 1 -type f}) devolve so arquivos
+     * regulares do diretorio-contrato, um caminho por linha. Puro e testavel sem daemon.
+     */
+    public List<String> buildListArgs(Spec spec, String relativeDir) {
+        return List.of("docker", "run", "--rm", "--network", "none",
+                "-v", spec.volumeName() + ":/workspace:ro",
+                spec.image() != null ? spec.image() : "alpine:3",
+                "find", "/workspace/" + relativeDir, "-maxdepth", "1", "-type", "f");
+    }
+
+    /**
      * argv do escritor de workspace — espelho do leitor ({@link #buildReadArgs}): hermetico POR
      * CONSTRUCAO ({@code --network none}, NENHUM volume de credencial mesmo que o Spec os carregue),
      * imagem do proprio adapter. REPLACE por subtree: remove cada contrato do volume e, quando ha
@@ -195,6 +207,36 @@ public class DockerExecutionTarget implements ExecutionTarget {
                     "leitor docker falhou (exit " + exitCode + "): " + stderr.trim());
         } catch (Exception exception) {
             return WorkspaceFileRead.failure("leitor docker falhou: " + exception.getMessage());
+        }
+    }
+
+    /**
+     * 1 container efemero de listagem por captura ({@link #buildListArgs}) — mesmo protocolo do
+     * leitor: {@code No such file} no stderr = diretorio inexistente = listagem VAZIA (nada
+     * publicado, run normal); qualquer outro exit != 0 e falha legivel. O find devolve um caminho
+     * por linha; aqui vira BASENAME (o consumidor resolve contra o diretorio que ele listou).
+     */
+    @Override
+    public WorkspaceDirListing listWorkspaceDir(Spec spec, String relativeDir) {
+        try {
+            Process listador = new ProcessBuilder(buildListArgs(spec, relativeDir)).start();
+            String stdout = new String(listador.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            String stderr = new String(listador.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            int exitCode = listador.waitFor();
+            if (exitCode != 0) {
+                if (stderr.contains("No such file or directory")) {
+                    return WorkspaceDirListing.of(List.of());
+                }
+                return WorkspaceDirListing.failure(
+                        "listador docker falhou (exit " + exitCode + "): " + stderr.trim());
+            }
+            return WorkspaceDirListing.of(stdout.lines()
+                    .filter(linha -> !linha.isBlank())
+                    .map(linha -> linha.substring(linha.lastIndexOf('/') + 1))
+                    .sorted()
+                    .toList());
+        } catch (Exception exception) {
+            return WorkspaceDirListing.failure("listador docker falhou: " + exception.getMessage());
         }
     }
 

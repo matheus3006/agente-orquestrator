@@ -116,3 +116,46 @@ pós-run) · ADR-0010 (módulo `preview` profundo; `EngineContainer`/`LineCursor
 (a Review embute a versão do run revisado — o consumidor de UI que faltava) · ADR-0013 (fetcher único,
 cards leves, polling) · ADR-0016 (o volume nomeado criou o problema; a F.9 cria o primeiro **leitor**
 de volume — hermético) · ADR-0018 (anúncio como canal de SAÍDA; CEO não captura).
+
+---
+
+## Emenda R29-A (2026-07-18): o entregável de PESQUISA entra no contrato — `*.md` com tipo persistido
+
+**Contexto.** O achado 🟡 da R27-A (medido ao vivo nas issues #4/#6/#9): agentes de pesquisa publicam
+`.orq/preview/*.md` rico e a captura ignora — `preview_artifact` tinha 0 linhas na company inteira; o
+entregável ficava invisível nas duas superfícies. Requisito do dono (verbatim, 2026-07-18): "ver na
+fila de review E nas issues finalizadas · .md vira HTML estilo Docusaurus · app = ver a tela".
+Decisões fechadas em grill com o dono (R29-A, 5 decisões numeradas no
+`HANDOFF-r29a-research-preview.md`).
+
+**O contrato de lugar ganha um segundo entregável, com precedência determinística (1 foto por run):**
+1. `index.html` presente → captura como hoje (`content_type=html`) — prototipo pronto vence anotação
+   solta; caminho do app byte a byte intacto.
+2. Senão, `index.md` presente → captura (`content_type=markdown`) — a convenção do entregável de
+   pesquisa.
+3. Senão, exatamente **um** `*.md` no diretório → captura com o nome livre (a realidade medida na
+   R27-A). **2+ `.md` sem `index.md` = falha legível `AMBIGUOUS_MARKDOWN`** (ensina a convenção),
+   nunca escolha silenciosa.
+
+**Persistência (V34).** `content_type` (`'html'|'markdown'`, check constraint) e `source_filename`
+(proveniência da foto — o fallback captura nome livre; a foto não pode ser anônima). Backfill
+verdadeiro por construção: toda linha pré-V34 nasceu do `index.html`. O tipo é **persistido, nunca
+inferido na leitura**. Metadados expostos em `PreviewArtifactMetadata`/`VersionSummary`/`lib/api.ts`.
+
+**Renderização (front).** A conversão md→HTML acontece **na apresentação**, dentro do `PreviewFrame`
+ao montar o `srcDoc` (`srcDocFor` + `renderMarkdownDoc`): micromark + GFM com `allowDangerousHtml`
+DESLIGADO — HTML cru do `.md` é **escapado por construção** (script de agente vira texto), e o iframe
+`sandbox="allow-scripts"` de sempre segue como segunda muralha. O banco guarda a foto FIEL do que o
+agente escreveu (auditoria; melhorias de estilo não exigem reprocesso). Documento docs-style
+autocontido: CSS embutido (zero fetch externo), coluna de leitura, TOC lateral gerado estaticamente
+dos h1–h3, claro/escuro via `prefers-color-scheme`. Os 4 inegociáveis da §4 seguem intactos.
+
+**Seam.** O `ExecutionTarget` ganha **`listWorkspaceDir`** (par raso do leitor da §6): basenames de
+arquivos regulares, sem recursão, sem symlink; LOCAL = `Files.list` com as guardas do leitor; DOCKER =
+container efêmero hermético `find <dir> -maxdepth 1 -type f` (mesmo molde do `cat`). Diretório
+ausente = listagem vazia (run normal). Os nomes devolvidos podem ser escolha do agente — quem os
+consome num `readWorkspaceFile` está protegido pelas guardas do próprio leitor (real-path check no
+LOCAL; argv exec-form + volume-only no DOCKER).
+
+**Ressalva.** A skill de pesquisa no catálogo (conteúdo em DB, fora deste repo) deve ensinar a
+convenção `index.md`; até lá o fallback do único `.md` cobre o comportamento observado.

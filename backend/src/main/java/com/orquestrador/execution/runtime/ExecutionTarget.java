@@ -48,6 +48,20 @@ public interface ExecutionTarget {
     WorkspaceFileRead readWorkspaceFile(Spec spec, String relativePath, long maxBytes);
 
     /**
+     * Lista os NOMES (basename) dos arquivos regulares de um diretorio do workspace — raso, sem
+     * recursao, sem subdiretorios, sem symlink (emenda R29-A da ADR-0021: e o que permite capturar
+     * o entregavel de pesquisa {@code *.md} de nome livre). O {@code relativeDir} e uma CONSTANTE
+     * do pipeline; os nomes DEVOLVIDOS podem ser escolha do agente — quem os consumir num
+     * {@code readWorkspaceFile} esta protegido pelas guardas do proprio leitor (real-path check no
+     * LOCAL; argv exec-form + volume-only no DOCKER). Diretorio inexistente = listagem VAZIA (nada
+     * publicado = run normal). Default FAIL-SAFE: alvo que nao declarar suporte responde falha
+     * legivel, nunca lista vazia fingida (molde do {@link #interrupt}: fakes de teste intactos).
+     */
+    default WorkspaceDirListing listWorkspaceDir(Spec spec, String relativeDir) {
+        return WorkspaceDirListing.failure("alvo " + type() + " nao suporta listagem de workspace");
+    }
+
+    /**
      * ESCREVE no workspace do Run os subtrees que os materializers deixaram em {@code workDir}
      * (par do leitor acima; mesmo eixo de variacao): LOCAL e IDENTIDADE (o workDir E o workspace
      * — ja esta tudo no lugar), DOCKER atravessa a arvore para o volume nomeado via container
@@ -326,6 +340,26 @@ public interface ExecutionTarget {
 
         public boolean absent() {
             return bytes == null && error == null;
+        }
+
+        public boolean failed() {
+            return error != null;
+        }
+    }
+
+    /**
+     * Resultado da listagem de diretorio do workspace — 2 estados: nomes (vazio = nada publicado,
+     * run normal) ou falha com motivo legivel. Nomes sao basenames de arquivos REGULARES, nunca
+     * caminhos: o consumidor resolve contra o diretorio-contrato que ele mesmo listou.
+     */
+    record WorkspaceDirListing(List<String> filenames, String error) {
+
+        public static WorkspaceDirListing of(List<String> filenames) {
+            return new WorkspaceDirListing(List.copyOf(filenames), null);
+        }
+
+        public static WorkspaceDirListing failure(String error) {
+            return new WorkspaceDirListing(null, error);
         }
 
         public boolean failed() {

@@ -38,8 +38,17 @@ import java.util.UUID;
 @Component
 public class PreviewArtifactCapturer {
 
-    /** O contrato de lugar: o agente anuncia ESCREVENDO aqui ({@code .orq/} = namespace do orquestrador). */
-    static final String CONTRACT_RELATIVE_PATH = ".orq/preview/index.html";
+    /** O diretorio-contrato ({@code .orq/} = namespace do orquestrador). */
+    static final String PREVIEW_DIR = ".orq/preview";
+
+    /** O contrato de lugar: o agente anuncia ESCREVENDO aqui. */
+    static final String CONTRACT_RELATIVE_PATH = PREVIEW_DIR + "/index.html";
+
+    /** O contrato do entregavel de PESQUISA (emenda R29-A): so e tentado quando index.html esta ausente. */
+    static final String MARKDOWN_CONTRACT_RELATIVE_PATH = PREVIEW_DIR + "/index.md";
+
+    static final String CONTENT_TYPE_HTML = "html";
+    static final String CONTENT_TYPE_MARKDOWN = "markdown";
 
     /** Cap do artefato (protege banco e srcdoc). Estourou = falha legivel; NUNCA trunca. */
     static final long MAX_CONTENT_BYTES = 2 * 1024 * 1024;
@@ -94,10 +103,15 @@ public class PreviewArtifactCapturer {
                 workspaces.volumeName(runContext.companyId(), runContext.agentId(), runContext.issueId()),
                 List.of());
 
-        ExecutionTarget.WorkspaceFileRead read =
-                target.readWorkspaceFile(readerSpec, CONTRACT_RELATIVE_PATH, MAX_CONTENT_BYTES);
+        Publicacao publicacao = lerPublicacao(target, readerSpec, runContext);
+        if (publicacao == null) {
+            return; // nada publicado (run normal) ou falha ja registrada legivel
+        }
+        ExecutionTarget.WorkspaceFileRead read = publicacao.read();
+        String contentType = publicacao.contentType();
+        String sourceFilename = publicacao.sourceFilename();
         if (read.absent()) {
-            return; // nada publicado = run normal
+            return; // corrida inocua: o arquivo listado sumiu antes da leitura — nada publicado
         }
         if (read.failed()) {
             log.warn("captura de preview falhou (run {}, issue {}): {}",
@@ -131,13 +145,68 @@ public class PreviewArtifactCapturer {
         }
 
         String contentHash = ApiKeyHasher.sha256Hex(content);
+        Foto foto = new Foto(content, contentHash, contentType, sourceFilename);
         PreviewArtifact ultima = previews
                 .findTopByCompanyIdAndIssueIdOrderByVersionDesc(runContext.companyId(), runContext.issueId())
                 .orElse(null);
         if (ultima != null && ultima.getContentHash().equals(contentHash)) {
             return; // o workspace persiste entre runs: mesma foto nao vira versao nova (dedup por hash)
         }
-        persistVersion(runContext, content, contentHash, ultima != null ? ultima.getVersion() + 1 : 1);
+        persistVersion(runContext, foto, ultima != null ? ultima.getVersion() + 1 : 1);
+    }
+
+    /** A foto pronta para persistir: conteudo + hash + tipo + proveniencia viajam JUNTOS. */
+    private record Foto(String content, String contentHash, String contentType, String sourceFilename) {
+    }
+
+    /** O que o run publicou no contrato de lugar: a leitura + o tipo + a proveniencia. */
+    private record Publicacao(ExecutionTarget.WorkspaceFileRead read, String contentType,
+                              String sourceFilename) {
+    }
+
+    /**
+     * A precedencia do contrato (grill R29-A): 1) {@code index.html} — prototipo pronto vence
+     * anotacao solta, caminho do app byte a byte intacto; 2) {@code index.md} — a convencao do
+     * entregavel de pesquisa; 3) o UNICO {@code *.md} do diretorio — a realidade medida na R27-A
+     * (nome livre); 2+ sem convencao = ambiguidade LEGIVEL ({@code AMBIGUOUS_MARKDOWN}), nunca
+     * escolha silenciosa. {@code null} = nada publicado ou falha ja registrada.
+     */
+    private Publicacao lerPublicacao(ExecutionTarget target, ExecutionTarget.Spec readerSpec,
+                                     RunContext runContext) {
+        ExecutionTarget.WorkspaceFileRead html =
+                target.readWorkspaceFile(readerSpec, CONTRACT_RELATIVE_PATH, MAX_CONTENT_BYTES);
+        if (!html.absent()) {
+            return new Publicacao(html, CONTENT_TYPE_HTML, "index.html");
+        }
+        ExecutionTarget.WorkspaceFileRead indexMd =
+                target.readWorkspaceFile(readerSpec, MARKDOWN_CONTRACT_RELATIVE_PATH, MAX_CONTENT_BYTES);
+        if (!indexMd.absent()) {
+            return new Publicacao(indexMd, CONTENT_TYPE_MARKDOWN, "index.md");
+        }
+        ExecutionTarget.WorkspaceDirListing listagem = target.listWorkspaceDir(readerSpec, PREVIEW_DIR);
+        if (listagem.failed()) {
+            log.warn("captura de preview falhou (run {}, issue {}): {}",
+                    runContext.runId(), runContext.issueId(), listagem.error());
+            recordFailure(runContext, "READ_FAILED");
+            return null;
+        }
+        List<String> markdowns = listagem.filenames().stream()
+                .filter(nome -> nome.endsWith(".md"))
+                .toList();
+        if (markdowns.isEmpty()) {
+            return null; // nada publicado = run normal
+        }
+        if (markdowns.size() > 1) {
+            log.warn("captura de preview recusada (run {}, issue {}): {} arquivos .md sem index.md — "
+                            + "convencione .orq/preview/index.md ({})",
+                    runContext.runId(), runContext.issueId(), markdowns.size(), markdowns);
+            recordFailure(runContext, "AMBIGUOUS_MARKDOWN");
+            return null;
+        }
+        String nome = markdowns.get(0);
+        return new Publicacao(
+                target.readWorkspaceFile(readerSpec, PREVIEW_DIR + "/" + nome, MAX_CONTENT_BYTES),
+                CONTENT_TYPE_MARKDOWN, nome);
     }
 
     /**
@@ -146,17 +215,17 @@ public class PreviewArtifactCapturer {
      * cobre o zumbi do lease reaper re-executando o MESMO runId noutro no (o execution_lock e
      * idempotente por runId, ADR-0005/0011): rele a ultima versao e tenta UMA vez.
      */
-    private void persistVersion(RunContext runContext, String content, String contentHash, int version) {
+    private void persistVersion(RunContext runContext, Foto foto, int version) {
         try {
             try {
-                recordCaptured(runContext, saveVersion(runContext, content, contentHash, version));
+                recordCaptured(runContext, saveVersion(runContext, foto, version));
             } catch (DataIntegrityViolationException conflito) {
                 PreviewArtifact atual = previews.findTopByCompanyIdAndIssueIdOrderByVersionDesc(
                         runContext.companyId(), runContext.issueId()).orElse(null);
-                if (atual != null && atual.getContentHash().equals(contentHash)) {
+                if (atual != null && atual.getContentHash().equals(foto.contentHash())) {
                     return; // o outro lado ja gravou a MESMA foto — dedup tardio, nada a fazer
                 }
-                recordCaptured(runContext, saveVersion(runContext, content, contentHash,
+                recordCaptured(runContext, saveVersion(runContext, foto,
                         atual != null ? atual.getVersion() + 1 : 1));
             }
         } catch (RuntimeException exception) {
@@ -166,11 +235,10 @@ public class PreviewArtifactCapturer {
         }
     }
 
-    private PreviewArtifact saveVersion(RunContext runContext, String content, String contentHash,
-                                        int version) {
+    private PreviewArtifact saveVersion(RunContext runContext, Foto foto, int version) {
         return previews.save(new PreviewArtifact(UUID.randomUUID(), runContext.companyId(),
-                runContext.issueId(), runContext.agentId(), runContext.runId(), version, content,
-                contentHash));
+                runContext.issueId(), runContext.agentId(), runContext.runId(), version,
+                foto.content(), foto.contentHash(), foto.contentType(), foto.sourceFilename()));
     }
 
     /** O artefato JA esta persistido: falha do evento nao pode virar PREVIEW_CAPTURE_FAILED. */

@@ -62,10 +62,14 @@ class PreviewArtifactCapturerTest {
     }
 
     private void publica(Cenario cenario, String html) throws Exception {
-        Path contrato = workspaces.resolve(cenario.companyId(), cenario.agentId(), cenario.issueId())
-                .resolve(".orq/preview/index.html");
-        Files.createDirectories(contrato.getParent());
-        Files.writeString(contrato, html);
+        publicaArquivo(cenario, "index.html", html);
+    }
+
+    private void publicaArquivo(Cenario cenario, String nome, String conteudo) throws Exception {
+        Path arquivo = workspaces.resolve(cenario.companyId(), cenario.agentId(), cenario.issueId())
+                .resolve(".orq/preview/" + nome);
+        Files.createDirectories(arquivo.getParent());
+        Files.writeString(arquivo, conteudo);
     }
 
     private RunContext runDa(Cenario cenario) {
@@ -89,6 +93,107 @@ class PreviewArtifactCapturerTest {
         assertThat(artefato.getContentHash()).isEqualTo(HASH_V1);
         assertThat(artefato.getRunId()).isEqualTo(run.runId());
         assertThat(artefato.getAgentId()).isEqualTo(cenario.agentId());
+    }
+
+    @Test
+    void indexHtmlCapturadoCarregaTipoHtmlEProveniencia() throws Exception {
+        Cenario cenario = cenarioLocal();
+        publica(cenario, "<!doctype html><h1>preview v1</h1>");
+
+        capturer.captureIfPublished(runDa(cenario));
+
+        PreviewArtifact artefato = previews.findByCompanyIdAndIssueIdOrderByVersionDesc(
+                cenario.companyId(), cenario.issueId(), PreviewArtifact.class).get(0);
+        assertThat(artefato.getContentType()).isEqualTo("html");
+        assertThat(artefato.getSourceFilename()).isEqualTo("index.html");
+    }
+
+    @Test
+    void pesquisaIndexMdEhCapturadaComTipoMarkdown() throws Exception {
+        // O entregável de PESQUISA (R27-A): sem index.html, o .md convencionado vira a foto.
+        Cenario cenario = cenarioLocal();
+        publicaArquivo(cenario, "index.md", "# Elasticidade\n\n| corte | perda |\n|---|---|\n| 10% | 2% |\n");
+        RunContext run = runDa(cenario);
+
+        capturer.captureIfPublished(run);
+
+        List<PreviewArtifact> versoes = previews.findByCompanyIdAndIssueIdOrderByVersionDesc(
+                cenario.companyId(), cenario.issueId(), PreviewArtifact.class);
+        assertThat(versoes).hasSize(1);
+        PreviewArtifact artefato = versoes.get(0);
+        assertThat(artefato.getVersion()).isEqualTo(1);
+        assertThat(artefato.getContentType()).isEqualTo("markdown");
+        assertThat(artefato.getSourceFilename()).isEqualTo("index.md");
+        assertThat(artefato.getContent()).startsWith("# Elasticidade");
+        assertThat(artefato.getRunId()).isEqualTo(run.runId());
+    }
+
+    @Test
+    void indexHtmlVenceQuandoCoexisteComMd() throws Exception {
+        // Decisão 2 do grill R29-A: protótipo pronto vence anotação solta — o ramo .md
+        // só roda quando index.html está AUSENTE.
+        Cenario cenario = cenarioLocal();
+        publica(cenario, "<!doctype html><h1>app</h1>");
+        publicaArquivo(cenario, "notas.md", "# rascunho");
+
+        capturer.captureIfPublished(runDa(cenario));
+
+        List<PreviewArtifact> versoes = previews.findByCompanyIdAndIssueIdOrderByVersionDesc(
+                cenario.companyId(), cenario.issueId(), PreviewArtifact.class);
+        assertThat(versoes).hasSize(1);
+        assertThat(versoes.get(0).getContentType()).isEqualTo("html");
+        assertThat(versoes.get(0).getSourceFilename()).isEqualTo("index.html");
+    }
+
+    @Test
+    void pesquisaMdDeNomeLivreEhCapturadaQuandoEhAUnica() throws Exception {
+        // A realidade medida na R27-A: os agentes de pesquisa escreveram 1 .md de NOME LIVRE
+        // (cursor-pricing.md, elasticidade.md) — sem index.md, o UNICO .md do diretorio e a foto.
+        Cenario cenario = cenarioLocal();
+        publicaArquivo(cenario, "elasticidade.md", "# Elasticidade de preco\n\nresultado…");
+
+        capturer.captureIfPublished(runDa(cenario));
+
+        List<PreviewArtifact> versoes = previews.findByCompanyIdAndIssueIdOrderByVersionDesc(
+                cenario.companyId(), cenario.issueId(), PreviewArtifact.class);
+        assertThat(versoes).hasSize(1);
+        assertThat(versoes.get(0).getContentType()).isEqualTo("markdown");
+        assertThat(versoes.get(0).getSourceFilename()).isEqualTo("elasticidade.md");
+        assertThat(versoes.get(0).getContent()).startsWith("# Elasticidade");
+    }
+
+    @Test
+    void doisMdSemConvencaoEFalhaLegivelNadaPersistido() throws Exception {
+        // Decisao 1 do grill R29-A: 2+ .md sem index.md = ambiguidade — falha LEGIVEL que
+        // ensina a convencao, nunca escolha silenciosa de um dos arquivos.
+        Cenario cenario = cenarioLocal();
+        publicaArquivo(cenario, "cursor-pricing.md", "# A");
+        publicaArquivo(cenario, "ci-digest.md", "# B");
+
+        capturer.captureIfPublished(runDa(cenario));
+
+        assertThat(previews.findByCompanyIdAndIssueIdOrderByVersionDesc(
+                cenario.companyId(), cenario.issueId(), PreviewArtifact.class)).isEmpty();
+        List<ActivityLog> eventos = activity.findByCompanyIdOrderByCreatedAtDesc(cenario.companyId());
+        assertThat(eventos).anySatisfy(evento -> {
+            assertThat(evento.getAction()).isEqualTo("PREVIEW_CAPTURE_FAILED");
+            assertThat(evento.getDetail()).contains("AMBIGUOUS_MARKDOWN");
+        });
+    }
+
+    @Test
+    void indexMdVenceOutrosMdQuandoCoexistem() throws Exception {
+        // index.md e a convencao: presente, ele vence — os demais .md sao anotacao solta.
+        Cenario cenario = cenarioLocal();
+        publicaArquivo(cenario, "index.md", "# Entregavel");
+        publicaArquivo(cenario, "rascunho.md", "# rascunho");
+
+        capturer.captureIfPublished(runDa(cenario));
+
+        List<PreviewArtifact> versoes = previews.findByCompanyIdAndIssueIdOrderByVersionDesc(
+                cenario.companyId(), cenario.issueId(), PreviewArtifact.class);
+        assertThat(versoes).hasSize(1);
+        assertThat(versoes.get(0).getSourceFilename()).isEqualTo("index.md");
     }
 
     @Test

@@ -75,6 +75,37 @@ public class LocalExecutionTarget implements ExecutionTarget {
     }
 
     /**
+     * Espelho raso do leitor acima (emenda R29-A): mesmas guardas (real-path check do diretorio,
+     * NOFOLLOW por entrada), devolvendo so BASENAMES de arquivos regulares — symlink e
+     * subdiretorio ficam de fora (um symlink que interessasse seria recusado pelo leitor depois;
+     * aqui ele nem entra na contagem de ambiguidade).
+     */
+    @Override
+    public WorkspaceDirListing listWorkspaceDir(Spec spec, String relativeDir) {
+        try {
+            Path workspaceReal = spec.workDir().toRealPath();
+            Path dir = spec.workDir().resolve(relativeDir);
+            if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) {
+                return WorkspaceDirListing.of(List.of()); // nada publicado = run normal
+            }
+            if (!dir.toRealPath().startsWith(workspaceReal)) {
+                return WorkspaceDirListing.failure(
+                        "listagem recusada: " + relativeDir + " escapa do workspace");
+            }
+            try (Stream<Path> entradas = Files.list(dir)) {
+                return WorkspaceDirListing.of(entradas
+                        .filter(entrada -> Files.isRegularFile(entrada, LinkOption.NOFOLLOW_LINKS))
+                        .map(entrada -> entrada.getFileName().toString())
+                        .sorted()
+                        .toList());
+            }
+        } catch (IOException exception) {
+            return WorkspaceDirListing.failure(
+                    "falha listando " + relativeDir + ": " + exception.getMessage());
+        }
+    }
+
+    /**
      * IDENTIDADE: no LOCAL o workDir E o workspace do Run — os materializers ja escreveram no
      * lugar; nao ha travessia a fazer. (No DOCKER e onde a arvore atravessa para o volume.)
      */

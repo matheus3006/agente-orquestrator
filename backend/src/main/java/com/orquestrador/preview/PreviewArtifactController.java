@@ -68,12 +68,13 @@ public class PreviewArtifactController {
 
     /** Metadados de uma versao — tudo MENOS o content (que sai so pelo endpoint dedicado). */
     public record VersionSummary(UUID id, int version, UUID runId, UUID agentId, String contentHash,
-                                 int sizeBytes, Instant createdAt) {
+                                 String contentType, String sourceFilename, int sizeBytes,
+                                 Instant createdAt) {
 
         static VersionSummary from(PreviewArtifactMetadata artefato) {
             return new VersionSummary(artefato.getId(), artefato.getVersion(), artefato.getRunId(),
-                    artefato.getAgentId(), artefato.getContentHash(), artefato.getSizeBytes(),
-                    artefato.getCreatedAt());
+                    artefato.getAgentId(), artefato.getContentHash(), artefato.getContentType(),
+                    artefato.getSourceFilename(), artefato.getSizeBytes(), artefato.getCreatedAt());
         }
     }
 }

@@ -419,7 +419,7 @@ class RowRetentionReaperTest {
     private UUID saveArtifact(UUID companyId, UUID issueId, UUID agentId, int version, UUID runId) {
         UUID id = UUID.randomUUID();
         artifacts.save(new PreviewArtifact(id, companyId, issueId, agentId, runId, version,
-                "<html>v" + version + "</html>", "art-" + id));
+                "<html>v" + version + "</html>", "art-" + id, "html", "index.html"));
         return id;
     }
 
