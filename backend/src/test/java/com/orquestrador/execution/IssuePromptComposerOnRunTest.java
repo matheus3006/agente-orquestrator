@@ -8,6 +8,8 @@ import com.orquestrador.execution.runtime.WorkspaceResolver;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.roletemplate.RoleTemplateVersion;
+import com.orquestrador.org.roletemplate.RoleTemplateVersionRepository;
 import com.orquestrador.work.issue.IssueConversaTestSupport;
 import com.orquestrador.work.issue.IssueRepository;
 import com.orquestrador.work.issue.IssueService;
@@ -57,7 +59,21 @@ class IssuePromptComposerOnRunTest {
     @Autowired
     private WorkspaceResolver workspaces;
     @Autowired
+    private RoleTemplateVersionRepository versions;
+    @Autowired
     private PromptProbe probe;
+
+    /** As 3 checagens nível-plano que a V32 semeia no papel arquiteto (mesmo shape, mesmo texto). */
+    private static final String CHECKS_ARQUITETO =
+            "[{\"id\":\"seam\",\"text\":\"O plano aponta o seam/encaixe (arquivo/módulo) que vai tocar?\"},"
+            + "{\"id\":\"file-line\",\"text\":\"Cada tarefa/passo cita arquivo:linha concreto?\"},"
+            + "{\"id\":\"test\",\"text\":\"O plano tem seção ou menção explícita de teste?\"}]";
+
+    private UUID pinnedVersion(String checksJson) {
+        return versions.save(new RoleTemplateVersion(UUID.randomUUID(), UUID.randomUUID(), 1,
+                "claude-code", "opus", "ultracode", "[\"tdd\"]", "LIDERANCA", "inicial", "molde",
+                null, null, "APPROVED", checksJson)).getId();
+    }
 
     @org.junit.jupiter.api.BeforeEach
     void limpaCapturas() {
@@ -188,6 +204,69 @@ class IssuePromptComposerOnRunTest {
         Path briefing = workspaces.resolve(companyId, agentId, issueId).resolve("briefing.txt");
         assertThat(Files.readString(briefing)).contains("#1");
         assertThat(Files.readString(briefing)).contains("Rodar o script");
+    }
+
+    @Test
+    void arquitetoComVersaoPinadaComChecks_recebeSecaoDeChecagensNoBriefing() {
+        // Uso B / B-i (docs §2/§4.b): o arquiteto vivo está pinado numa versão de molde COM checks (o
+        // mesmo shape que a V32 semeia). O briefing dele deve EXIBIR `## Checagens` com os `text` — ele
+        // já sabe, ao criar o plano, o que o plano precisa ter. Gate = "tem checks" (auto-escopa: nenhum
+        // hard-code de "arquiteto"; só o molde arquiteto é semeado com checks).
+        UUID companyId = companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8),
+                UUID.randomUUID()).getId();
+        Agent agent = new Agent(UUID.randomUUID(), companyId, "Arquiteto", "architect", null);
+        agent.configureRuntime("prompt-probe", null, "LOCAL");
+        agent.pinTemplateVersion(pinnedVersion(CHECKS_ARQUITETO));
+        UUID agentId = agents.save(agent).getId();
+        UUID issueId = issues.create(companyId, "Precificar o produto", "descricao").getId();
+
+        wakeups.enqueue(companyId, agentId, issueId, "trabalhar");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(probe.captures).hasSize(1);
+        String briefing = probe.captures.get(0).command();
+        assertThat(briefing).contains("## Checagens");
+        assertThat(briefing).contains("O plano aponta o seam/encaixe (arquivo/módulo) que vai tocar?");
+        assertThat(briefing).contains("Cada tarefa/passo cita arquivo:linha concreto?");
+        assertThat(briefing).contains("O plano tem seção ou menção explícita de teste?");
+        // A seção mora ENTRE a estratégia e o Report (a ordem que o compositor promete).
+        assertThat(briefing.indexOf("## Checagens")).isLessThan(briefing.indexOf("## Report"));
+    }
+
+    @Test
+    void agenteSemPin_naoRecebeSecaoDeChecagens() {
+        // Gate = "tem checks": agente sem pin (pinnedTemplateVersionId null) → resolve vazio → sem seção.
+        UUID companyId = companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8),
+                UUID.randomUUID()).getId();
+        Agent agent = new Agent(UUID.randomUUID(), companyId, "Executor", "executor", null);
+        agent.configureRuntime("prompt-probe", null, "LOCAL");
+        UUID agentId = agents.save(agent).getId(); // sem pinTemplateVersion
+        UUID issueId = issues.create(companyId, "Rodar tarefa", "descricao").getId();
+
+        wakeups.enqueue(companyId, agentId, issueId, "trabalhar");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(probe.captures).hasSize(1);
+        assertThat(probe.captures.get(0).command()).doesNotContain("## Checagens");
+    }
+
+    @Test
+    void versaoPinadaSemChecks_naoRecebeSecaoDeChecagens() {
+        // Auto-escopo por dado: papel não-arquiteto pina versão SEM checks (null) → resolve vazio → sem
+        // seção. Prova que o gate não é hard-code de "arquiteto" — é a presença de checks na versão.
+        UUID companyId = companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8),
+                UUID.randomUUID()).getId();
+        Agent agent = new Agent(UUID.randomUUID(), companyId, "Executor", "executor", null);
+        agent.configureRuntime("prompt-probe", null, "LOCAL");
+        agent.pinTemplateVersion(pinnedVersion(null));
+        UUID agentId = agents.save(agent).getId();
+        UUID issueId = issues.create(companyId, "Rodar tarefa", "descricao").getId();
+
+        wakeups.enqueue(companyId, agentId, issueId, "trabalhar");
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(probe.captures).hasSize(1);
+        assertThat(probe.captures.get(0).command()).doesNotContain("## Checagens");
     }
 
     @TestConfiguration

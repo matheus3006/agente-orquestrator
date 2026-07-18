@@ -45,8 +45,11 @@ public class IssuePromptComposer {
     /**
      * O briefing por-run da issue. {@code target}/{@code engineImage} são a plumbing do leitor de
      * workspace (a estratégia vive no workspace da CONVERSA — outro chão, mesmo seam do handoff).
+     * {@code planChecks} são as CHECAGENS que o molde do papel pinado declara (Uso B / B-i, docs
+     * §2/§4.b) — vazio (papel sem checks / agente sem pin) omite a seção; o compositor segue role-BLIND,
+     * é o caller quem resolve a lista pela versão pinada.
      */
-    public String compose(Issue issue, ExecutionTarget target, String engineImage) {
+    public String compose(Issue issue, ExecutionTarget target, String engineImage, List<String> planChecks) {
         StringBuilder prompt = new StringBuilder()
                 .append("# Issue #").append(issue.getSeq()).append(" — ").append(issue.getTitle())
                 .append("\n\n")
@@ -59,10 +62,30 @@ public class IssuePromptComposer {
                         : "(sem descrição — o título é a instrução)")
                 .append("\n\n");
         appendEstrategia(prompt, issue, target, engineImage);
+        appendChecks(prompt, planChecks);
         prompt.append("## Report (a sua saída final)\n")
                 .append("A sua SAÍDA FINAL é o report deste run: termine com um resumo curto do que"
                         + " fez, o que produziu no workspace e como verificar.\n");
         return prompt.toString();
+    }
+
+    /**
+     * As CHECAGENS que o plano deve satisfazer (Uso B / B-i, docs §2/§4.b): a MESMA lista que o molde do
+     * papel declara — o arquiteto já vê, ao planejar, o que o plano precisa ter (dupla função com o
+     * validador da B-ii). Gate = "tem checks": lista vazia (papel sem molde de checagens / agente sem
+     * pin) omite a seção — auto-escopa ao arquiteto sem hard-code de "arquiteto".
+     */
+    private void appendChecks(StringBuilder prompt, List<String> planChecks) {
+        if (planChecks == null || planChecks.isEmpty()) {
+            return;
+        }
+        prompt.append("## Checagens que seu plano deve satisfazer\n")
+                .append("Antes de finalizar, garanta que o seu plano cumpre CADA item abaixo (são"
+                        + " asserções factuais — dá pra conferir olhando o texto do plano):\n");
+        for (String check : planChecks) {
+            prompt.append("- ").append(check).append("\n");
+        }
+        prompt.append("\n");
     }
 
     /**

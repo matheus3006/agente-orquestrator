@@ -118,15 +118,32 @@ public class RoleTemplateService {
                 parseSkillKeys(version.getSkillset()), version.getReportsToDefault());
     }
 
+    /**
+     * As CHECAGENS pontuais que a versão do molde declara (Uso B, docs §2/§4.b) — a resolução que o
+     * briefing consome (por-papel, via pin) e que o validador da B-ii herdará. A mecânica do jsonb não
+     * sai deste módulo (espelha {@link #skillKeys}). Fail-soft: versão sumida (pin obsoleto) ou sem
+     * checks resolve VAZIO — nunca derruba o run (mesmo espírito do drift-badge, {@code AgentController}).
+     */
+    @Transactional(readOnly = true)
+    public List<Check> checksForVersion(UUID versionId) {
+        return versions.findById(versionId)
+                .map(version -> parseChecks(version.getChecks()))
+                .orElse(List.of());
+    }
+
     private RoleTemplateVersion appendVersion(UUID templateId, int version, Preset preset, String changeType,
                                               String changeDescription, UUID proposedBy, UUID approvedBy) {
         // Propose-then-commit LIGADO (R10-A, ADR-0017 emendada): a fila é a APPROVAL, não a Review
         // (review V11 exige issue_id/run_id NOT NULL — proposta de molde não tem nenhum; G2). A versão
         // nasce sempre APPROVED (o "rascunho" vive na Approval PENDING, não numa linha DRAFT — espelha
         // HIRE_AGENT); proposedBy/approvedBy DISTINTOS quando o CEO propõe e o dono aprova.
+        // checks NÃO vem do Preset (metadado de briefing por-versão, não snapshot de hire): toda versão
+        // criada pelo service nasce com checklist VAZIO. As checks do papel arquiteto entram por SEED +
+        // backfill da V32 (dado de sistema), nunca por createTemplate/newVersion (Uso B, docs §2/§4.b).
         return versions.save(new RoleTemplateVersion(UUID.randomUUID(), templateId, version,
                 preset.adapterType(), preset.model(), preset.effort(), writeSkillKeys(preset.skillKeys()),
-                preset.reportsToDefault(), changeType, changeDescription, proposedBy, approvedBy, "APPROVED"));
+                preset.reportsToDefault(), changeType, changeDescription, proposedBy, approvedBy, "APPROVED",
+                writeChecks(List.of())));
     }
 
     private String writeSkillKeys(List<String> skillKeys) {
@@ -149,11 +166,39 @@ public class RoleTemplateService {
         }
     }
 
+    private String writeChecks(List<Check> checks) {
+        try {
+            return objectMapper.writeValueAsString(checks == null ? List.of() : checks);
+        } catch (Exception serializationFailed) {
+            throw new IllegalArgumentException("checks invalido", serializationFailed);
+        }
+    }
+
+    private List<Check> parseChecks(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Check>>() {
+            });
+        } catch (Exception malformed) {
+            return List.of(); // degrada em vez de derrubar o briefing (mesmo espírito do parseSkillKeys)
+        }
+    }
+
     /**
      * O preset reutilizável de um molde: motor como TRIO + refs de skill do catálogo GLOBAL +
      * {@code reportsToDefault} (tipo/role sugerido, texto — a cadeia liga em T.2, não é agent id).
      */
     public record Preset(String adapterType, String model, String effort,
                          List<String> skillKeys, String reportsToDefault) {
+    }
+
+    /**
+     * Uma checagem pontual declarada pelo molde do papel (Uso B, docs §2/§4.b): asserção FACTUAL que dá
+     * pra responder olhando o texto do plano, sem opinar. {@code id} = chave estável (o validador da B-ii
+     * reporta por ele); {@code text} = a pergunta prosa-amigável que entra no briefing do arquiteto.
+     */
+    public record Check(String id, String text) {
     }
 }

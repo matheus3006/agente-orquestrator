@@ -20,6 +20,7 @@ import com.orquestrador.memory.MemoryAudience;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
+import com.orquestrador.org.roletemplate.RoleTemplateService;
 import com.orquestrador.preview.PreviewArtifactCapturer;
 import com.orquestrador.preview.server.PreviewServerManifestRegistrar;
 import com.orquestrador.preview.server.PreviewServerSupervisor;
@@ -77,6 +78,7 @@ public class AdapterRunExecutor implements RunExecutor {
     private final KnowAllMcpBridge mcpBridge;
     private final McpCallbackAddress mcpAddress;
     private final IssuePromptComposer issueComposer;
+    private final RoleTemplateService roleTemplates;
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
@@ -87,7 +89,8 @@ public class AdapterRunExecutor implements RunExecutor {
                               PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
                               ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate,
                               KnowAllMcpMaterializer mcpMaterializer, KnowAllMcpBridge mcpBridge,
-                              McpCallbackAddress mcpAddress, IssuePromptComposer issueComposer) {
+                              McpCallbackAddress mcpAddress, IssuePromptComposer issueComposer,
+                              RoleTemplateService roleTemplates) {
         this.agents = agents;
         this.issues = issues;
         this.workspaces = workspaces;
@@ -110,6 +113,7 @@ public class AdapterRunExecutor implements RunExecutor {
         this.mcpBridge = mcpBridge;
         this.mcpAddress = mcpAddress;
         this.issueComposer = issueComposer;
+        this.roleTemplates = roleTemplates;
     }
 
     @Override
@@ -131,6 +135,23 @@ public class AdapterRunExecutor implements RunExecutor {
             issues.settleAfterRun(runContext.companyId(), runContext.issueId(), runContext.runId(), outcome);
         }
         return outcome;
+    }
+
+    /**
+     * As CHECAGENS (texto) que o plano do agente deve satisfazer, resolvidas pela versão de molde PINADA
+     * (Uso B / B-i, docs §2/§4.b): agente sem pin → vazio → o compositor omite a seção (gate = "tem
+     * checks"; auto-escopa ao arquiteto sem hard-code). Hop inline como o drift-badge de
+     * {@code AgentController}; a mecânica do jsonb fica no {@code RoleTemplateService} (fail-soft: pin
+     * obsoleto resolve vazio, nunca derruba o run).
+     */
+    private List<String> resolvePlanChecks(Agent agent) {
+        UUID pinnedVersionId = agent.getPinnedTemplateVersionId();
+        if (pinnedVersionId == null) {
+            return List.of();
+        }
+        return roleTemplates.checksForVersion(pinnedVersionId).stream()
+                .map(RoleTemplateService.Check::text)
+                .toList();
     }
 
     private RunOutcome runToOutcome(RunContext runContext) {
@@ -206,7 +227,8 @@ public class AdapterRunExecutor implements RunExecutor {
         String prompt = turno != null
                 ? turno.prompt()
                 : issueDoRun != null
-                        ? issueComposer.compose(issueDoRun, target, adapter.engineContainer().image())
+                        ? issueComposer.compose(issueDoRun, target, adapter.engineContainer().image(),
+                                resolvePlanChecks(agent))
                         : null;
         String outputSchema = turno != null ? turno.outputSchema() : null;
         String volumeName = conversaCompartilhada != null
