@@ -51,6 +51,13 @@ public class RoleTemplateVersion {
     @JdbcTypeCode(SqlTypes.JSON)
     private String skillset;
 
+    // Uso B (validador de planos, docs §2/§4.b): as CHECAGENS pontuais que o molde do papel declara —
+    // metadado de briefing POR-VERSÃO (dupla função: entra no briefing e alimentará o validador B-ii).
+    // NÃO é snapshot de hire → fora do Preset. Espelho EXATO do skillset (jsonb; (de)serializado no
+    // RoleTemplateService). Cada check = {"id": string, "text": string} (V32 cria a coluna + backfill v1).
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String checks;
+
     @Column(name = "reports_to_default", columnDefinition = "text")
     private String reportsToDefault;
 
@@ -77,7 +84,8 @@ public class RoleTemplateVersion {
 
     public RoleTemplateVersion(UUID id, UUID roleTemplateId, int version, String adapterType, String model,
                                String effort, String skillset, String reportsToDefault, String changeType,
-                               String changeDescription, UUID proposedBy, UUID approvedBy, String status) {
+                               String changeDescription, UUID proposedBy, UUID approvedBy, String status,
+                               String checks) {
         this.id = id;
         this.roleTemplateId = roleTemplateId;
         this.version = version;
@@ -91,6 +99,7 @@ public class RoleTemplateVersion {
         this.proposedBy = proposedBy;
         this.approvedBy = approvedBy;
         this.status = status;
+        this.checks = checks;
         this.createdAt = Instant.now();
     }
 
@@ -120,6 +129,10 @@ public class RoleTemplateVersion {
 
     public String getSkillset() {
         return skillset;
+    }
+
+    public String getChecks() {
+        return checks;
     }
 
     public String getReportsToDefault() {

@@ -162,4 +162,54 @@ class RoleTemplateServiceTest {
         assertThat(templates.findById(qa.getId()).orElseThrow().getTipoFuncao()).isEqualTo(TipoFuncao.REVISAO_QA);
         assertThat(templates.findById(suporte.getId()).orElseThrow().getTipoFuncao()).isEqualTo(TipoFuncao.SUPORTE);
     }
+
+    @Test
+    void checksDeUmaVersaoRoundTripPelaColuna_resolvidosComoListaDeChecks() {
+        // `checks` é metadado de briefing POR-VERSÃO (Uso B, docs §2/§4.b) — FORA do Preset, escrito
+        // direto na coluna jsonb nova. Round-trip SEMÂNTICO (o json do H2/pg pode reformatar o cru) pelo
+        // seam do módulo: guarda a lista {id,text} e resolve de volta a MESMA lista. Prova a coluna nova
+        // no H2 create-drop; o pg (jsonb real) é provado no /verify (Postgres, mesma coluna).
+        UUID templateId = UUID.randomUUID();
+        String checksJson = "[{\"id\":\"seam\",\"text\":\"aponta o encaixe/seam?\"},"
+                + "{\"id\":\"file-line\",\"text\":\"cita arquivo:linha?\"}]";
+        RoleTemplateVersion versao = versions.save(new RoleTemplateVersion(
+                UUID.randomUUID(), templateId, 1, "claude-code", "opus", "ultracode",
+                "[\"tdd\"]", "LIDERANCA", "inicial", "com checks", null, null, "APPROVED", checksJson));
+
+        assertThat(service.checksForVersion(versao.getId())).containsExactly(
+                new RoleTemplateService.Check("seam", "aponta o encaixe/seam?"),
+                new RoleTemplateService.Check("file-line", "cita arquivo:linha?"));
+    }
+
+    @Test
+    void versaoSemChecks_resolveListaVazia() {
+        // Fail-soft: molde sem checks (todo papel que não o arquiteto; e o arquiteto ANTES do backfill)
+        // resolve vazio — o gate do briefing ("tem checks?") auto-escopa sem hard-code de "arquiteto".
+        UUID templateId = UUID.randomUUID();
+        RoleTemplateVersion semChecks = versions.save(new RoleTemplateVersion(
+                UUID.randomUUID(), templateId, 1, "claude-code", "sonnet", "high",
+                "[\"tdd\"]", "LIDERANCA", "inicial", "sem checks", null, null, "APPROVED", null));
+
+        assertThat(service.checksForVersion(semChecks.getId())).isEmpty();
+    }
+
+    @Test
+    void versaoInexistente_resolveListaVazia_naoDerrubaOBriefing() {
+        // Pin obsoleto (versão sumida) NÃO pode derrubar o run — mesmo fail-soft do drift-badge
+        // (AgentController:132 faz .orElse(null)). Resolve vazio → briefing sem seção, run segue.
+        assertThat(service.checksForVersion(UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
+    void versaoCriadaPeloService_nasceComChecksVazio() {
+        // O Preset NÃO carrega checks (metadado de briefing, não snapshot de hire): toda versão criada
+        // pelo service nasce com checklist vazio. As checks do arquiteto entram por SEED/backfill (V32),
+        // nunca pelo createTemplate/newVersion — trava que o service não passe a "vazar" checks.
+        UUID board = UUID.randomUUID();
+        RoleTemplate molde = service.createTemplate(TipoFuncao.EXECUCAO, role(),
+                new RoleTemplateService.Preset("claude-code", "sonnet", "high", List.of("tdd"), "LIDERANCA"),
+                "v1", board);
+
+        assertThat(service.checksForVersion(molde.getCurrentVersionId())).isEmpty();
+    }
 }
