@@ -21,6 +21,8 @@ import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.CeoPersona;
 import com.orquestrador.org.roletemplate.RoleTemplateService;
+import com.orquestrador.planvalidation.PlanValidationGate;
+import com.orquestrador.planvalidation.PlanValidationStore;
 import com.orquestrador.preview.PreviewArtifactCapturer;
 import com.orquestrador.preview.server.PreviewServerManifestRegistrar;
 import com.orquestrador.preview.server.PreviewServerSupervisor;
@@ -79,6 +81,7 @@ public class AdapterRunExecutor implements RunExecutor {
     private final McpCallbackAddress mcpAddress;
     private final IssuePromptComposer issueComposer;
     private final RoleTemplateService roleTemplates;
+    private final PlanValidationGate planValidationGate;
 
     public AdapterRunExecutor(AgentRepository agents, IssueService issues, WorkspaceResolver workspaces,
                               ExecutionTargets targets, AdapterRegistry adapters, HeartbeatRunStore store,
@@ -90,7 +93,7 @@ public class AdapterRunExecutor implements RunExecutor {
                               ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate,
                               KnowAllMcpMaterializer mcpMaterializer, KnowAllMcpBridge mcpBridge,
                               McpCallbackAddress mcpAddress, IssuePromptComposer issueComposer,
-                              RoleTemplateService roleTemplates) {
+                              RoleTemplateService roleTemplates, PlanValidationGate planValidationGate) {
         this.agents = agents;
         this.issues = issues;
         this.workspaces = workspaces;
@@ -114,6 +117,7 @@ public class AdapterRunExecutor implements RunExecutor {
         this.mcpAddress = mcpAddress;
         this.issueComposer = issueComposer;
         this.roleTemplates = roleTemplates;
+        this.planValidationGate = planValidationGate;
     }
 
     @Override
@@ -144,14 +148,17 @@ public class AdapterRunExecutor implements RunExecutor {
      * {@code AgentController}; a mecânica do jsonb fica no {@code RoleTemplateService} (fail-soft: pin
      * obsoleto resolve vazio, nunca derruba o run).
      */
-    private List<String> resolvePlanChecks(Agent agent) {
+    private List<RoleTemplateService.Check> resolveChecks(Agent agent) {
         UUID pinnedVersionId = agent.getPinnedTemplateVersionId();
         if (pinnedVersionId == null) {
             return List.of();
         }
-        return roleTemplates.checksForVersion(pinnedVersionId).stream()
-                .map(RoleTemplateService.Check::text)
-                .toList();
+        return roleTemplates.checksForVersion(pinnedVersionId);
+    }
+
+    /** O briefing quer só a PROSA das checagens; o validador (B-ii) quer o par id+texto. */
+    private List<String> resolvePlanChecks(Agent agent) {
+        return resolveChecks(agent).stream().map(RoleTemplateService.Check::text).toList();
     }
 
     private RunOutcome runToOutcome(RunContext runContext) {
@@ -391,9 +398,20 @@ public class AdapterRunExecutor implements RunExecutor {
         // F-AT1 (grill agente-como-tool, D6): o EXECUTOR de uma Issue (turno==null) pede skill fora
         // do set pelo canal de SAÍDA — mesmo espírito do ```proposta``` do CEO, só que sobre o texto
         // cru (sem outputSchema neste caminho). Só em SUCESSO (espelha entregarPropostasAoGate).
-        if (turno == null && runContext.issueId() != null && result.succeeded()) {
+        if (pontaDoExecutor && result.succeeded()) {
             skillRequestGate.handle(runContext.companyId(), runContext.agentId(), runContext.issueId(),
                     runContext.runId(), replyCollector.text());
+            // Uso B / B-ii (ADR-0044): o MESMO texto do plano vai ao validador local — 2º consumidor
+            // do reply, como o gate de skill. O no-op é pulado AQUI porque o check dele só acontece
+            // mais abaixo (:406, depois do settle-de-falha): sem este guard o validador conferiria o
+            // texto vazio do run relâmpago do bug #1. O portão é assíncrono e best-effort — o que
+            // acontecer lá dentro não volta para este caminho, que é o do settle da Issue (§3.6).
+            if (!result.noop()) {
+                planValidationGate.handle(
+                        new PlanValidationStore.Scope(runContext.companyId(), runContext.runId(),
+                                runContext.agentId(), runContext.issueId()),
+                        replyCollector.text(), resolveChecks(agent));
+            }
         }
 
         if (!result.succeeded()) {

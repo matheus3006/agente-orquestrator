@@ -62,6 +62,21 @@ orquestrador:
       model: qwen3:0.6b
       worker-threads: 1
       queue-capacity: 32
+  # ADR-0044 — validador auxiliar de planos (Uso B / B-ii). Nasce DESLIGADO; `shadow` só registra
+  # a telemetria, `push` também empurra o checklist ao arquiteto no run seguinte da mesma issue.
+  # `mode` é o kill-switch GLOBAL (push→shadow desliga o empurrão sem parar a régua de precisão);
+  # `push-disabled-roles` é o kill-switch POR-PAPEL. Os valores abaixo saíram de MEDIÇÃO empírica
+  # (docs/medicao-validador-qwen.md): o qwen3:0.6b do inspetor de contexto é preditor CONSTANTE e
+  # NÃO serve aqui; o 1.7b com think=true mediu 26/27 (0 falso-positivo); num_predict curto faz a
+  # resposta vir VAZIA (o raciocínio come o orçamento) — 1500 é folga sem custo de latência.
+  plan-validation:
+    mode: "off"
+    model: qwen3:1.7b
+    think: true
+    num-predict: 1500
+    timeout: 120s
+    max-input-chars: 20000
+    push-disabled-roles: []
 
 ---
 spring:

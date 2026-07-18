@@ -10,6 +10,8 @@ import com.orquestrador.memory.Decision;
 import com.orquestrador.memory.DecisionRepository;
 import com.orquestrador.memory.MemoryAudience;
 import com.orquestrador.memory.MemoryKind;
+import com.orquestrador.planvalidation.PlanChecklistSection;
+import com.orquestrador.planvalidation.PlanValidationProperties;
 import com.orquestrador.skills.CompanySkillVersion;
 import com.orquestrador.skills.HookMaterializer;
 import com.orquestrador.skills.SkillMaterializer;
@@ -155,13 +157,19 @@ class RunContextCompilerTest {
         });
 
         RunContextCompiler compiler = new DefaultRunContextCompiler(new SkillMaterializer(), new HookMaterializer(),
-                new CompanyMemoryMaterializer(memories, decisions), new ContextPolicy(), manifestStore);
+                new CompanyMemoryMaterializer(memories, decisions, semChecklistDoValidador()),
+                new ContextPolicy(), manifestStore);
         ContextPackage contextPackage = compiler.compile(new RunContextCompiler.Request(
                 new RunContext(companyId, agentId, runId, issueId), workDir, convention, List.of(skill), audience,
                 target, "engine:pin", "volume", "prompt vivo", "{\"type\":\"object\"}"));
 
         assertThat(stored).containsExactly(contextPackage.manifest());
         return new Compilation(contextPackage, written);
+    }
+
+    /** Esta suíte é sobre a COMPILAÇÃO do contexto; o checklist do validador (B-ii) fica inerte. */
+    private static PlanChecklistSection semChecklistDoValidador() {
+        return new PlanChecklistSection(null, null, new PlanValidationProperties());
     }
 
     private static String executorMemoryWithFeedback() {

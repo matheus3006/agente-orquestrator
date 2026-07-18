@@ -1,5 +1,6 @@
 package com.orquestrador.memory;
 
+import com.orquestrador.planvalidation.PlanChecklistSection;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -44,21 +45,30 @@ public class CompanyMemoryMaterializer {
 
     private final CompanyMemoryRepository memories;
     private final DecisionRepository decisions;
+    private final PlanChecklistSection planChecklist;
 
-    public CompanyMemoryMaterializer(CompanyMemoryRepository memories, DecisionRepository decisions) {
+    public CompanyMemoryMaterializer(CompanyMemoryRepository memories, DecisionRepository decisions,
+                                     PlanChecklistSection planChecklist) {
         this.memories = memories;
         this.decisions = decisions;
+        this.planChecklist = planChecklist;
     }
 
     /** Run SEM Issue (turno de conversa do CEO, ou run sem issue): só a dieta durável desta ponta. */
     public void materialize(Path workDir, String memoryFile, UUID companyId, MemoryAudience audience) {
-        materialize(workDir, memoryFile, companyId, audience, null);
+        materialize(workDir, memoryFile, companyId, audience, null, null);
+    }
+
+    /** Run de Issue sem agente conhecido: dieta + feedback da Issue, sem o checklist do validador. */
+    public void materialize(Path workDir, String memoryFile, UUID companyId, MemoryAudience audience,
+                            UUID issueId) {
+        materialize(workDir, memoryFile, companyId, audience, issueId, null);
     }
 
     public void materialize(Path workDir, String memoryFile, UUID companyId, MemoryAudience audience,
-                            UUID issueId) {
+                            UUID issueId, UUID agentId) {
         Path alvo = workDir.resolve(memoryFile);
-        String dieta = dieta(companyId, audience, issueId);
+        String dieta = dieta(companyId, audience, issueId, agentId);
         try {
             if (dieta.isEmpty()) {
                 Files.deleteIfExists(alvo);
@@ -77,7 +87,7 @@ public class CompanyMemoryMaterializer {
      * reescrito aqui) e, por último, a seção DIRECIONADA do feedback da Issue do run (R19-A).
      * Superfície ausente é simplesmente pulada; nenhuma presente ⟹ vazio ⟹ o arquivo some.
      */
-    private String dieta(UUID companyId, MemoryAudience audience, UUID issueId) {
+    private String dieta(UUID companyId, MemoryAudience audience, UUID issueId, UUID agentId) {
         List<String> superficies = new ArrayList<>();
         for (MemoryKind kind : audience.dieta()) {
             memories.findFirstByCompanyIdAndKindOrderByVersionDesc(companyId, kind)
@@ -87,6 +97,9 @@ public class CompanyMemoryMaterializer {
         }
         if (issueId != null) {
             feedbackDaIssue(companyId, issueId).ifPresent(superficies::add);
+            // Uso B / B-ii (ADR-0044): os buracos que o validador local achou no plano do run
+            // ANTERIOR desta issue. Seção PRÓPRIA, atrás do kill-switch, que não toca Decisões.
+            planChecklist.render(agentId, issueId).ifPresent(superficies::add);
         }
         return String.join("\n\n", superficies);
     }

@@ -115,7 +115,8 @@ public class DefaultRunContextCompiler implements RunContextCompiler {
     private void materializeMemory(Request request) {
         try {
             memories.materialize(request.workDir(), request.convention().memoryFile(),
-                    request.runContext().companyId(), request.audience(), request.runContext().issueId());
+                    request.runContext().companyId(), request.audience(), request.runContext().issueId(),
+                    request.runContext().agentId());
             for (WorkspaceConvention inactive : WorkspaceConvention.KNOWN) {
                 if (!inactive.equals(request.convention())) {
                     cleanInactive(request.workDir(), inactive.memoryFile());
