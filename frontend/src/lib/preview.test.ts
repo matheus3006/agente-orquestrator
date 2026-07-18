@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreviewArtifactSummary } from "./api";
-import { artifactForRun, fmtSize, isPreviewNovo, pickDefaultArtifact, versionLabel } from "./preview";
+import { artifactForRun, fmtSize, isPreviewNovo, pickDefaultArtifact, srcDocFor, versionLabel } from "./preview";
 
 // Helpers puros do preview (F.9/ADR-0021). A lista chega do servidor da mais
 // nova para a mais antiga (version desc) — os helpers assumem essa ordem.
@@ -12,11 +12,31 @@ function artifact(overrides: Partial<PreviewArtifactSummary>): PreviewArtifactSu
     runId: "run-1",
     agentId: "agent-1",
     contentHash: "hash-1",
+    contentType: "html",
+    sourceFilename: "index.html",
     sizeBytes: 1024,
     createdAt: "2026-07-05T12:00:00Z",
     ...overrides,
   };
 }
+
+describe("srcDocFor (emenda R29-A: o TIPO roteia a renderização)", () => {
+  it("html entra no iframe como veio — byte a byte, caminho de hoje intacto", () => {
+    const html = "<!doctype html><h1>app</h1>";
+    expect(srcDocFor(artifact({}), html)).toBe(html);
+  });
+
+  it("markdown vira documento docs-style — convertido e sanitizado", () => {
+    const doc = srcDocFor(
+      artifact({ contentType: "markdown", sourceFilename: "elasticidade.md" }),
+      "# Elasticidade\n\n<script>x</script>\n",
+    );
+    expect(doc).toContain("Elasticidade</h1>");
+    expect(doc).toContain("<style>");
+    expect(doc).toContain("&lt;script&gt;");
+    expect(doc).not.toContain("<script>x</script>");
+  });
+});
 
 describe("pickDefaultArtifact (a tela abre na versão mais nova)", () => {
   it("primeira da lista (version desc)", () => {

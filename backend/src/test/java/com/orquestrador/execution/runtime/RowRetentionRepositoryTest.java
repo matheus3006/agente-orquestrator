@@ -213,7 +213,7 @@ class RowRetentionRepositoryTest {
     private UUID salvaArtifact(UUID companyId, UUID issueId, int version) {
         UUID id = UUID.randomUUID();
         artifacts.save(new PreviewArtifact(id, companyId, issueId, UUID.randomUUID(), UUID.randomUUID(),
-                version, "<html>v" + version + "</html>", "hash-" + id));
+                version, "<html>v" + version + "</html>", "hash-" + id, "html", "index.html"));
         return id;
     }
 }

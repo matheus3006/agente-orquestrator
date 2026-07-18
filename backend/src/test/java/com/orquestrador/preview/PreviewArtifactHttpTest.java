@@ -68,9 +68,9 @@ class PreviewArtifactHttpTest {
     void listaDeVersoesDaIssueEMetadadosSemContent() throws Exception {
         Cenario cenario = cenario();
         previews.save(new PreviewArtifact(UUID.randomUUID(), cenario.companyId(), cenario.issueId(),
-                cenario.agentId(), UUID.randomUUID(), 1, "<html>v1</html>", "hash-1"));
+                cenario.agentId(), UUID.randomUUID(), 1, "<html>v1</html>", "hash-1", "html", "index.html"));
         PreviewArtifact v2 = previews.save(new PreviewArtifact(UUID.randomUUID(), cenario.companyId(),
-                cenario.issueId(), cenario.agentId(), UUID.randomUUID(), 2, "<html>v2</html>", "hash-2"));
+                cenario.issueId(), cenario.agentId(), UUID.randomUUID(), 2, "<html>v2</html>", "hash-2", "html", "index.html"));
 
         String url = "/api/companies/" + cenario.companyId() + "/issues/" + cenario.issueId()
                 + "/preview-artifacts";
@@ -84,6 +84,10 @@ class PreviewArtifactHttpTest {
         assertThat(versoes.get(0).get("runId").asText()).isEqualTo(v2.getRunId().toString());
         assertThat(versoes.get(0).get("sizeBytes").asInt()).isEqualTo("<html>v2</html>".getBytes().length);
         assertThat(versoes.get(0).has("content")).isFalse();
+        // emenda R29-A: o tipo e a proveniencia viajam nos metadados — e o que roteia a
+        // renderizacao (html cru vs markdown->docs) e rotula a foto na tela.
+        assertThat(versoes.get(0).get("contentType").asText()).isEqualTo("html");
+        assertThat(versoes.get(0).get("sourceFilename").asText()).isEqualTo("index.html");
 
         // board-only: agente 403, cross-tenant 403
         String key = om.readTree(mvc.perform(post("/api/companies/" + cenario.companyId() + "/agents/"
@@ -108,7 +112,7 @@ class PreviewArtifactHttpTest {
         Cenario cenario = cenario();
         PreviewArtifact artefato = previews.save(new PreviewArtifact(UUID.randomUUID(), cenario.companyId(),
                 cenario.issueId(), cenario.agentId(), UUID.randomUUID(), 1,
-                "<!doctype html><h1>olá</h1>", "hash-1"));
+                "<!doctype html><h1>olá</h1>", "hash-1", "html", "index.html"));
 
         String url = "/api/companies/" + cenario.companyId() + "/preview-artifacts/" + artefato.getId()
                 + "/content";

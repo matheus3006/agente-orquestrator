@@ -506,6 +506,10 @@ export interface PreviewArtifactSummary {
   runId: string;
   agentId: string;
   contentHash: string;
+  /** Emenda R29-A: roteia a renderização — html cru no iframe vs markdown→docs. */
+  contentType: "html" | "markdown";
+  /** Proveniência da foto (o fallback captura .md de NOME LIVRE — ex.: cursor-pricing.md). */
+  sourceFilename: string;
   sizeBytes: number;
   createdAt: string;
 }

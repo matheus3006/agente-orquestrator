@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Monitor, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { fetchPreviewArtifactContent, type PreviewArtifactSummary } from "@/lib/api";
-import { versionLabel } from "@/lib/preview";
+import { srcDocFor, versionLabel } from "@/lib/preview";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +43,8 @@ export function PreviewFrame({
           <i /><i /><i />
         </span>
         <span className="preview-frame-label mono">
-          preview {versionLabel(artifact)} · sandbox
+          preview {versionLabel(artifact)}
+          {artifact.contentType === "markdown" && ` · ${artifact.sourceFilename}`} · sandbox
         </span>
         <span className="spacer" />
         <div className="preview-device-toggle" role="group" aria-label="Dispositivo do preview">
@@ -88,7 +89,7 @@ export function PreviewFrame({
               title={`Preview ${versionLabel(artifact)} do protótipo`}
               sandbox="allow-scripts"
               referrerPolicy="no-referrer"
-              srcDoc={contentQuery.data}
+              srcDoc={srcDocFor(artifact, contentQuery.data)}
             />
           </div>
         )}

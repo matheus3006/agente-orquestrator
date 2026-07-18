@@ -68,6 +68,28 @@ class DockerExecutionTargetArgsTest {
     }
 
     @Test
+    void listadorDeWorkspaceEHermeticoERaso() {
+        // Emenda R29-A: mesmo molde do leitor (SEM rede, volume :ro, imagem do adapter);
+        // find raso (-maxdepth 1 -type f) = so arquivos regulares do diretorio-contrato.
+        DockerExecutionTarget target = new DockerExecutionTarget();
+        ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
+                java.nio.file.Path.of("/tmp/x"),
+                List.of(),
+                Map.of("K", "V"),
+                "orq-claude-code:2.1.201",
+                "vol1",
+                List.of(new ExecutionTarget.VolumeMount("orq_claude_creds", "/home/node")));
+
+        List<String> argv = target.buildListArgs(spec, ".orq/preview");
+
+        assertThat(argv).containsExactly(
+                "docker", "run", "--rm", "--network", "none",
+                "-v", "vol1:/workspace:ro",
+                "orq-claude-code:2.1.201",
+                "find", "/workspace/.orq/preview", "-maxdepth", "1", "-type", "f");
+    }
+
+    @Test
     void escritorDeWorkspaceEHermeticoEExtraiAArvoreMaterializadaNoVolume() {
         // Escritor (par do leitor F.9/ADR-0021): SEM rede, SEM credencial (mesmo quando o Spec a
         // carrega), imagem do proprio adapter. Replace por subtree: o rm e o extract rodam no MESMO

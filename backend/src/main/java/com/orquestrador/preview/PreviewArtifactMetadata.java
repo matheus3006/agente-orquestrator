@@ -22,6 +22,10 @@ public interface PreviewArtifactMetadata {
 
     String getContentHash();
 
+    String getContentType();
+
+    String getSourceFilename();
+
     int getSizeBytes();
 
     Instant getCreatedAt();
