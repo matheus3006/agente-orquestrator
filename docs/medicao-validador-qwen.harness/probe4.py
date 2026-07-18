@@ -66,7 +66,7 @@ CASOS = [
     ("so-seam", PLANO_SO_SEAM, {"seam": True, "file-line": False, "test": False}),
     ("quase-tudo", PLANO_TUDO_MENOS_SEAM, {"seam": True, "file-line": True, "test": True}),
 ]
-# verdade: 9 presentes, 9 ausentes => taxa-base de um chute constante = 9/18
+# verdade: 10 presentes, 8 ausentes => taxa-base de um chute constante = 10/18
 
 SYS = (
     "Responda apenas SIM ou NÃO, com base exclusivamente no texto fornecido.\n"
@@ -115,7 +115,7 @@ def parse_simnao(content):
 def run(rotulo, checks, think):
     acertos = erros = indet = 0
     falso_neg = falso_pos = disse_sim = 0
-    print(f"\n===== {rotulo} (think={think}) — 18 casos, taxa-base=9/18 =====")
+    print(f"\n===== {rotulo} (think={think}) — 18 casos, taxa-base=10/18 =====")
     for plano_id, plano, verdade in CASOS:
         for check_id, check_text in checks:
             out = chat(f"TEXTO:\n<<<\n{plano}\n>>>\n\nPERGUNTA: {check_text}", think, 400)

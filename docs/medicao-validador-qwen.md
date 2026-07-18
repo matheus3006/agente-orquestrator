@@ -5,7 +5,8 @@
 **Checks:** as 3 REAIS do seed v1 do arquiteto (`V32__role_template_checks.sql`): `seam`, `file-line`, `test`
 **Planos:** prosa em português com verdade conhecida embutida (como o arquiteto real escreve)
 
-Harness: `probe.py` · `probe2.py` · `probe3.py` · `probe4.py` · `probe5.py` · `probe6.py`
+Harness: `probe.py` · `probe2.py` · `probe3.py` · `probe4.py` · `probe5.py` · `probe6.py` ·
+`probe7.py` · `probe8.py` · `probe9.py`
 
 ---
 
@@ -92,17 +93,20 @@ Modelo puxado: `qwen3:1.7b` (id `8f68893c685c`, **1.4 GB**). Mesmo harness, mesm
 
 **O 1.7b DISCRIMINA** — deixou de ser função constante (9 SIM / 9 NÃO, acompanhando a verdade).
 Dois achados que contrariam o palpite:
-- **`think=true` é obrigatório** (12/18 sem → 17/18 com). No 0.6b o thinking *piorava*.
-- **A redação do SEED (a sua, no banco) venceu a minha reescrita "concreta"** (17/18 vs 14/18).
-  Não há nada a consertar no texto das checks da V32.
+- **`think` tem direção positiva, mas a magnitude não foi isolada.** As comparações CONTROLADAS da
+  tabela: think (na CONCRETA) 12/18 → 14/18 · redação seed (com think) 14/18 → 17/18.
+  `seed+think=false` **não foi medido** — atribuir "12→17" só ao think mistura as duas variáveis.
+  No 0.6b o thinking *piorava*.
+- **A redação do SEED (a sua, no banco) venceu a minha reescrita "concreta"** (17/18 vs 14/18,
+  ambas com think=true). Não há nada a consertar no texto das checks da V32.
 
-## Plano LONGO e realista (`probe8.py`) — a armadilha do texto de brinquedo
+## Plano LONGO e realista (`probe8.py` + `probe9.py`) — a armadilha do texto de brinquedo
 
 | Config | plano ~3k chars | truncadas | acertos |
 |---|---|---|---|
 | `num_predict=300` | limpo + violado | **3/6** | 4/6 (2 INDETERMINADO) |
 | `num_predict=800` | limpo + violado | 0/6 | **6/6** |
-| `num_predict=800/1500` | plano ~7k chars (2150 tok) | 0/3 | **3/3** |
+| `num_predict=800/1500` (`probe9.py`) | plano ~7k chars (2150 tok) | 0/3 | **3/3** |
 
 No `longo-violado` o modelo respondeu **NÃO exatamente para `file-line` e `test`** (as duas
 violadas de propósito) e **SIM para `seam`** (a satisfeita) — **a forma exata da prova §5**.
@@ -127,7 +131,7 @@ generoso é de graça.
 
 ```
 model        qwen3:1.7b     # o 0.6b é preditor constante — inutilizável
-think        true           # obrigatório: 12/18 sem → 17/18 com
+think        true           # direção medida: 12→14 na CONCRETA; seed+think=false não medido (magnitude não isolada)
 num-predict  1500           # 300 trunca em plano longo; 800 já basta; 1500 = folga grátis
 temperature  0.0
 ```

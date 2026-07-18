@@ -2,7 +2,7 @@
 import probe8
 from probe4 import CHECKS_SEED, parse_simnao
 
-# infla o plano ate ~14k chars repetindo o miolo (o cap do seam e 20k)
+# infla o plano ate ~7k chars repetindo o miolo (o cap do seam e 20k)
 GRANDE = probe8.PREAMBULO + probe8.TAREFAS_SEM_LINHA + (probe8.MEIO * 5) + probe8.SEM_SECAO_TESTE
 print(f"plano grande: {len(GRANDE)} chars — verdade: seam=P, file-line=A, test=A")
 for num_predict in (800, 1500):
