@@ -68,3 +68,14 @@ O checkout compartilhado pode estar em OUTRA branch (sessões paralelas): rode o
 symlink quebra o Turbopack) + `.env.local` do worktree com
 `BACKEND_ORIGIN=http://localhost:18081` e o board-user de dev. `next dev -p 13000` para não
 colidir com o :3000.
+
+## Dirigir issue→run→review→superfícies (validado 2026-07-18, R29-A)
+
+- O wakeup aceita a issue no corpo: `POST …/wakeups` `{"reason":…,"issueId":…}`. O RUN_STARTED
+  só vem **~60s depois** do enqueue (due-time do wakeup) — o tick de 1s do dispatcher não é o
+  gargalo; não conclua "travado" antes disso.
+- Review na fila nasce APENAS com `issue.risk_level >= orquestrador.review.risk-threshold`
+  (default 5): crie a issue com `"riskLevel":5` para o card aparecer em `/reviews`.
+- UI viva contra a instância: entrada no launch.json da RAIZ do diretório de trabalho
+  (`npm run dev --prefix <worktree>/frontend -- -p 13000`) + `.env.local` no frontend com
+  `BACKEND_ORIGIN=http://localhost:18081` e `NEXT_PUBLIC_DEV_BOARD_USER=<uuid do board>`.
