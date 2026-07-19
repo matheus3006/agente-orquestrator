@@ -137,6 +137,14 @@ Decisões fechadas em grill com o dono (R29-A, 5 decisões numeradas no
    R27-A). **2+ `.md` sem `index.md` = falha legível `AMBIGUOUS_MARKDOWN`** (ensina a convenção),
    nunca escolha silenciosa.
 
+**Adendo R31 (2026-07-19) — a precedência olha PRESENÇA, não saúde.** Escolha deliberada, medida
+pela conferência #6 e registrada aqui porque estava implícita: um `index.html` **presente-porém-
+FALHO** (acima do cap, ou erro de leitura) **vence** um `index.md` saudável — o run ganha o erro do
+html (`CAP_EXCEEDED`/`READ_FAILED`) e o `.md` nunca é lido. O degrau 1 testa `!absent()`, não
+"legível" (`PreviewArtifactCapturer:178`). É a leitura correta da precedência 1-2-3: quem publicou
+um `index.html` **quis** o caminho do app, e cair calado no `.md` esconderia um protótipo quebrado
+atrás de uma anotação. Falha legível > fallback silencioso.
+
 **Persistência (V34).** `content_type` (`'html'|'markdown'`, check constraint) e `source_filename`
 (proveniência da foto — o fallback captura nome livre; a foto não pode ser anônima). Backfill
 verdadeiro por construção: toda linha pré-V34 nasceu do `index.html`. O tipo é **persistido, nunca

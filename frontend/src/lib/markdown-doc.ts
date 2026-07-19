@@ -48,7 +48,10 @@ function anchorHeadings(body: string): { html: string; headings: DocHeading[] } 
   const html = body.replace(
     /<h([1-3])>([\s\S]*?)<\/h\1>/g,
     (_tudo, nivel: string, conteudo: string) => {
-      const text = conteudo.replace(/<[^>]+>/g, "").trim();
+      // O `conteudo` vem ESCAPADO do micromark. Tirar as tags ANTES de des-escapar
+      // (na ordem inversa um `<b>` literal do título viraria tag e sumiria); o `text`
+      // guardado é PLANO, então o slug não come entidade e o TOC escapa uma vez só.
+      const text = unescapeHtml(conteudo.replace(/<[^>]+>/g, "")).trim();
       const base = slugify(text);
       const vezes = (seen.get(base) ?? 0) + 1;
       seen.set(base, vezes);
@@ -90,6 +93,20 @@ function escapeHtml(text: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+/**
+ * Espelho exato do `escapeHtml` — o micromark emite ESTAS quatro entidades e mais
+ * nenhuma (referências do próprio .md já chegam decodificadas). `&amp;` sai por
+ * ÚLTIMO, invertendo a ordem do escape: des-escapar `&` antes leria o texto literal
+ * `&lt;` (escapado como `&amp;lt;`) como se fosse um `<`.
+ */
+function unescapeHtml(text: string): string {
+  return text
+    .replaceAll("&quot;", '"')
+    .replaceAll("&gt;", ">")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&amp;", "&");
 }
 
 // Rolagem suave sem trocar o hash: navegação por fragmento dentro de um srcdoc
