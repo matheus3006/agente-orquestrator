@@ -1,7 +1,10 @@
 package com.orquestrador.org.team;
 
+import com.orquestrador.common.security.ActorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
@@ -20,6 +23,11 @@ import java.util.UUID;
  * sintético). O {@code gestorAgentId} é o responsável ORGANIZACIONAL, de quem a chefia deriva
  * ({@code ChainOfCommandService}) — posto separado do arquiteto de propósito: o arquiteto responde
  * pela ENTREGA (e destrava o dispatch), o gestor responde pelas PESSOAS (e não trava nada).
+ *
+ * <p><b>E o gestor titular carrega um marcador de autoridade delegada (ADR-0046, D-ORG-2):</b>
+ * {@code gestorStatus} nasce ESTAGIO e só um ato explícito do dono ({@link TeamService#promoverGestor})
+ * o leva a PROMOVIDO, com rastro de quem/quando. Reseta pra ESTAGIO toda vez que o titular do posto
+ * troca — a confiança é NAQUELE agente, NAQUELE braço, não um selo que atravessa a empresa.
  */
 @Entity
 @Table(name = "team", uniqueConstraints = {
@@ -55,6 +63,24 @@ public class Team {
     // derivação SOBE pro pai; nada trava (só o arquiteto trava, e o dispatch é outro assunto).
     @Column(name = "gestor_agent_id")
     private UUID gestorAgentId;
+
+    // O marcador de autoridade delegada (ADR-0046, D-ORG-2): ESTAGIO por default — mesmo sem
+    // gestor designado, o valor fica inerte até alguém ocupar o posto. Reseta pra ESTAGIO toda vez
+    // que o TITULAR do posto troca (TeamService.setGestor) — a confiança é NAQUELE agente, NAQUELE
+    // braço, não um selo que atravessa a empresa (mini-grill da fatia, Pergunta 2).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gestor_status", nullable = false)
+    private GestorStatus gestorStatus = GestorStatus.ESTAGIO;
+
+    @Column(name = "gestor_promovido_em")
+    private Instant gestorPromovidoEm;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gestor_promovido_por_actor_type")
+    private ActorType gestorPromovidoPorActorType;
+
+    @Column(name = "gestor_promovido_por_actor_id")
+    private UUID gestorPromovidoPorActorId;
 
     // T.4: quanto trabalho CONCORRENTE o time do arquiteto pode espalhar (runs ativos dos membros).
     @Column(name = "fan_out_cap", nullable = false)
@@ -125,6 +151,52 @@ public class Team {
     /** O time tem gestor próprio? (falso = a chefia dos membros SOBE para o time-pai) */
     public boolean temGestor() {
         return gestorAgentId != null;
+    }
+
+    public GestorStatus getGestorStatus() {
+        return gestorStatus;
+    }
+
+    public Instant getGestorPromovidoEm() {
+        return gestorPromovidoEm;
+    }
+
+    public ActorType getGestorPromovidoPorActorType() {
+        return gestorPromovidoPorActorType;
+    }
+
+    public UUID getGestorPromovidoPorActorId() {
+        return gestorPromovidoPorActorId;
+    }
+
+    /** O gestor titular já foi promovido? (a condição que F-ORG-C/D vão consultar) */
+    public boolean gestorPromovido() {
+        return gestorStatus == GestorStatus.PROMOVIDO;
+    }
+
+    /**
+     * Promove o gestor titular pra PROMOVIDO, com rastro de quem/quando (ADR-0046). Transição só
+     * ESTAGIO→PROMOVIDO — validar que há gestor e que ainda não está promovido é responsabilidade
+     * do {@link TeamService} (mesmo desenho da Approval: a entidade muda o estado, o serviço
+     * valida a transição).
+     */
+    public void promoverGestor(ActorType actorType, UUID actorId) {
+        this.gestorStatus = GestorStatus.PROMOVIDO;
+        this.gestorPromovidoEm = Instant.now();
+        this.gestorPromovidoPorActorType = actorType;
+        this.gestorPromovidoPorActorId = actorId;
+    }
+
+    /**
+     * Reseta pra ESTAGIO e limpa o rastro da promoção anterior (ADR-0046, mini-grill Pergunta 2):
+     * chamado pelo {@link TeamService} sempre que o TITULAR do posto de gestor troca — a confiança
+     * do dono era no julgamento daquele agente específico, não um selo que sobrevive à troca.
+     */
+    public void resetGestorStatus() {
+        this.gestorStatus = GestorStatus.ESTAGIO;
+        this.gestorPromovidoEm = null;
+        this.gestorPromovidoPorActorType = null;
+        this.gestorPromovidoPorActorId = null;
     }
 
     /** O time tem arquiteto designado? (a condição da trava do dispatch) */

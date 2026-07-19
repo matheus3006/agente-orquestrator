@@ -1,7 +1,10 @@
 package com.orquestrador.org.team;
 
+import com.orquestrador.activitylog.ActivityAction;
+import com.orquestrador.activitylog.ActivityLogService;
 import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.error.NotFoundException;
+import com.orquestrador.common.security.ActorType;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.ChainOfCommandService;
@@ -10,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -25,6 +30,8 @@ import java.util.UUID;
  * 5) <b>gestor é MEMBRO</b> (mesmo invariante do arquiteto) e é dele que a chefia DERIVA — por isso
  *    toda mutação estrutural daqui re-deriva o espelho ({@link ChainOfCommandService}): mover
  *    agente, trocar gestor, mover time. Chefia não se edita à mão em lugar nenhum.
+ * 6) <b>autoridade delegada (ADR-0046)</b>: promover só ESTAGIO→PROMOVIDO, só com gestor designado;
+ *    trocar o TITULAR do posto reseta pra ESTAGIO (a confiança era naquele agente, não um selo).
  */
 @Service
 public class TeamService {
@@ -32,11 +39,14 @@ public class TeamService {
     private final TeamRepository teams;
     private final AgentRepository agents;
     private final ChainOfCommandService chain;
+    private final ActivityLogService activityLog;
 
-    public TeamService(TeamRepository teams, AgentRepository agents, ChainOfCommandService chain) {
+    public TeamService(TeamRepository teams, AgentRepository agents, ChainOfCommandService chain,
+                       ActivityLogService activityLog) {
         this.teams = teams;
         this.agents = agents;
         this.chain = chain;
+        this.activityLog = activityLog;
     }
 
     /**
@@ -108,6 +118,11 @@ public class TeamService {
      * Designa o GESTOR do time ({@code agentId} nulo LIMPA o posto — a chefia dos membros volta a
      * subir pro time-pai). Membro do time, como o arquiteto (ADR-0045). Trocar o gestor re-deriva a
      * SUBÁRVORE: é o chefe de todos os membros que muda, não só o posto.
+     *
+     * <p><b>ADR-0046 (mini-grill Pergunta 2):</b> toda vez que o TITULAR do posto troca (agente
+     * diferente do que estava, incluindo entrar/sair do posto), o marcador de autoridade delegada
+     * reseta pra ESTAGIO — a confiança do dono era no julgamento daquele agente específico, não um
+     * selo que sobrevive à troca. Reatribuir o MESMO agente já titular não é troca (no-op).
      */
     @Transactional
     public Team setGestor(UUID companyId, UUID teamId, UUID agentId) {
@@ -119,9 +134,37 @@ public class TeamService {
                         + " (ADR-0045): mova o agente para o time antes");
             }
         }
+        boolean trocouTitular = !Objects.equals(team.getGestorAgentId(), agentId);
         team.designarGestor(agentId);
+        if (trocouTitular) {
+            team.resetGestorStatus();
+        }
         Team salvo = teams.save(team);
         chain.rederivarSubarvore(teamId);
+        return salvo;
+    }
+
+    /**
+     * Promove o gestor titular de ESTAGIO pra PROMOVIDO (ADR-0046, D-ORG-2): ato explícito e
+     * board-only do dono, nunca automático. Exige gestor designado e ainda não promovido — sem
+     * rebaixar (nenhuma D-ORG pede reversão). Grava o rastro do PRÓPRIO ATO de promover
+     * ({@link ActivityAction#GESTOR_PROMOVIDO}); o rastro de cada issue dirigida depois é F-ORG-D.
+     */
+    @Transactional
+    public Team promoverGestor(UUID companyId, UUID teamId, ActorType actorType, UUID actorId) {
+        Team team = teamDaCompany(companyId, teamId);
+        if (!team.temGestor()) {
+            throw new ConflictException("o time " + team.getDominio() + "/" + team.getFoco()
+                    + " nao tem gestor designado - designe um antes de promover: " + teamId);
+        }
+        if (team.gestorPromovido()) {
+            throw new ConflictException("o gestor do time " + team.getDominio() + "/" + team.getFoco()
+                    + " ja esta promovido: " + teamId);
+        }
+        team.promoverGestor(actorType, actorId);
+        Team salvo = teams.save(team);
+        activityLog.record(companyId, actorType, actorId, ActivityAction.GESTOR_PROMOVIDO,
+                "team", teamId, Map.of("gestorAgentId", team.getGestorAgentId()));
         return salvo;
     }
 

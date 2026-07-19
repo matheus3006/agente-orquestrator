@@ -388,6 +388,11 @@ export function listAgents(companyId: string): Promise<AgentSummary[]> {
 
 /* ---------- times + cadeia de comando (Teams T.2, ADR-0017) ---------- */
 
+// ADR-0046 (D-ORG-2): o marcador de autoridade delegada do gestor titular. ESTAGIO ao designar;
+// PROMOVIDO só por ato explícito do dono (nunca automático, nunca rebaixa). Reseta pra ESTAGIO
+// sempre que o TITULAR do posto troca (a confiança era naquele agente, não um selo do time).
+export type GestorStatus = "ESTAGIO" | "PROMOVIDO";
+
 // Time = entidade real: domínio (macro) + foco (livre); arquiteto DESIGNADO (null = time ainda sem
 // arquiteto → o DISPATCH trava com 409 — o canvas espelha esse estado, quem impõe é o backend).
 export interface Team {
@@ -401,6 +406,11 @@ export interface Team {
   gestorAgentId: string | null;
   // null = time pendurado direto na EMPRESA (a raiz) — um "departamento".
   parentTeamId: string | null;
+  // ADR-0046: quem/quando promoveu — null enquanto ESTAGIO (ou após reset por troca de titular).
+  gestorStatus: GestorStatus;
+  gestorPromovidoEm: string | null;
+  gestorPromovidoPorActorType: string | null;
+  gestorPromovidoPorActorId: string | null;
   createdAt: string;
 }
 
@@ -446,6 +456,16 @@ export function setTeamGestor(
   return apiFetch<Team>(`/api/companies/${companyId}/teams/${teamId}/gestor`, {
     method: "PATCH",
     body: { agentId },
+  });
+}
+
+/**
+ * Promove o gestor titular de ESTAGIO pra PROMOVIDO (ADR-0046) — ato soberano do dono, direto,
+ * sem gate. 409 se o time não tiver gestor designado ou se já estiver promovido.
+ */
+export function promoverGestor(companyId: string, teamId: string): Promise<Team> {
+  return apiFetch<Team>(`/api/companies/${companyId}/teams/${teamId}/gestor/promover`, {
+    method: "PATCH",
   });
 }
 

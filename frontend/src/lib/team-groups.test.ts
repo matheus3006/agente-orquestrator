@@ -43,6 +43,11 @@ const time = (o: Partial<Team> & { id: string }): Team => ({
   arquitetoAgentId: null,
   gestorAgentId: null,
   parentTeamId: null,
+  // ADR-0046: default de fixture = time recém-criado, sem gestor promovido ainda.
+  gestorStatus: "ESTAGIO",
+  gestorPromovidoEm: null,
+  gestorPromovidoPorActorType: null,
+  gestorPromovidoPorActorId: null,
   createdAt: "2026-07-01T00:00:00Z",
   ...o,
 });

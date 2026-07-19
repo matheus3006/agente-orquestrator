@@ -125,6 +125,10 @@ class TeamHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"agentId\":null}"))
                 .andExpect(status().isForbidden());
+        // promover (ADR-0046) é a MESMA governança board-only — ato soberano do dono
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor/promover")
+                        .header("Authorization", "Bearer " + apiKey))
+                .andExpect(status().isForbidden());
         mvc.perform(patch(teamsUrl + "/" + teamId + "/parent")
                         .header("Authorization", "Bearer " + apiKey)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -197,6 +201,99 @@ class TeamHttpTest {
                         .content("{\"name\":\"Z\",\"role\":\"executor\",\"teamId\":\""
                                 + UUID.randomUUID() + "\"}"))
                 .andExpect(status().isNotFound());
+    }
+
+    /**
+     * ADR-0046 (D-ORG-2): designar nasce ESTAGIO; promover grava PROMOVIDO + quem/quando; promover
+     * de novo é 409 (só ESTAGIO→PROMOVIDO); o ATO fica no activity_log da company (ADR-0009).
+     */
+    @Test
+    void promoverGestorViaHttp_estagioParaPromovidoComRastroEAtividade() throws Exception {
+        UUID board = UUID.randomUUID();
+        UUID companyId = createCompany(board);
+        String teamsUrl = "/api/companies/" + companyId + "/teams";
+        UUID teamId = createTeam(companyId, board, "Marketing", "growth");
+        UUID gestorId = createAgent(companyId, board, "Ana", teamId);
+
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + gestorId + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gestorStatus").value("ESTAGIO"))
+                .andExpect(jsonPath("$.gestorPromovidoEm").doesNotExist());
+
+        String promovido = mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor/promover")
+                        .header("X-Board-User", board.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gestorStatus").value("PROMOVIDO"))
+                .andExpect(jsonPath("$.gestorPromovidoPorActorType").value("BOARD"))
+                .andExpect(jsonPath("$.gestorPromovidoPorActorId").value(board.toString()))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(om.readTree(promovido).get("gestorPromovidoEm").asText()).isNotEmpty();
+
+        // transição só ESTAGIO→PROMOVIDO — repromover é 409, nunca um segundo carimbo
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor/promover")
+                        .header("X-Board-User", board.toString()))
+                .andExpect(status().isConflict());
+
+        JsonNode feed = om.readTree(mvc.perform(get("/api/companies/" + companyId + "/activity")
+                        .header("X-Board-User", board.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        JsonNode evento = null;
+        for (JsonNode candidato : feed) {
+            if ("GESTOR_PROMOVIDO".equals(candidato.get("action").asText())) {
+                evento = candidato;
+                break;
+            }
+        }
+        assertThat(evento).as("GESTOR_PROMOVIDO no activity_log da company").isNotNull();
+        assertThat(evento.get("actorType").asText()).isEqualTo("BOARD");
+        assertThat(evento.get("actorId").asText()).isEqualTo(board.toString());
+        assertThat(evento.get("entityType").asText()).isEqualTo("team");
+        assertThat(evento.get("entityId").asText()).isEqualTo(teamId.toString());
+        assertThat(evento.get("detail").get("gestorAgentId").asText()).isEqualTo(gestorId.toString());
+    }
+
+    @Test
+    void promoverSemGestorDesignado_ehConflitoAcionavel() throws Exception {
+        UUID board = UUID.randomUUID();
+        UUID companyId = createCompany(board);
+        UUID teamId = createTeam(companyId, board, "Marketing", "conteudo");
+
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/gestor/promover")
+                        .header("X-Board-User", board.toString()))
+                .andExpect(status().isConflict());
+    }
+
+    /**
+     * Regressão explícita (F-ORG-A já provou isso; ADR-0046 não pode quebrar): promover o gestor
+     * NÃO destrava o dispatch — só o arquiteto trava/destrava (D-ORG-A.1, dois postos separados).
+     */
+    @Test
+    void promoverGestorNaoDestravaODispatch_continuaSoDoArquiteto() throws Exception {
+        UUID board = UUID.randomUUID();
+        UUID companyId = createCompany(board);
+        String teamsUrl = "/api/companies/" + companyId + "/teams";
+        UUID teamId = createTeam(companyId, board, "Marketing", "growth");
+        UUID gestorId = createAgent(companyId, board, "Ana", teamId);
+
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + gestorId + "\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor/promover")
+                        .header("X-Board-User", board.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gestorStatus").value("PROMOVIDO"));
+
+        // gestor promovido, time AINDA sem arquiteto → wakeup continua 409
+        mvc.perform(post("/api/companies/" + companyId + "/agents/" + gestorId + "/wakeups")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"trabalhar\"}"))
+                .andExpect(status().isConflict());
     }
 
     private UUID createCompany(UUID board) throws Exception {
