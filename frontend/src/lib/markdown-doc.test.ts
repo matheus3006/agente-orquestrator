@@ -48,6 +48,34 @@ describe("renderMarkdownDoc", () => {
     expect(html).toContain('<h2 id="plano-2">');
   });
 
+  // R31: o texto do heading sai do HTML JÁ escapado pelo micromark; o TOC escapava
+  // DE NOVO (rótulo com entidade visível) e o slug comia a entidade (`salt-amp-pepper`).
+  // O corpo sempre renderizou certo — o defeito era só rótulo do TOC + id.
+  it("título com & escapa UMA vez no TOC e não contamina o id", () => {
+    const html = renderMarkdownDoc("# Salt & Pepper\n\ntexto\n");
+
+    expect(html).toContain('<h1 id="salt-pepper">');
+    expect(html).toContain('<a href="#salt-pepper">Salt &amp; Pepper</a>');
+    expect(html).not.toContain("&amp;amp;");
+  });
+
+  it("título com < escapa UMA vez no TOC e não contamina o id", () => {
+    const html = renderMarkdownDoc("# a < b\n\ntexto\n");
+
+    expect(html).toContain('<h1 id="a-b">');
+    expect(html).toContain('<a href="#a-b">a &lt; b</a>');
+    expect(html).not.toContain("&amp;lt;");
+  });
+
+  // Trava a ORDEM do des-escape (`&amp;` por último): um título que diz literalmente
+  // "&lt;" tem que voltar dizendo "&lt;", não virar "<".
+  it("título com entidade literal faz round-trip sem virar o caractere", () => {
+    const html = renderMarkdownDoc("# lit &amp;lt; fim\n\ntexto\n");
+
+    expect(html).toContain('<a href="#lit-lt-fim">lit &amp;lt; fim</a>');
+    expect(html).toContain('<h1 id="lit-lt-fim">lit &amp;lt; fim</h1>');
+  });
+
   it("documento sem títulos não ganha TOC", () => {
     const html = renderMarkdownDoc("só um parágrafo solto\n");
 

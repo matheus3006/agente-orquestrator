@@ -5,6 +5,11 @@
 > `.claude/worktrees/exciting-engelbart-cdc179`. Suíte 835/835 e prova no motor real feitas.
 > A branch está rebaseada na **main** e leva DOIS commits na mesma PR: `4344f8d` (404 de rota
 > órfã) e `ed96dca` (esta fatia) — mesma raiz, mesmo arquivo.
+>
+> **POUSO — PR #44 MERGED** (merge `3c02a36`, 2026-07-18, pelo dono). A branch
+> `matheus/exciting-engelbart-cdc179` e o worktree `.claude/worktrees/exciting-engelbart-cdc179`
+> citados acima são **HISTÓRICOS** — o worktree foi podado pela R31 (2026-07-19). Os hashes
+> `4344f8d`/`ed96dca` seguem válidos: vivem na main via o merge.
 
 ## Estado / North
 
