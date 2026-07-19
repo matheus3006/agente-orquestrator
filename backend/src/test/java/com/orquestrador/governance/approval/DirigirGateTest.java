@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * O coração da fatia dirigir-sem-gate (ADR-0047, D-DSG-1..8): o bloco {@code ```dirigir```} na
@@ -259,6 +260,129 @@ class DirigirGateTest {
 
         assertThat(approvalsDa(c.companyId())).hasSize(1);
         assertThat(issuesDa(c.companyId())).hasSize(1);
+    }
+
+    /**
+     * O TESTE do hardening item 1 (fingerprint estrutural): o zumbi do lease reaper re-executa o
+     * MESMO runId com uma chamada REAL nova ao LLM — que REFORMULA titulo/descricao/racional
+     * (LLM não é determinístico). Com fingerprint de conteúdo, as duas linhas seriam
+     * "legitimamente" diferentes e uma 2ª issue nasceria sem NENHUM humano concordar. A
+     * identidade agora é (alvo, posição) — a prosa toda pode derivar que o dedupe pega.
+     */
+    @Test
+    void settleReexecutadoComTextoReformulado_dedupePegaMesmoAssim() {
+        Cenario c = cenario();
+        promoveAna(c);
+
+        gate.handle(c.companyId(), c.ana().getId(), c.runId(),
+                "```dirigir\n{\"alvo\": \"Bruno\", \"titulo\": \"Calendário de posts\","
+                        + " \"descricao\": \"pautas de julho\", \"risco\": 2,"
+                        + " \"racional\": \"pauta fria e o Bruno domina o assunto\"}\n```\n");
+        // O reaper re-liquidou e o LLM reescreveu TUDO — mesma ordem, outras palavras.
+        gate.handle(c.companyId(), c.ana().getId(), c.runId(),
+                "```dirigir\n{\"alvo\": \"Bruno\", \"titulo\": \"Montar o calendário de posts\","
+                        + " \"descricao\": \"planejamento editorial de julho\", \"risco\": 2,"
+                        + " \"racional\": \"o assunto é do Bruno e a pauta esfriou\"}\n```\n");
+
+        assertThat(approvalsDa(c.companyId())).hasSize(1);
+        assertThat(issuesDa(c.companyId())).hasSize(1);
+        assertThat(issuesDa(c.companyId()).get(0).getTitle())
+                .as("a 1ª execução real venceu — a re-execução dedupou, não sobrescreveu")
+                .isEqualTo("Calendário de posts");
+    }
+
+    /**
+     * A tensão que o fingerprint estrutural precisa respeitar (hardening item 1): o MESMO gestor,
+     * no MESMO run, dirigindo 2 issues DIFERENTES pro MESMO alvo é legítimo (cap = 5/run). A
+     * posição per-alvo distingue as duas — chave estreita demais colapsaria ordens genuínas.
+     */
+    @Test
+    void duasOrdensDistintasProMesmoAlvoNoMesmoRun_naoColidem() {
+        Cenario c = cenario();
+        promoveAna(c);
+
+        gate.handle(c.companyId(), c.ana().getId(), c.runId(),
+                blocoDirigir("Bruno", "Revisar o PR X") + "\n"
+                        + blocoDirigir("Bruno", "Atualizar a doc Y"));
+
+        assertThat(approvalsDa(c.companyId())).hasSize(2);
+        List<Issue> criadas = issuesDa(c.companyId());
+        assertThat(criadas).hasSize(2);
+        assertThat(criadas).extracting(Issue::getTitle)
+                .containsExactlyInAnyOrder("Revisar o PR X", "Atualizar a doc Y");
+        assertThat(criadas).allSatisfy(issue ->
+                assertThat(issue.getAssigneeAgentId()).isEqualTo(c.bruno().getId()));
+    }
+
+    /**
+     * O acompanhante do fingerprint estrutural: com posição-como-identidade, um ECO do LLM (o
+     * mesmo bloco byte-idêntico 2× no MESMO reply) viraria 2 issues — o gate colapsa antes, com
+     * aviso contado (anti-silêncio).
+     */
+    @Test
+    void ordemRepetidaIdenticaNoMesmoReply_colapsaEmUmaComAviso() {
+        Cenario c = cenario();
+        promoveAna(c);
+        String bloco = blocoDirigir("Bruno", "Calendário de posts");
+
+        gate.handle(c.companyId(), c.ana().getId(), c.runId(), bloco + "\n" + bloco);
+
+        assertThat(approvalsDa(c.companyId())).hasSize(1);
+        assertThat(issuesDa(c.companyId())).hasSize(1);
+        assertThat(runEvents.findByRunIdOrderByCreatedAtAsc(c.runId()))
+                .anySatisfy(event -> assertThat(event.getDetail()).contains("repetida IDÊNTICA"));
+    }
+
+    private static ApprovalService.OrdemDirigida ordemDireta(Agent alvo, UUID bracoTeamId) {
+        return new ApprovalService.OrdemDirigida(alvo.getId(), alvo.getTeamId(), bracoTeamId,
+                "Golpe por fora do gate", null, 2, "um chamador que pulou o DirigirGate",
+                "{\"targetAgentId\": \"" + alvo.getId() + "\", \"titulo\": \"Golpe por fora do gate\"}",
+                "dirigir a " + alvo.getName() + ": Golpe por fora do gate", 1);
+    }
+
+    /**
+     * O TESTE do hardening item 2 (defesa em profundidade): um "segundo chamador" hipotético que
+     * chama {@code dirigirIssueSemGate} DIRETO, pulando o guard do DirigirGate. O próprio
+     * ApprovalService recusa — por construção, não por convenção. Aqui: gestora em ESTÁGIO.
+     */
+    @Test
+    void chamadorDiretoComGestoraEmEstagio_oProprioServiceRecusa() {
+        Cenario c = cenario(); // Ana é gestora titular, mas NÃO promovida
+
+        assertThatThrownBy(() -> approvalService.dirigirIssueSemGate(c.companyId(),
+                c.ana().getId(), c.runId(), ordemDireta(c.bruno(), c.marketing().getId())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ESTÁGIO");
+        assertThat(approvalsDa(c.companyId())).isEmpty();
+        assertThat(issuesDa(c.companyId())).isEmpty();
+    }
+
+    /** Item 2, segunda cerca: quem nem gestor do braço é não passa — mesmo promovido o braço. */
+    @Test
+    void chamadorDiretoPorQuemNaoEGestorDoBraco_oProprioServiceRecusa() {
+        Cenario c = cenario();
+        promoveAna(c);
+
+        assertThatThrownBy(() -> approvalService.dirigirIssueSemGate(c.companyId(),
+                c.bruno().getId(), c.runId(), ordemDireta(c.bruno(), c.marketing().getId())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("não é o gestor titular");
+        assertThat(approvalsDa(c.companyId())).isEmpty();
+        assertThat(issuesDa(c.companyId())).isEmpty();
+    }
+
+    /** Item 2, terceira cerca: alvo fora da subárvore do braço — a régua D-ORG-3 vale AQUI também. */
+    @Test
+    void chamadorDiretoComAlvoForaDaSubarvore_oProprioServiceRecusa() {
+        Cenario c = cenario();
+        promoveAna(c);
+
+        assertThatThrownBy(() -> approvalService.dirigirIssueSemGate(c.companyId(),
+                c.ana().getId(), c.runId(), ordemDireta(c.caio(), c.marketing().getId())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("FORA da subárvore");
+        assertThat(approvalsDa(c.companyId())).isEmpty();
+        assertThat(issuesDa(c.companyId())).isEmpty();
     }
 
     @Test

@@ -295,7 +295,13 @@ export default function ApprovalsPage() {
                   <span>{approval.area}</span>
                   {approval.racionalTipo === "INTUICAO" && <span>área criativa</span>}
                   {pendente ? (
-                    <span className="waiting-clock">{fmtAgo(approval.requestedAt, nowMs)}</span>
+                    <>
+                      {/* Hardening ADR-0047 (item 3): quem propôs é a informação que o §2 promete
+                          no cartão — gestor trocado/rebaixado entre propor e aprovar é visível
+                          AQUI, não bloqueio. Vale pra todo tipo, não só DIRECT_ISSUE. */}
+                      <span>proposto por {nomeDoAgente(approval.requestedByAgentId) ?? "—"}</span>
+                      <span className="waiting-clock">{fmtAgo(approval.requestedAt, nowMs)}</span>
+                    </>
                   ) : (
                     <span>
                       {approval.status === "APPROVED"

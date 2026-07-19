@@ -14,7 +14,11 @@ import com.orquestrador.org.team.TeamRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -33,9 +37,15 @@ import java.util.UUID;
  * ({@value #CAP_ORDENS_POR_RUN}, o padrão do {@code SkillRequestGate}).
  *
  * <p>O alvo é endereçado por NOME e resolvido pra UUID AQUI (momento do ato) — o
- * {@code targetDetail} canônico carrega nome+id+titulo+risco+racional, e é sobre ele que o
- * fingerprint de dedupe é calculado (idêntico nos dois ramos: o mesmo bloco tem a mesma
- * identidade independente do status do gestor).
+ * {@code targetDetail} canônico carrega nome+id+titulo+risco+racional. A IDENTIDADE de dedupe
+ * difere por ramo (hardening pós-conferência, ADR-0047): no ESTÁGIO o fingerprint segue sendo o
+ * conteúdo canônico (a chave do {@code propose()} não tem runId — texto é o que distingue ordens
+ * de runs diferentes, e há um humano no gate pra pegar duplicata); no PROMOVIDO a identidade é
+ * ESTRUTURAL — (alvo, posição da ordem entre as aceitas DESSE alvo neste run) — porque o zumbi do
+ * lease reaper re-executa o MESMO runId com uma chamada REAL nova ao LLM, que reformula o texto:
+ * fingerprint de prosa deixaria a duplicata passar pelos dois dedupes exatamente no único caminho
+ * sem humano. Bloco byte-idêntico repetido no MESMO reply é colapsado aqui (aviso contado), pra
+ * que posição-como-identidade não transforme eco do LLM em duas issues.
  */
 @Component
 public class DirigirGate {
@@ -74,8 +84,15 @@ public class DirigirGate {
         }
 
         List<Team> bracos = teams.findByCompanyIdAndGestorAgentId(companyId, agentId);
+        Set<DirigirScanner.Ordem> vistas = new HashSet<>();
+        Map<UUID, Integer> ordinalDoAlvo = new HashMap<>();
         int aceitas = 0;
         for (DirigirScanner.Ordem ordem : scan.ordens()) {
+            if (!vistas.add(ordem)) {
+                avisos.add("'" + ordem.titulo() + "' repetida IDÊNTICA no mesmo reply — colapsada"
+                        + " em uma ordem só");
+                continue;
+            }
             if (aceitas >= CAP_ORDENS_POR_RUN) {
                 avisos.add("'" + ordem.titulo() + "' além do teto (" + CAP_ORDENS_POR_RUN + "/run)");
                 continue;
@@ -105,13 +122,17 @@ public class DirigirGate {
                 continue;
             }
             aceitas++;
+            // A posição da ordem entre as ACEITAS deste alvo neste run: é o que distingue duas
+            // ordens genuínas pro mesmo alvo sem depender de prosa (que o zumbi reformula). Conta
+            // por-alvo, não global, pra reordenação entre alvos na re-execução não descasar.
+            int ordemDoAlvo = ordinalDoAlvo.merge(alvo.getId(), 1, Integer::sum);
             String targetDetail = targetDetailDe(ordem, alvo);
             String resumo = "dirigir a " + alvo.getName() + ": " + ordem.titulo();
             if (braco.gestorPromovido()) {
                 approvals.dirigirIssueSemGate(companyId, agentId, runId,
                         new ApprovalService.OrdemDirigida(alvo.getId(), alvo.getTeamId(), braco.getId(),
                                 ordem.titulo(), ordem.descricao(), ordem.risco(), ordem.racional(),
-                                targetDetail, resumo));
+                                targetDetail, resumo, ordemDoAlvo));
             } else {
                 // D-DSG-8: ESTÁGIO dirige EM LOTE no gate — propose() normal (dedupe de PENDING
                 // por fingerprint de graça; ADR-0035 agrupa e o dono aprova N de uma vez).
