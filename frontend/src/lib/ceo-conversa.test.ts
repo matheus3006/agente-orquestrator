@@ -41,6 +41,8 @@ const approval = (o: Partial<Approval> = {}): Approval => ({
   racionalArrancado: false,
   grillRounds: 0,
   decisionReason: null,
+  decidedByActorType: null,
+  decidedByActorId: null,
   requestedAt: "2026-07-04T10:00:02Z",
   decidedAt: null,
   ...o,
@@ -263,6 +265,28 @@ describe("acaoLegivel (o corpo do card é legível — o targetDetail nunca apar
     expect(acao).toEqual({ verbo: "Contratar agente", alvo: "Nina · executor" });
   });
 
+  it("DIRECT_ISSUE vira 'Dirigir issue' com título · a quem (ADR-0047)", () => {
+    const acao = acaoLegivel(
+      approval({
+        actionType: "DIRECT_ISSUE",
+        targetDetail: '{"agenteNome": "Bruno", "titulo": "Calendário de posts"}',
+      }),
+    );
+
+    expect(acao).toEqual({ verbo: "Dirigir issue", alvo: "Calendário de posts · a Bruno" });
+  });
+
+  it("DIRECT_ISSUE sem agenteNome cai no título puro; sem título cai no resumo (alvo null)", () => {
+    expect(
+      acaoLegivel(
+        approval({ actionType: "DIRECT_ISSUE", targetDetail: '{"titulo": "Calendário"}' }),
+      ),
+    ).toEqual({ verbo: "Dirigir issue", alvo: "Calendário" });
+    expect(
+      acaoLegivel(approval({ actionType: "DIRECT_ISSUE", targetDetail: '{"agenteNome": "Bruno"}' })),
+    ).toEqual({ verbo: "Dirigir issue", alvo: null });
+  });
+
   it("WAKEUP_AGENT vira 'Acordar agente' com o id encurtado", () => {
     const acao = acaoLegivel(
       approval({
@@ -460,6 +484,7 @@ describe("issueDaApproval (CREATE_ISSUE aprovada → a issue criada, pro report 
     corrigeIssueId: null,
     corrigeSeq: null,
     conversationId: null,
+    dirigidaPorGestorAgentId: null,
   });
 
   it("acha a issue pelo título exato do alvo; empate fica com a mais recente", () => {

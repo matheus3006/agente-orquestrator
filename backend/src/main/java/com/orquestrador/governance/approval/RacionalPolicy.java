@@ -40,7 +40,10 @@ public class RacionalPolicy {
         }
         return switch (actionType) {
             case HIRE_AGENT, CREATE_TEAM, CREATE_ROLE_TEMPLATE -> "estrutura-org";
-            case CREATE_ISSUE -> "backlog";
+            // D-DSG-3: o dirigir do gestor cria issue — mesma área do CREATE_ISSUE. Os DOIS
+            // ciclos (PENDING do estágio e nasce-decidida do promovido) derivam daqui, então a
+            // classificação do racional é idêntica nos dois ramos.
+            case CREATE_ISSUE, DIRECT_ISSUE -> "backlog";
             case WAKEUP_AGENT -> "operacao";
             case SKILL_INSTALL_REQUEST -> "skills";
             // F-C2: o CEO declara a área graduada (o detector C5 é por-área); sem declaração,

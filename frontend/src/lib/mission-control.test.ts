@@ -78,6 +78,7 @@ describe("stationIssueLine (a linha de issue do card — BLOCKED/IDLE resolvem p
     corrigeIssueId: null,
     corrigeSeq: null,
     conversationId: null,
+    dirigidaPorGestorAgentId: null,
     ...overrides,
   });
 
@@ -150,6 +151,7 @@ describe("issuesListBehindAggregate (agregado diz BLOCKED, lista ainda não)", (
     corrigeIssueId: null,
     corrigeSeq: null,
     conversationId: null,
+    dirigidaPorGestorAgentId: null,
   });
 
   it("agente BLOCKED sem issue BLOCKED correspondente → lista está atrás", () => {
@@ -219,6 +221,7 @@ describe("estadoOcioso (o board parado guia o próximo passo — ou null)", () =
     corrigeIssueId: null,
     corrigeSeq: null,
     conversationId: null,
+    dirigidaPorGestorAgentId: null,
   });
 
   it("dados incompletos (agents/issues undefined) → null (guard da race de load)", () => {
@@ -272,6 +275,7 @@ describe("issuesListBehindIdleSettle (board parou, lista de issues ainda IN_PROG
     corrigeIssueId: null,
     corrigeSeq: null,
     conversationId: null,
+    dirigidaPorGestorAgentId: null,
   });
 
   it("todo idle + issue ainda IN_PROGRESS → lista atrasada (invalidar)", () => {

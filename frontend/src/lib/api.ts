@@ -309,6 +309,8 @@ export interface IssueSummary {
   corrigeSeq: number | null;
   /** Absorção (ADR-0037/D4): a conversa DIRECIONADA da issue — null em não-absorvida. */
   conversationId: string | null;
+  /** Dirigida sem gate (ADR-0047/D-DSG-6): o gestor promovido que a dirigiu — null nas demais. */
+  dirigidaPorGestorAgentId: string | null;
 }
 
 export function listIssues(companyId: string): Promise<IssueSummary[]> {
@@ -1070,7 +1072,8 @@ export type ApprovalActionType =
   | "CREATE_TEAM"
   | "CREATE_ROLE_TEMPLATE"
   | "SKILL_INSTALL_REQUEST"
-  | "GRADUATE_PRINCIPLE";
+  | "GRADUATE_PRINCIPLE"
+  | "DIRECT_ISSUE";
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -1093,6 +1096,9 @@ export interface Approval {
   racionalArrancado: boolean;
   grillRounds: number;
   decisionReason: string | null;
+  /** QUEM decidiu (ADR-0047): "AGENT" no cartão nasce-decidido do gestor promovido; "BOARD" no gate normal. */
+  decidedByActorType: string | null;
+  decidedByActorId: string | null;
   requestedAt: string;
   decidedAt: string | null;
 }

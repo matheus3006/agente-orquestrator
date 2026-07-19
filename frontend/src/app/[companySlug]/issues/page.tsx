@@ -2,12 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { CompanyLink, useCompanyNav } from "@/components/company-link";
-import { AssigneeChip, CorrigeSelo, RiskBadge } from "@/components/issue-bits";
+import { AssigneeChip, CorrigeSelo, DirigidaSelo, RiskBadge } from "@/components/issue-bits";
 import { NewIssueDialog } from "@/components/new-issue-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { View, ViewHead } from "@/components/view";
 import { listAgents, listIssues } from "@/lib/api";
-import { corrigeSelo, groupIssuesByStatus } from "@/lib/issues";
+import { corrigeSelo, dirigidaSelo, groupIssuesByStatus } from "@/lib/issues";
 import { queryKeys } from "@/lib/query-keys";
 import { useActiveCompany } from "@/lib/use-active-company";
 
@@ -86,6 +86,16 @@ export default function IssuesPage() {
                 <RiskBadge riskLevel={issue.riskLevel} status={group.status} />
                 <span className="row-title">{issue.title}</span>
                 <CorrigeSelo selo={corrigeSelo(issue)} />
+                {/* ADR-0047 (D-DSG-6): o selo da dirigida sem gate pega carona no MESMO mapa
+                    de agentes que o AssigneeChip já carrega — sem campo resolvido no server. */}
+                <DirigidaSelo
+                  selo={dirigidaSelo(
+                    issue,
+                    issue.dirigidaPorGestorAgentId
+                      ? agentName(issue.dirigidaPorGestorAgentId)
+                      : null,
+                  )}
+                />
                 <AssigneeChip
                   name={issue.assigneeAgentId ? agentName(issue.assigneeAgentId) : null}
                 />

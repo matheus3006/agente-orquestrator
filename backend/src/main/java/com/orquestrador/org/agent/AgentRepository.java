@@ -32,4 +32,11 @@ public interface AgentRepository extends JpaRepository<Agent, UUID> {
     /** A persona de CEO da company (ADR-0031, D2): o balcão único resolve por (role, persona). */
     Optional<Agent> findFirstByCompanyIdAndRoleAndPersonaOrderByCreatedAtAsc(UUID companyId, String role,
                                                                              String persona);
+
+    /**
+     * O alvo do bloco {@code ```dirigir```} é endereçado por NOME (ADR-0047, mesmo racional do
+     * {@code timeDoAlvo}: LLM sabe nome, alucina UUID). Lista, não Optional: nome duplicado =
+     * alvo AMBÍGUO — o gate descarta com aviso, nunca escolhe por conta própria.
+     */
+    List<Agent> findByCompanyIdAndNameIgnoreCase(UUID companyId, String name);
 }

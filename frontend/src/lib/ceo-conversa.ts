@@ -111,6 +111,7 @@ const VERBO_POR_ACAO: Record<Approval["actionType"], string> = {
   CREATE_ROLE_TEMPLATE: "Criar molde",
   SKILL_INSTALL_REQUEST: "Pedir skill",
   GRADUATE_PRINCIPLE: "Graduar princípio",
+  DIRECT_ISSUE: "Dirigir issue",
 };
 
 /** Parse fail-soft do targetDetail — espelha o ProposalScanner: quebrado nunca derruba a tela. */
@@ -164,6 +165,15 @@ export function acaoLegivel(approval: Approval): AcaoLegivel {
     case "GRADUATE_PRINCIPLE":
       // F-C2: o alvo do card É a frase proposta — a entrada do Playbook é autorada (C2).
       return { verbo, alvo: typeof alvo.frase === "string" ? alvo.frase : null };
+    case "DIRECT_ISSUE": {
+      // ADR-0047: o gestor dirige issue pro braço — o card mostra o título e A QUEM.
+      const titulo = typeof alvo.titulo === "string" ? alvo.titulo : null;
+      const agenteNome = typeof alvo.agenteNome === "string" ? alvo.agenteNome : null;
+      if (!titulo) {
+        return { verbo, alvo: null };
+      }
+      return { verbo, alvo: agenteNome ? `${titulo} · a ${agenteNome}` : titulo };
+    }
   }
 }
 

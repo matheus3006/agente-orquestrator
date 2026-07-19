@@ -18,6 +18,11 @@ package com.orquestrador.governance.approval;
  * AUTORADA) e o APPROVE fabrica a Decisão {@code grau=PRINCIPIO} pela fábrica única; herda
  * propose-then-commit, o grill do racional (D6), a fila e o lote (ADR-0035) de graça — o
  * "graduation-badge" com endpoint próprio foi DERRUBADO como módulo raso.
+ * {@code DIRECT_ISSUE} é a 8ª ação (ADR-0047, D-DSG-3/8): o GESTOR dirige uma issue pro próprio
+ * braço via bloco {@code ```dirigir```}. É a única ação com DOIS ciclos de vida, roteados pelo
+ * {@code gestor_status} do braço: ESTÁGIO → PENDING via {@code propose()} normal (lote no gate);
+ * PROMOVIDO → a Approval NASCE {@code APPROVED} ({@code decidedBy} = a própria gestora) — a
+ * primeira da casa que não passa por {@code propose()}+{@code decide()} humano.
  */
 public enum ApprovalActionType {
     HIRE_AGENT,
@@ -26,5 +31,6 @@ public enum ApprovalActionType {
     CREATE_TEAM,
     CREATE_ROLE_TEMPLATE,
     SKILL_INSTALL_REQUEST,
-    GRADUATE_PRINCIPLE
+    GRADUATE_PRINCIPLE,
+    DIRECT_ISSUE
 }

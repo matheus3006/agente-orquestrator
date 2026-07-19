@@ -8,12 +8,21 @@ import type { Approval, ApprovalActionType, BatchDecisionItem, BatchDecisionOutc
 
 export type FiltroTipo = ApprovalActionType | "todos";
 
-/** Os filtros de tipo na ordem da dor real (a cascata dos 27 era HIRE_AGENT). */
+/**
+ * Os filtros de tipo na ordem da dor real (a cascata dos 27 era HIRE_AGENT). Completo sobre o
+ * enum desde a fatia dirigir-sem-gate (ADR-0047): estava 4-de-7 defasado — tipo sem filtro não
+ * podia ser decidido em lote (o lote exige filtro ativo, D2).
+ */
 export const FILTRO_TIPOS: ReadonlyArray<{ id: FiltroTipo; label: string }> = [
   { id: "todos", label: "todos" },
   { id: "HIRE_AGENT", label: "contratações" },
   { id: "CREATE_ISSUE", label: "issues" },
   { id: "WAKEUP_AGENT", label: "wakeups" },
+  { id: "CREATE_TEAM", label: "times" },
+  { id: "CREATE_ROLE_TEMPLATE", label: "moldes" },
+  { id: "SKILL_INSTALL_REQUEST", label: "skills" },
+  { id: "GRADUATE_PRINCIPLE", label: "princípios" },
+  { id: "DIRECT_ISSUE", label: "direcionamentos" },
 ];
 
 /** D2: agir em lote exige filtro por tipo ativo — misturar contratação com issue num clique, não. */

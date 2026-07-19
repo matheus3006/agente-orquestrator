@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Approval } from "./api";
 import {
+  FILTRO_TIPOS,
   alternarSelecaoTotal,
   filtrarPorTipo,
   itensDoLote,
@@ -29,10 +30,30 @@ function aprovacao(id: string, actionType: Approval["actionType"]): Approval {
     racionalArrancado: false,
     grillRounds: 0,
     decisionReason: null,
+    decidedByActorType: null,
+    decidedByActorId: null,
     requestedAt: "2026-07-10T12:00:00Z",
     decidedAt: null,
   };
 }
+
+describe("FILTRO_TIPOS (completo sobre o enum desde a ADR-0047 — tipo sem filtro não age em lote)", () => {
+  it("cobre 'todos' + os 8 tipos de ação do gate", () => {
+    const ids = FILTRO_TIPOS.map((tipo) => tipo.id);
+
+    expect(ids).toEqual([
+      "todos",
+      "HIRE_AGENT",
+      "CREATE_ISSUE",
+      "WAKEUP_AGENT",
+      "CREATE_TEAM",
+      "CREATE_ROLE_TEMPLATE",
+      "SKILL_INSTALL_REQUEST",
+      "GRADUATE_PRINCIPLE",
+      "DIRECT_ISSUE",
+    ]);
+  });
+});
 
 describe("loteHabilitado (D2: lote SÓ com filtro de tipo ativo)", () => {
   it("bloqueia com o filtro 'todos', mesmo com seleção", () => {

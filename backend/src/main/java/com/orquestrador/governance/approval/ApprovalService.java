@@ -142,6 +142,76 @@ public class ApprovalService {
     }
 
     /**
+     * O DIRIGIR SEM GATE (ADR-0047, D-DSG-3/5): a rota do ramo PROMOVIDO — o ÚNICO call site do
+     * caminho nasce-decidida ({@link #nasceDecididaPelaGestora}). Roda ATRÁS do guard de braço
+     * (D-DSG-2, checado pelo {@code DirigirGate} no momento do ato) e é IDEMPOTENTE por
+     * (run, ordem): settle reexecutado (reaper) devolve a linha existente em vez de duplicar
+     * cartão+issue — a 1ª face do dedupe; o índice parcial da V37 é o backstop Postgres. Na MESMA
+     * tx: Approval nasce-APPROVED → issue já atribuída ao alvo com o selo (D-DSG-6) →
+     * {@code ISSUE_DIRECIONADA_SEM_GATE} com detail só-IDs (ADR-0009).
+     */
+    @Transactional
+    public Approval dirigirIssueSemGate(UUID companyId, UUID gestoraAgentId, UUID runId,
+                                        OrdemDirigida ordem) {
+        String fingerprint = fingerprintOf(ordem.targetDetailJson());
+        Approval jaProtocolada = approvals.findFirstByCompanyIdAndRunIdAndActionTypeAndTargetFingerprint(
+                companyId, runId, ApprovalActionType.DIRECT_ISSUE, fingerprint).orElse(null);
+        if (jaProtocolada != null) {
+            return jaProtocolada;
+        }
+        Approval approval = nasceDecididaPelaGestora(companyId, gestoraAgentId, runId, ordem, fingerprint);
+        Issue issue = issues.createDirigida(companyId, ordem.titulo(), ordem.descricao(),
+                ordem.risco(), ordem.targetAgentId(), gestoraAgentId);
+        activityLog.record(companyId, ActorType.AGENT, gestoraAgentId,
+                ActivityAction.ISSUE_DIRECIONADA_SEM_GATE, "issue", issue.getId(),
+                Map.of("approvalId", approval.getId(), "targetAgentId", ordem.targetAgentId(),
+                        "targetTeamId", ordem.targetTeamId(), "bracoTeamId", ordem.bracoTeamId(),
+                        "runId", runId));
+        return approval;
+    }
+
+    /**
+     * A PRIMEIRA Approval da casa que NASCE decidida (ADR-0047, emenda consciente a ADR-0018/0020
+     * — decisão explícita do dono no grill dirigir-sem-gate, D-DSG-3): constrói e chama
+     * {@code decide()} ANTES do primeiro save — nunca existe uma linha PENDING, nunca passa por
+     * {@code propose()}, o grill do racional NÃO roda (o racional já vem OBRIGATÓRIO do bloco,
+     * D-DSG-4; {@code decisionReason} fica null). {@code racional_tipo} é derivado pelo MESMO
+     * {@code areaFor}/{@code deriveTipo} do propose — os dois ramos do DIRECT_ISSUE classificam
+     * idêntico (área "backlog" → LOGICO).
+     *
+     * <p><b>Escopo de segurança (conferência da sessão de controle, NÃO-NEGOCIÁVEL):</b> este
+     * método é PRIVADO, com {@code ApprovalActionType.DIRECT_ISSUE} e {@code ActorType.AGENT}
+     * como LITERAIS FIXOS — nunca parâmetros — e tem UM único call site
+     * ({@link #dirigirIssueSemGate}, atrás do guard de braço). Um helper genérico
+     * "cria-e-já-decide" parametrizável seria um bypass PERMANENTE de
+     * {@code propose()}+{@code decide()}+guard-de-board pra QUALQUER tipo de ação — proibido por
+     * desenho; generalizar exige decisão nova com revisão de segurança própria.
+     */
+    private Approval nasceDecididaPelaGestora(UUID companyId, UUID gestoraAgentId, UUID runId,
+                                              OrdemDirigida ordem, String fingerprint) {
+        String area = racionalPolicy.areaFor(ApprovalActionType.DIRECT_ISSUE, null);
+        Approval approval = new Approval(UUID.randomUUID(), companyId, gestoraAgentId, null, runId,
+                ApprovalActionType.DIRECT_ISSUE, ordem.targetDetailJson(), fingerprint, area,
+                ordem.resumo(), racionalPolicy.deriveTipo(area));
+        // O cinto contra reuso acidental: se uma edição futura fizer o tipo virar parâmetro (ou
+        // trocar o literal acima), o caminho nasce-decidida para de funcionar em vez de virar
+        // porta genérica — o compilador não pega isso; este assert pega.
+        if (approval.getActionType() != ApprovalActionType.DIRECT_ISSUE) {
+            throw new IllegalStateException("nasce-decidida e EXCLUSIVA do DIRECT_ISSUE (ADR-0047)"
+                    + " — outro tipo de acao passa por propose()+decide()");
+        }
+        approval.decide(ApprovalDecision.APPROVE, ActorType.AGENT, gestoraAgentId,
+                ordem.racional().strip(), null);
+        return approvals.save(approval);
+    }
+
+    /** Uma ordem do bloco ```dirigir``` já resolvida pelo guard: alvo por ID, braço confirmado. */
+    public record OrdemDirigida(UUID targetAgentId, UUID targetTeamId, UUID bracoTeamId,
+                                String titulo, String descricao, Integer risco, String racional,
+                                String targetDetailJson, String resumo) {
+    }
+
+    /**
      * O commit do dono. O grill (ADR-0020) roda ANTES de qualquer efeito: racional ausente ou
      * "porque quis" → {@link DecideOutcome.Grilled} (rodada contada, Approval segue PENDING).
      * Racional presente → decide + dispara (APPROVE) + fabrica a Decisão (D5) + consolida a
@@ -470,6 +540,33 @@ public class ApprovalService {
                 IssueSkillAttachment attachment = skillSets.attachToIssue(approval.getCompanyId(), issueId,
                         approval.getRequestedByAgentId(), skill.getId(), actorType, actorId, approval.getRunId());
                 detail.put("issueSkillAttachmentId", attachment.getId());
+            }
+            case DIRECT_ISSUE -> {
+                // ADR-0047 (D-DSG-8): o ramo ESTÁGIO aprovado — o dono viu COMO o gestor dirige
+                // antes de confiar. O pouso é o MESMO createAtribuida do caminho sem-gate, mas o
+                // alvo é o AGENTE ESPECÍFICO do bloco (a gestora já triou; resolvido por nome →
+                // UUID no momento do ato pelo DirigirGate), NUNCA o arquiteto-do-time do
+                // CREATE_ISSUE. SEM selo: passou pelo gate como qualquer outra (D-DSG-6). O guard
+                // de braço NÃO é reconferido aqui: valeu no ATO (D-DSG-2); daqui pra frente quem
+                // autoriza é o humano que está aprovando o cartão — gestor trocado/rebaixado no
+                // meio-tempo é informação visível no cartão, não bloqueio.
+                // ⚠️ Este switch é STATEMENT sem default: sem este case, aprovar um cartão
+                // DIRECT_ISSUE compilaria e viraria no-op SILENCIOSO (Approval APPROVED, zero
+                // issue) — o teste do case em DirigirGateTest é o cinto obrigatório.
+                String titulo = textOrNull(alvo, "titulo");
+                UUID targetAgentId = uuidOrNull(alvo, "targetAgentId");
+                if (titulo == null || targetAgentId == null) {
+                    throw new ConflictException("Direcionamento sem titulo/targetAgentId: " + approval.getId());
+                }
+                Agent dirigido = agents.findById(targetAgentId)
+                        .orElseThrow(() -> new ConflictException("O agente dirigido nao existe mais"
+                                + " no quadro — rejeite e peça reemissao: " + approval.getId()));
+                Issue issue = issues.createAtribuida(approval.getCompanyId(), titulo,
+                        textOrNull(alvo, "descricao"),
+                        alvo.path("risco").isInt() ? alvo.path("risco").asInt() : null,
+                        dirigido.getId());
+                detail.put("issueId", issue.getId());
+                detail.put("assigneeAgentId", dirigido.getId());
             }
             case GRADUATE_PRINCIPLE -> {
                 // F-C2 (C2/C6): a graduação — o CEO propôs a FRASE, o dono sela (writer-of-record).

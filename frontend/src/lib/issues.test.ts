@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ActivityEvent, IssueRun, IssueSummary } from "./api";
 import {
   corrigeSelo,
+  dirigidaSelo,
   groupIssuesByStatus,
   issueActivityEvents,
   issueBehindLedger,
@@ -25,6 +26,7 @@ const issue = (overrides: Partial<IssueSummary>): IssueSummary => ({
   corrigeIssueId: null,
   corrigeSeq: null,
   conversationId: null,
+  dirigidaPorGestorAgentId: null,
   ...overrides,
 });
 
@@ -36,6 +38,23 @@ describe("corrigeSelo (caso B, ADR-0034 — o selo 'corrige #N' da corretiva)", 
   it("task normal (e alvo colhido, corrigeSeq null) fica sem selo", () => {
     expect(corrigeSelo(issue({}))).toBeNull();
     expect(corrigeSelo(issue({ corrigeIssueId: "orig", corrigeSeq: null }))).toBeNull();
+  });
+});
+
+describe("dirigidaSelo (ADR-0047, D-DSG-6 — o selo 'dirigida · <gestor>' da sem-gate)", () => {
+  it("issue dirigida sem gate ganha o selo com o nome do gestor", () => {
+    expect(dirigidaSelo(issue({ dirigidaPorGestorAgentId: "ana-id" }), "Ana")).toBe(
+      "dirigida · Ana",
+    );
+  });
+
+  it("agents carregando (undefined) ou gestor colhido (null): o selo aparece sem afirmar o nome", () => {
+    expect(dirigidaSelo(issue({ dirigidaPorGestorAgentId: "ana-id" }), undefined)).toBe("dirigida");
+    expect(dirigidaSelo(issue({ dirigidaPorGestorAgentId: "ana-id" }), null)).toBe("dirigida");
+  });
+
+  it("issue normal (coluna nula — inclui o ramo estágio, que passou pelo gate) fica sem selo", () => {
+    expect(dirigidaSelo(issue({}), "Ana")).toBeNull();
   });
 });
 
@@ -159,6 +178,7 @@ describe("issueBehindLedger (ledger diz 'liquidado', issue ainda diz IN_PROGRESS
     corrigeIssueId: null,
     corrigeSeq: null,
     conversationId: null,
+    dirigidaPorGestorAgentId: null,
   });
 
   it("IN_PROGRESS com todos os runs terminais → lista está atrás", () => {
