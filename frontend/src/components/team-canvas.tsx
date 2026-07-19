@@ -28,9 +28,9 @@ import {
 import {
   ApiError,
   assignAgentTeam,
-  reparentAgent,
   repinAgent,
   setTeamArquiteto,
+  setTeamGestor,
   type AgentBoardStatus,
   type AgentSummary,
   type Engine,
@@ -46,12 +46,14 @@ import { montarOrganograma, ORG_NODE_H, ORG_NODE_W, teamHue } from "@/lib/team-c
 import { pushToast } from "@/lib/toaster";
 import { cn } from "@/lib/utils";
 
-// O ORG-CHART agora EDITÁVEL (T.2 ligou a cadeia de comando): arrastar um agente e soltar SOBRE
-// outro reparenta (PATCH /reports-to); soltar no vazio volta pro lugar (nada muda). O menu do nó
-// (⋮, nodrag) concentra o resto da composição: mover de time, virar raiz, designar arquiteto.
-// O canvas segue ESPELHO — anti-ciclo e trava do arquiteto vivem no backend; um 409 vira toast e
-// o layout re-assenta do dado real. Nós carregam a listra do TIME (cor determinística) e o LED
-// vivo do agregado de 2s. Lib: @xyflow/react v12.
+// O ORG-CHART é ESPELHO da ÁRVORE DE TIMES (ADR-0045): a chefia não se edita aqui — ela DERIVA do
+// gestor do time. Por isso o arrastar-para-reparentar MORREU junto com o `PATCH /reports-to`:
+// arrastar hoje só re-assenta o layout. O que MOVE a estrutura vive no menu do nó (⋮, nodrag):
+// mover de time, designar arquiteto (destrava o dispatch) e designar GESTOR (move a chefia de
+// todos os membros no mesmo ato). O gesto "arrastar para um TIME" é da F-ORG-H.
+// Anti-ciclo e trava do arquiteto vivem no backend; um 409 vira toast e o layout re-assenta do
+// dado real. Nós carregam a listra do TIME (cor determinística) e o LED vivo do agregado de 2s.
+// Lib: @xyflow/react v12.
 
 type DadosDoNo = {
   agent: AgentSummary;
@@ -64,7 +66,7 @@ type DadosDoNo = {
   emDrift: boolean;
   driftTargetVersionId: string | null;
   onRepin: (agentId: string, versionId: string) => void;
-  onReparent: (agentId: string, novoLiderId: string | null) => void;
+  onDesignarGestor: (teamId: string, agentId: string) => void;
   onMoverParaTime: (agentId: string, teamId: string | null) => void;
   onDesignarArquiteto: (teamId: string, agentId: string) => void;
 };
@@ -105,13 +107,13 @@ function AgenteNode({ data }: NodeProps<NoAgente>) {
                 <span className="motor-item-label">designar arquiteto do time</span>
               </DropdownMenuItem>
             )}
-            {agent.reportsToId && (
+            {time && time.gestorAgentId !== agent.id && (
               <DropdownMenuItem
                 className="motor-item"
-                onSelect={() => data.onReparent(agent.id, null)}
+                onSelect={() => data.onDesignarGestor(time.id, agent.id)}
               >
                 <span className="motor-dot" aria-hidden />
-                <span className="motor-item-label">desligar do líder (vira raiz)</span>
+                <span className="motor-item-label">designar gestor do time</span>
               </DropdownMenuItem>
             )}
             <DropdownMenuLabel>mover para time</DropdownMenuLabel>
@@ -229,21 +231,20 @@ function CanvasDaCadeia({
     pushToast(mensagem, "bad");
   }
 
-  const reparent = useMutation({
-    mutationFn: ({ agentId, novoLiderId }: { agentId: string; novoLiderId: string | null }) =>
-      reparentAgent(companyId, agentId, novoLiderId),
-    onSuccess: (atualizado) => {
+  // ADR-0045: designar o GESTOR é o que MOVE a chefia agora — os membros do time passam a
+  // reportar a ele no mesmo ato (o backend re-deriva a subárvore; o canvas só espelha).
+  const designarGestor = useMutation({
+    mutationFn: ({ teamId, agentId }: { teamId: string; agentId: string | null }) =>
+      setTeamGestor(companyId, teamId, agentId),
+    onSuccess: (time) => {
       invalidarOrg();
       pushToast(
-        atualizado.reportsToId
-          ? `Cadeia religada — ${atualizado.name} tem novo líder`
-          : `${atualizado.name} agora é raiz da cadeia`,
+        time.gestorAgentId
+          ? `Gestor designado — a chefia de ${time.dominio}/${time.foco} deriva dele`
+          : `${time.dominio}/${time.foco} ficou sem gestor — a chefia sobe pro time-pai`,
       );
     },
-    onError: (error) => {
-      toastDeFalha(error, "religar a cadeia");
-      reassentar(); // o backend recusou (ex.: ciclo) — o canvas volta a espelhar o dado real
-    },
+    onError: (error) => toastDeFalha(error, "designar o gestor"),
   });
 
   const moverParaTime = useMutation({
@@ -311,8 +312,8 @@ function CanvasDaCadeia({
               emDrift,
               driftTargetVersionId,
               onRepin: (agentId: string, versionId: string) => repin.mutate({ agentId, versionId }),
-              onReparent: (agentId: string, novoLiderId: string | null) =>
-                reparent.mutate({ agentId, novoLiderId }),
+              onDesignarGestor: (teamId: string, agentId: string) =>
+                designarGestor.mutate({ teamId, agentId }),
               onMoverParaTime: (agentId: string, teamId: string | null) =>
                 moverParaTime.mutate({ agentId, teamId }),
               onDesignarArquiteto: (teamId: string, agentId: string) =>
@@ -368,19 +369,12 @@ function CanvasDaCadeia({
         onNodeDragStart={() => {
           arrastando.current = true;
         }}
-        onNodeDragStop={(_event, node) => {
+        onNodeDragStop={() => {
+          // ADR-0045: arrastar-para-reparentar MORREU com o `PATCH /reports-to`. A chefia deriva da
+          // árvore de times, então soltar um agente em cima de outro não significa mais nada — o
+          // layout apenas re-assenta. O gesto certo (arrastar para um TIME) é da F-ORG-H.
           arrastando.current = false;
-          const alvo = rf.getIntersectingNodes(node)[0];
-          const agente = agentePorId.get(node.id);
-          if (!alvo || !agente) {
-            reassentar(); // soltou no vazio — nada muda, o layout re-assenta
-            return;
-          }
-          if (alvo.id === agente.reportsToId) {
-            reassentar(); // já reporta a esse líder
-            return;
-          }
-          reparent.mutate({ agentId: node.id, novoLiderId: alvo.id });
+          reassentar();
         }}
       >
         <Controls showInteractive={false} position="bottom-right" />
@@ -389,7 +383,7 @@ function CanvasDaCadeia({
             position="top-center"
             className="rounded-md border border-line bg-raised px-3 py-1.5 font-mono text-[10.5px] text-faint"
           >
-            nenhum reports_to definido — arraste um agente sobre o líder para ligar a cadeia
+            nenhuma chefia ainda — designe o gestor de um time (menu ⋮ do agente) e a cadeia aparece
           </Panel>
         )}
       </ReactFlow>

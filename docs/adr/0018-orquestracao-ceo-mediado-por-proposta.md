@@ -126,6 +126,14 @@ cabia — issue_id/run_id NOT NULL). O APPROVE dispara `createTemplate` com `pro
 
 ## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
 
+**O alvo do `HIRE_AGENT` mudou (emenda da ADR-0045, F-ORG-A).** Desde a árvore-organograma, o alvo
+carrega o **TIME** — `dominio` + `foco`, o NOME do time (mesma gramática do `CREATE_ISSUE`, porque
+quem escreve o bloco é um LLM e UUID ele alucina) — e o time precisa já existir na company: sem
+ele, o APPROVE é 409 acionável em vez de contratar um agente órfão. O campo `reportsToId` **saiu do
+contrato**: a chefia deriva da árvore, e um `reportsToId` que ainda venha no alvo é descartado com
+WARN (descarte CONTADO, ADR-0036). O `CREATE_TEAM` ganhou `paiDominio`/`paiFoco` opcionais —
+omitidos, o time nasce pendurado na raiz (um departamento).
+
 **`target_detail` NÃO é "só-IDs" — carrega texto livre por construção.** O corpo desta ADR
 (§A primitiva Approval) prometeu `target_detail jsonb **só-IDs**` no espírito da regra PII da
 ADR-0009; o construído guarda ali o **alvo canônico da proposta**, que para `HIRE_AGENT`

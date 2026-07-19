@@ -140,7 +140,7 @@ class ReviewDecisionServiceTest {
 
     /** Um agente DENTRO de um time (dominio = a área do artefato que ele entrega, C11). */
     private UUID newAgentInTeam(UUID companyId, String dominio) {
-        Team time = teams.save(new Team(UUID.randomUUID(), companyId, dominio, "foco"));
+        Team time = teams.save(new Team(UUID.randomUUID(), companyId, dominio, "foco", null));
         Agent agent = new Agent(UUID.randomUUID(), companyId, "A", "worker", null);
         agent.configureRuntime("process", "echo ok", "LOCAL");
         agent.assignTeam(time.getId());

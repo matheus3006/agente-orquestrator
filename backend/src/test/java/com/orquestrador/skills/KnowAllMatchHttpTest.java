@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -69,11 +70,7 @@ class KnowAllMatchHttpTest {
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
 
-        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
-                        .header("X-Board-User", board.toString())
-                        .contentType("application/json")
-                        .content("{\"name\":\"A\",\"role\":\"worker\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID agentId = createAgent(companyId, board);
 
         // instala a sonda na company (catálogo global + Camada 2)
         mvc.perform(post("/api/companies/" + companyId + "/skills/import")
@@ -110,5 +107,34 @@ class KnowAllMatchHttpTest {
                         .header("X-Board-User", UUID.randomUUID().toString())
                         .contentType("application/json").content(body))
                 .andExpect(status().isForbidden());
+    }
+
+    /**
+     * Contratar EXIGE time (ADR-0045). Aqui o agente é só o portador da chave, então ele nasce no
+     * PRÓPRIO time e vira arquiteto dele: o dispatch segue destravado (ADR-0017) e a chefia derivada
+     * continua nula — exatamente o mundo que este teste já assumia.
+     */
+    private UUID createAgent(UUID companyId, UUID board) throws Exception {
+        UUID teamId = createTeam(companyId, board);
+        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType("application/json")
+                        .content("{\"name\":\"A\",\"role\":\"worker\",\"teamId\":\"" + teamId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/arquiteto")
+                        .header("X-Board-User", board.toString())
+                        .contentType("application/json")
+                        .content("{\"agentId\":\"" + agentId + "\"}"))
+                .andExpect(status().isOk());
+        return agentId;
+    }
+
+    /** Foco aleatório porque (company, dominio, foco) é único e cada agente ganha o seu time. */
+    private UUID createTeam(UUID companyId, UUID board) throws Exception {
+        return idFrom(mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", board.toString())
+                        .contentType("application/json")
+                        .content("{\"dominio\":\"Dev\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 }

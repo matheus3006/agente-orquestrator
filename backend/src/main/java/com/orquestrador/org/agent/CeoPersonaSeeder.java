@@ -44,7 +44,10 @@ public class CeoPersonaSeeder {
                 log.debug("seed de persona pulado (molde global {} ausente)", persona.moldeRole());
                 continue;
             }
-            Agent hired = hires.hire(companyId, new AgentHireService.HireCommand(
+            // PORTA DA RAIZ (ADR-0045, D-ORG-A.3): as personas são as únicas moradoras da raiz —
+            // hire normal aqui seria recusado por falta de time, e é essa recusa que garante que
+            // ninguém mais nasce órfão. Este é o ÚNICO chamador de hireAtRoot no sistema.
+            Agent hired = hires.hireAtRoot(companyId, new AgentHireService.HireCommand(
                     persona.nomeSemeado(), "ceo", null, null, null, null, null, null,
                     molde.getCurrentVersionId(), null), actorType, actorId);
             hired.definePersona(persona.dbValue());

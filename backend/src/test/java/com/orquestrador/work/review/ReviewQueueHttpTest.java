@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -30,6 +31,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class ReviewQueueHttpTest {
+
+    /** O dominio do time do assignee — é ELE que vira a área do artefato no card (C11). */
+    private static final String DOMINIO = "Dev";
 
     @Autowired
     private MockMvc mvc;
@@ -53,11 +57,7 @@ class ReviewQueueHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
-                        .header("X-Board-User", board.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"A\",\"role\":\"worker\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID agentId = createAgent(companyId, board);
 
         UUID primeiraIssue = parkForReview(companyId, agentId, board);
         Thread.sleep(5); // separa os requested_at (ordem de chegada)
@@ -117,18 +117,16 @@ class ReviewQueueHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
-                        .header("X-Board-User", board.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"A\",\"role\":\"worker\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID agentId = createAgent(companyId, board);
         parkForReview(companyId, agentId, board);
 
         JsonNode card = om.readTree(mvc.perform(get("/api/companies/" + companyId + "/reviews")
                         .header("X-Board-User", board.toString()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get(0);
 
-        assertThat(card.get("area").asText()).isEqualTo("operacao"); // agente sem time → fallback
+        // ADR-0045 tirou o caso "agente sem time" do contrato: a área é a PROVENIÊNCIA do artefato,
+        // o dominio do time do assignee (não-criativo → LOGICO, como o fallback antigo).
+        assertThat(card.get("area").asText()).isEqualTo(DOMINIO);
         assertThat(card.get("racionalTipo").asText()).isEqualTo("LOGICO");
         assertThat(card.get("racionalProbe").asText()).contains("ressalva"); // as palavras da política
     }
@@ -144,5 +142,34 @@ class ReviewQueueHttpTest {
         issues.checkout(companyId, issueId, agentId, runId);
         issues.settleAfterRun(companyId, issueId, runId, RunOutcome.success());
         return issueId;
+    }
+
+    /**
+     * Contratar EXIGE time (ADR-0045). O agente é quem entrega as Issues da fila, então ele nasce no
+     * PRÓPRIO time (dominio {@code DOMINIO}, a área que os cards assertam) e vira arquiteto dele: o
+     * dispatch segue destravado (ADR-0017) e a chefia derivada continua nula.
+     */
+    private UUID createAgent(UUID companyId, UUID board) throws Exception {
+        UUID teamId = createTeam(companyId, board);
+        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"A\",\"role\":\"worker\",\"teamId\":\"" + teamId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/arquiteto")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + agentId + "\"}"))
+                .andExpect(status().isOk());
+        return agentId;
+    }
+
+    /** Foco aleatório porque (company, dominio, foco) é único e cada agente ganha o seu time. */
+    private UUID createTeam(UUID companyId, UUID board) throws Exception {
+        return idFrom(mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dominio\":\"" + DOMINIO + "\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 }

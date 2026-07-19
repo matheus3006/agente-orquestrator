@@ -6,6 +6,7 @@ import com.orquestrador.common.security.ActorType;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentHireService;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.team.TeamService;
 import com.orquestrador.skills.CompanySkill;
 import com.orquestrador.skills.CompanySkillVersion;
 import com.orquestrador.skills.Skill;
@@ -59,6 +60,8 @@ class HireWithRoleTest {
     private AgentRepository agents;
     @Autowired
     private SkillInstallService skillInstall;
+    @Autowired
+    private TeamService times;
 
     @Test
     void hireComRoleCopiaMotorSkillsetEPinaAVersao() throws Exception {
@@ -67,7 +70,8 @@ class HireWithRoleTest {
         String skillKey = seedGlobalSkill();
         UUID versionId = createTemplateVersion(board, "claude-code", "opus", "ultracode", List.of(skillKey));
 
-        String body = "{\"name\":\"Lyra\",\"role\":\"architect\",\"roleTemplateVersionId\":\"" + versionId + "\"}";
+        String body = "{\"name\":\"Lyra\",\"role\":\"architect\",\"teamId\":\"" + newTeam(companyId, board)
+                + "\",\"roleTemplateVersionId\":\"" + versionId + "\"}";
         String response = mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON).content(body))
@@ -92,7 +96,8 @@ class HireWithRoleTest {
         UUID versionId = createTemplateVersion(board, "claude-code", "opus", "ultracode", List.of());
 
         // operador passa model=haiku à parte → vence o preset (opus)
-        String body = "{\"name\":\"Echo\",\"role\":\"executor\",\"roleTemplateVersionId\":\"" + versionId + "\","
+        String body = "{\"name\":\"Echo\",\"role\":\"executor\",\"teamId\":\"" + newTeam(companyId, board)
+                + "\",\"roleTemplateVersionId\":\"" + versionId + "\","
                 + "\"model\":\"haiku\",\"effort\":\"medium\"}";
         mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
@@ -115,7 +120,8 @@ class HireWithRoleTest {
         String response = mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Plain\",\"role\":\"worker\"}"))
+                        .content("{\"name\":\"Plain\",\"role\":\"worker\",\"teamId\":\""
+                                + newTeam(companyId, board) + "\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.adapterType").value("process"))
                 .andExpect(jsonPath("$.pinnedTemplateVersionId").doesNotExist())
@@ -140,7 +146,8 @@ class HireWithRoleTest {
         String agenteContratado = mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Interno\",\"role\":\"worker\"}"))
+                        .content("{\"name\":\"Interno\",\"role\":\"worker\",\"teamId\":\""
+                                + newTeam(companyId, board) + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         UUID agenteContratadoId = UUID.fromString(om.readTree(agenteContratado).get("id").asText());
         String bearerDoAgente = om.readTree(mvc.perform(
@@ -148,9 +155,13 @@ class HireWithRoleTest {
                                 .header("X-Board-User", board.toString()))
                 .andReturn().getResponse().getContentAsString()).get("apiKey").asText();
 
+        // Os dois pedidos abaixo são VÁLIDOS de propósito (time incluído, ADR-0045): é o GUARD que
+        // tem que recusar, não o validador — 422 aqui provaria outra coisa.
+        UUID timeDaBurla = newTeam(companyId, board);
+
         // hire-com-role como agente → 403 (senão burlaria o gate board-only do install de skill)
-        String hireComMolde = "{\"name\":\"Burla\",\"role\":\"architect\",\"roleTemplateVersionId\":\""
-                + versionId + "\"}";
+        String hireComMolde = "{\"name\":\"Burla\",\"role\":\"architect\",\"teamId\":\"" + timeDaBurla
+                + "\",\"roleTemplateVersionId\":\"" + versionId + "\"}";
         mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("Authorization", "Bearer " + bearerDoAgente)
                         .contentType(MediaType.APPLICATION_JSON).content(hireComMolde))
@@ -160,7 +171,8 @@ class HireWithRoleTest {
         mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("Authorization", "Bearer " + bearerDoAgente)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"BurlaSemMolde\",\"role\":\"worker\"}"))
+                        .content("{\"name\":\"BurlaSemMolde\",\"role\":\"worker\",\"teamId\":\""
+                                + timeDaBurla + "\"}"))
                 .andExpect(status().isForbidden());
     }
 
@@ -186,7 +198,8 @@ class HireWithRoleTest {
                 "v1", board);
         UUID v1 = molde.getCurrentVersionId();
         Agent agent = hires.hire(companyId, new AgentHireService.HireCommand("Lyra", "executor",
-                null, null, null, null, null, null, v1, null), ActorType.BOARD, board);
+                times.create(companyId, "Dev", "repin", null).getId(), null, null, null, null, null,
+                v1, null), ActorType.BOARD, board);
 
         // O operador mexe À MÃO: troca o motor e adiciona uma skill extra fora do molde.
         Agent manual = agents.findById(agent.getId()).orElseThrow();
@@ -238,7 +251,8 @@ class HireWithRoleTest {
         // hire da v1 → o agente nasce pinado na v1; a resposta já carrega o pinnedTemplateId (read-join).
         String hired = mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Rex\",\"role\":\"executor\",\"roleTemplateVersionId\":\"" + v1 + "\"}"))
+                        .content("{\"name\":\"Rex\",\"role\":\"executor\",\"teamId\":\""
+                                + newTeam(companyId, board) + "\",\"roleTemplateVersionId\":\"" + v1 + "\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.pinnedTemplateVersionId").value(v1.toString()))
                 .andExpect(jsonPath("$.pinnedTemplateId").value(molde.getId().toString()))
@@ -256,6 +270,20 @@ class HireWithRoleTest {
     }
 
     // --- helpers ---
+
+    /**
+     * Contratar EXIGE time (ADR-0045), e aqui o agente é só o portador do preset — ninguém dispara
+     * trabalho neste teste, então o time nasce vazio de arquiteto mesmo. Foco aleatório porque
+     * (company, dominio, foco) é único e cada hire ganha o seu.
+     */
+    private UUID newTeam(UUID companyId, UUID board) throws Exception {
+        JsonNode created = om.readTree(mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dominio\":\"Dev\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        return UUID.fromString(created.get("id").asText());
+    }
 
     /** Company direta (o re-pin é service-level; não precisa do MockMvc do hire HTTP). */
     private UUID newCompanyDirect(UUID board) {

@@ -20,4 +20,7 @@ public interface TeamRepository extends JpaRepository<Team, UUID> {
      * time→arquiteto. O unique {@code uq_team_company_dominio_foco} garante no máximo um.
      */
     Optional<Team> findByCompanyIdAndDominioAndFoco(UUID companyId, String dominio, String foco);
+
+    /** Os filhos diretos na árvore-organograma (ADR-0045): o passo do walk que DESCE a subárvore. */
+    List<Team> findByParentTeamId(UUID parentTeamId);
 }

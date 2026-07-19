@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -58,12 +59,7 @@ class ConversationHttpTest {
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
 
-        UUID ceoId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
-                        .header("X-Board-User", board.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\",\"adapterType\":\"process\","
-                                + "\"runtimeCommand\":\"printf '%s' \\\"$ORQ_PROMPT\\\"\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID ceoId = createCeo(companyId, board);
 
         String base = "/api/companies/" + companyId + "/conversations";
 
@@ -124,5 +120,36 @@ class ConversationHttpTest {
         mvc.perform(post(base).header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"subject\":\"Geral\"}"))
                 .andExpect(status().isConflict());
+    }
+
+    /**
+     * Contratar EXIGE time (ADR-0045). O CEO nasce no PRÓPRIO time e vira arquiteto dele — sem isso
+     * o wakeup do turno bateria na trava do dispatch (ADR-0017, 409) e o post de mensagem nunca
+     * chegaria a 202. A chefia derivada continua nula: ele responde ao dono, como antes.
+     */
+    private UUID createCeo(UUID companyId, UUID board) throws Exception {
+        UUID teamId = createTeam(companyId, board);
+        UUID ceoId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\",\"teamId\":\"" + teamId + "\","
+                                + "\"adapterType\":\"process\","
+                                + "\"runtimeCommand\":\"printf '%s' \\\"$ORQ_PROMPT\\\"\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/arquiteto")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + ceoId + "\"}"))
+                .andExpect(status().isOk());
+        return ceoId;
+    }
+
+    /** Foco aleatório porque (company, dominio, foco) é único. */
+    private UUID createTeam(UUID companyId, UUID board) throws Exception {
+        return idFrom(mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dominio\":\"Direcao\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 }

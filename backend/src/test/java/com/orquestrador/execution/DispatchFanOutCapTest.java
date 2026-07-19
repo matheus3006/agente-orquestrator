@@ -51,7 +51,7 @@ class DispatchFanOutCapTest {
     }
 
     private Team timeComArquitetoECap(UUID companyId, Agent arquiteto, int fanOutCap) {
-        Team time = teamService.create(companyId, "Dev", "cap-" + UUID.randomUUID().toString().substring(0, 8));
+        Team time = teamService.create(companyId, "Dev", "cap-" + UUID.randomUUID().toString().substring(0, 8), null);
         teamService.assignAgent(companyId, arquiteto.getId(), time.getId());
         teamService.setArquiteto(companyId, time.getId(), arquiteto.getId());
         Team persistido = teams.findById(time.getId()).orElseThrow();

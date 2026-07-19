@@ -415,15 +415,23 @@ public class ConversationTurnCoordinator {
                 + " dono\" acima é um BASTÃO. Leia a estratégia que ele aponta.\n"
                 + "- PROTOCOLE o pedido de contratação SEM MEXER (1:1 com a estratégia do Planejador):"
                 + " para CADA agente proposto, emita um bloco `proposta` de HIRE_AGENT carregando"
-                + " name, role, o motor sugerido (adapterType/model/effort) e o campo `racional`"
-                + " estruturado (skills + motor + porquê) — é o que o dono lê no menu do gate."
+                + " name, role, o TIME de destino (dominio + foco), o motor sugerido"
+                + " (adapterType/model/effort) e o campo `racional` estruturado (skills + motor +"
+                + " porquê) — é o que o dono lê no menu do gate."
                 + " A cerca do bloco vai em COLUNA 0 (indentado é citação, não emissão).\n"
                 + "  ```proposta\n"
                 + "  {\"acao\": \"HIRE_AGENT\", \"alvo\": {\"name\": \"<nome>\", \"role\": \"<role>\","
+                + " \"dominio\": \"<domínio do time>\", \"foco\": \"<foco do time>\","
                 + " \"adapterType\": \"<motor>\", \"model\": \"<model>\", \"effort\": \"<effort>\","
                 + " \"racional\": \"<skills + motor + porquê>\"}, \"resumo\": \"<uma linha>\","
                 + " \"area\": \"<área>\"}\n"
                 + "  ```\n"
+                // ADR-0045 (D-ORG-9): nada órfão. O time é OBRIGATÓRIO e o chefe NÃO se informa —
+                // ele deriva da árvore (agente → gestor do time; time → time-pai; topo → CEO).
+                + "- TODO agente pertence a um time: o time (dominio/foco) é OBRIGATÓRIO no hire e"
+                + " tem que já existir — se o trabalho não cabe em nenhum time atual, proponha"
+                + " ANTES um CREATE_TEAM. NUNCA informe chefe/reportsTo: a chefia é derivada do"
+                + " time pelo sistema.\n"
                 + "- Buraco na estratégia → emita `needs-grilling` (nunca conserto silencioso): quem"
                 + " re-grelha o dono é o Questionador.\n"
                 // Auto-kickback entre personas (rodada 9, D-motor-nativo §2): calibração inline,
@@ -443,11 +451,15 @@ public class ConversationTurnCoordinator {
                 + " individuais.\n"
                 + "  ```proposta\n"
                 + "  {\"acao\": \"CREATE_TEAM\", \"alvo\": {\"dominio\": \"<domínio>\", \"foco\":"
-                + " \"<foco>\", \"arquiteto\": {\"name\": \"<nome>\", \"role\": \"<role>\","
-                + " \"adapterType\": \"<motor>\", \"model\": \"<model>\", \"effort\":"
-                + " \"<effort>\"}, \"racional\": \"<por que esse time + arquiteto>\"}, \"resumo\":"
-                + " \"<uma linha>\", \"area\": \"estrutura-org\"}\n"
+                + " \"<foco>\", \"paiDominio\": \"<domínio do time-pai, ou omita>\", \"paiFoco\":"
+                + " \"<foco do time-pai, ou omita>\", \"arquiteto\": {\"name\": \"<nome>\","
+                + " \"role\": \"<role>\", \"adapterType\": \"<motor>\", \"model\": \"<model>\","
+                + " \"effort\": \"<effort>\"}, \"racional\": \"<por que esse time + arquiteto>\"},"
+                + " \"resumo\": \"<uma linha>\", \"area\": \"estrutura-org\"}\n"
                 + "  ```\n"
+                // ADR-0045: a empresa é uma árvore. Time novo pendura em outro time ou na raiz.
+                + "  O time nasce PENDURADO: com `paiDominio`/`paiFoco` ele vira SUB-TIME daquele"
+                + " time; sem eles, vira um DEPARTAMENTO (pendurado direto na empresa).\n"
                 // R10-A (propose-then-commit de molde, ADR-0017 emendada): o CEO propõe um MOLDE
                 // NOVO (preset de cargo reutilizável, GLOBAL) — SÓ criar; editar molde existente é
                 // mão-soberana-direta do dono na tela, fora do gate (G6).

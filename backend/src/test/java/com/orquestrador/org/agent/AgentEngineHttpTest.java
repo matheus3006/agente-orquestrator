@@ -43,16 +43,54 @@ class AgentEngineHttpTest {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
+    /** Foco aleatório porque (company, dominio, foco) é único — cada time nasce só para este teste. */
+    private UUID newTeam(UUID companyId, UUID board) throws Exception {
+        return idFrom(mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dominio\":\"Dev\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    /** O arquiteto tem que ser MEMBRO, então isto só roda depois de o agente já estar no time. */
+    private void designarArquiteto(UUID companyId, UUID board, UUID teamId, UUID agentId) throws Exception {
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/arquiteto")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + agentId + "\"}"))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * Contratar EXIGE time (ADR-0045). Aqui o agente é só cenário, então ele nasce no PRÓPRIO time
+     * e vira arquiteto dele: assim o dispatch segue destravado (ADR-0017) e a chefia derivada
+     * continua nula — exatamente o mundo que este teste já assumia.
+     */
+    private UUID newAgent(UUID companyId, UUID board) throws Exception {
+        UUID teamId = newTeam(companyId, board);
+        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"A\",\"role\":\"worker\",\"teamId\":\"" + teamId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        designarArquiteto(companyId, board, teamId, agentId);
+        return agentId;
+    }
+
     @Test
     void createComMotorExpoeModelEffort_semMotorFicamNull_patchPromove() throws Exception {
         UUID board = UUID.randomUUID();
         UUID companyId = newCompany(board);
+        // Contratar EXIGE time (ADR-0045). O time aqui é só o endereço dos dois: eles dividem um só,
+        // e Lyra vira arquiteto dele — dispatch destravado (ADR-0017), como antes da mudança.
+        UUID teamId = newTeam(companyId, board);
 
         // create COM motor -> response expõe adapterType/model/effort
         String withEngine = mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Lyra\",\"role\":\"architect\",\"adapterType\":\"claude-code\","
+                        .content("{\"name\":\"Lyra\",\"role\":\"architect\",\"teamId\":\"" + teamId + "\","
+                                + "\"adapterType\":\"claude-code\","
                                 + "\"model\":\"opus\",\"effort\":\"ultracode\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.adapterType").value("claude-code"))
@@ -60,12 +98,13 @@ class AgentEngineHttpTest {
                 .andExpect(jsonPath("$.effort").value("ultracode"))
                 .andReturn().getResponse().getContentAsString();
         UUID lyraId = idFrom(withEngine);
+        designarArquiteto(companyId, board, teamId, lyraId);
 
         // create SEM motor -> model/effort null (ausente ou null), adapter default
         String noEngine = mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Echo\",\"role\":\"analyst\"}"))
+                        .content("{\"name\":\"Echo\",\"role\":\"analyst\",\"teamId\":\"" + teamId + "\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.adapterType").value("process"))
                 .andReturn().getResponse().getContentAsString();
@@ -88,11 +127,7 @@ class AgentEngineHttpTest {
     void patchCrossTenantNaoEncontraOAgente() throws Exception {
         UUID boardA = UUID.randomUUID();
         UUID companyA = newCompany(boardA);
-        UUID agentA = idFrom(mvc.perform(post("/api/companies/" + companyA + "/agents")
-                        .header("X-Board-User", boardA.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"A\",\"role\":\"worker\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID agentA = newAgent(companyA, boardA);
 
         // outra company (outro board) tentando promover o agente da company A -> 404 (não pertence)
         UUID boardB = UUID.randomUUID();

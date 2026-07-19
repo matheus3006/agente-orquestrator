@@ -68,7 +68,7 @@ class ApprovalBatchDecisionTest {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         // ADR-0037 (D2): CREATE_ISSUE aprovada resolve time→arquiteto — o cenário precisa da corrente.
         com.orquestrador.org.team.Team time = teams.save(new com.orquestrador.org.team.Team(
-                UUID.randomUUID(), companyId, "Dev", "Backlog"));
+                UUID.randomUUID(), companyId, "Dev", "Backlog", null));
         com.orquestrador.org.agent.Agent ana = new com.orquestrador.org.agent.Agent(
                 UUID.randomUUID(), companyId, "Ana Arquiteta", "arquiteto", null);
         ana.assignTeam(time.getId());
@@ -77,12 +77,21 @@ class ApprovalBatchDecisionTest {
         return companyId;
     }
 
+    /** Contratar exige time (ADR-0045): o CEO do cenário mora num time de direção próprio. */
     private UUID novoCeo(UUID board, UUID companyId) throws Exception {
-        return idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+        com.orquestrador.org.team.Team direcao = teams.save(new com.orquestrador.org.team.Team(
+                UUID.randomUUID(), companyId, "Direcao", "topo", null));
+        UUID ceoId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\"}"))
+                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\",\"teamId\":\""
+                                + direcao.getId() + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        // arquiteto do próprio time, senão a trava do dispatch (ADR-0017) barraria o kickback que
+        // a recusa em lote devolve pra conversa dele.
+        direcao.designarArquiteto(ceoId);
+        teams.save(direcao);
+        return ceoId;
     }
 
     private UUID propoeIssue(UUID companyId, UUID ceoId, UUID conversationId, String titulo) {
@@ -100,7 +109,8 @@ class ApprovalBatchDecisionTest {
     private UUID propoeHire(UUID companyId, UUID ceoId, String nome) {
         return approvals.propose(companyId, ceoId, null, null,
                 new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
-                        "{\"name\":\"" + nome + "\",\"role\":\"executor\"}", "Contratar " + nome,
+                        "{\"name\":\"" + nome + "\",\"role\":\"executor\","
+                                + "\"dominio\":\"Dev\",\"foco\":\"Backlog\"}", "Contratar " + nome,
                         null)).getId();
     }
 
@@ -270,7 +280,8 @@ class ApprovalBatchDecisionTest {
         // HIRE_AGENT sem name/role: o dispatch estoura DEPOIS do grill — a tx DESTE item desfaz.
         UUID quebrada = approvals.propose(companyId, ceoId, null, null,
                 new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
-                        "{\"reportsToId\":null}", "Hire sem alvo", "estrutura-org")).getId();
+                        "{\"dominio\":\"Dev\",\"foco\":\"Backlog\"}", "Hire sem alvo",
+                        "estrutura-org")).getId();
         UUID depois = propoeIssue(companyId, ceoId, null, "Issue depois");
 
         mvc.perform(post("/api/companies/" + companyId + "/approvals/batch-decision")

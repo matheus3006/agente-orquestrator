@@ -80,6 +80,8 @@ class ApprovalGateTest {
     @Autowired
     private com.orquestrador.org.team.TeamRepository teams;
     @Autowired
+    private com.orquestrador.org.team.TeamService teamService;
+    @Autowired
     private com.orquestrador.org.roletemplate.RoleTemplateRepository roleTemplates;
     @Autowired
     private com.orquestrador.org.roletemplate.RoleTemplateVersionRepository roleTemplateVersions;
@@ -110,15 +112,65 @@ class ApprovalGateTest {
                 UUID.randomUUID()).getId();
     }
 
+    /**
+     * D-ORG-A.2 (ADR-0045): a chefia DERIVA da árvore, então um {@code reportsToId} que ainda venha
+     * no alvo da proposta é RUÍDO — descartado com WARN, nunca honrado. É o invariante que impede a
+     * volta da segunda verdade pela porta dos fundos: mesmo apontando um chefe explícito e
+     * plausível (um agente real da company), o contratado nasce reportando ao GESTOR DO TIME.
+     */
+    @Test
+    void hireComReportsToNoAlvo_ignoraOChefeDitado_eDerivaDoGestorDoTime() {
+        UUID companyId = novaCompany();
+        UUID ceoId = contrataCeu(companyId);
+        // um chefe plausível: agente real, da mesma company — se o campo fosse honrado, venceria
+        UUID chefeDitado = contrataExecutor(companyId);
+
+        com.orquestrador.org.team.Team time = teams.findByCompanyIdAndDominioAndFoco(companyId, "Dev", "hire")
+                .orElseGet(() -> teams.save(new com.orquestrador.org.team.Team(
+                        UUID.randomUUID(), companyId, "Dev", "hire", null)));
+        Agent gestor = agents.save(new Agent(UUID.randomUUID(), companyId, "Gestora", "gestor", null));
+        teamService.assignAgent(companyId, gestor.getId(), time.getId());
+        teamService.setGestor(companyId, time.getId(), gestor.getId());
+
+        Approval proposta = approvals.propose(companyId, ceoId, null, null,
+                new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
+                        "{\"name\":\"Nix\",\"role\":\"executor\",\"reportsToId\":\"" + chefeDitado
+                                + "\"," + timeNoAlvo(companyId) + "}",
+                        "Contratar Nix", null));
+        approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
+                "o time é quem manda", null, ActorType.BOARD, UUID.randomUUID());
+
+        Agent contratado = agents.findByCompanyId(companyId).stream()
+                .filter(agente -> "Nix".equals(agente.getName())).findFirst().orElseThrow();
+        assertThat(contratado.getTeamId()).isEqualTo(time.getId());
+        assertThat(contratado.getReportsToId())
+                .as("o chefe ditado no alvo foi IGNORADO; a chefia veio do gestor do time")
+                .isEqualTo(gestor.getId())
+                .isNotEqualTo(chefeDitado);
+    }
+
     private UUID contrataCeu(UUID companyId) {
         Agent ceo = new Agent(UUID.randomUUID(), companyId, "Atlas", "ceo", null);
         ceo.configureRuntime("process", null, "LOCAL");
         return agents.save(ceo).getId();
     }
 
-    private ProposalScanner.Proposal hireNix() {
+    private ProposalScanner.Proposal hireNix(UUID companyId) {
         return new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
-                "{\"name\":\"Nix\",\"role\":\"executor\"}", "Contratar Nix executor", null);
+                "{\"name\":\"Nix\",\"role\":\"executor\"," + timeNoAlvo(companyId) + "}",
+                "Contratar Nix executor", null);
+    }
+
+    /**
+     * O alvo do hire carrega o TIME por NOME (ADR-0045) — quem escreve o bloco é um LLM, então a
+     * gramática é dominio/foco e o time precisa EXISTIR na company antes do approve. Idempotente:
+     * o par (company, dominio, foco) é único e a mesma proposta pode ser re-emitida.
+     */
+    private String timeNoAlvo(UUID companyId) {
+        teams.findByCompanyIdAndDominioAndFoco(companyId, "Dev", "hire")
+                .orElseGet(() -> teams.save(new com.orquestrador.org.team.Team(
+                        UUID.randomUUID(), companyId, "Dev", "hire", null)));
+        return "\"dominio\":\"Dev\",\"foco\":\"hire\"";
     }
 
     /** Um executor comum (não-CEO) — quem trabalha Issues e pede skill mid-run (F-AT1). */
@@ -145,7 +197,7 @@ class ApprovalGateTest {
     /** Um time (dominio/foco) com arquiteto designado — o alvo da corrente time→arquiteto. */
     private UUID timeComArquiteto(UUID companyId, String dominio, String foco, String arquiteto) {
         com.orquestrador.org.team.Team time = teams.save(
-                new com.orquestrador.org.team.Team(UUID.randomUUID(), companyId, dominio, foco));
+                new com.orquestrador.org.team.Team(UUID.randomUUID(), companyId, dominio, foco, null));
         Agent ana = new Agent(UUID.randomUUID(), companyId, arquiteto, "arquiteto", null);
         ana.assignTeam(time.getId());
         UUID arquitetoId = agents.save(ana).getId();
@@ -334,7 +386,7 @@ class ApprovalGateTest {
         Approval proposta = approvals.propose(companyId, ceoId, null, null,
                 new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
                         "{\"name\":\"Vega\",\"role\":\"executor\",\"adapterType\":\"claude-code\","
-                                + "\"model\":\"opus\",\"effort\":\"high\","
+                                + "\"model\":\"opus\",\"effort\":\"high\"," + timeNoAlvo(companyId) + ","
                                 + "\"racional\":\"skills tdd; motor claude-code; time de produto\"}",
                         "Contratar Vega", null));
 
@@ -359,7 +411,8 @@ class ApprovalGateTest {
         Approval proposta = approvals.propose(companyId, ceoId, null, null,
                 new ProposalScanner.Proposal(ApprovalActionType.HIRE_AGENT,
                         "{\"name\":\"Sirius\",\"role\":\"executor\",\"adapterType\":\"claude-code\","
-                                + "\"model\":\"opus\"}", "Contratar Sirius", null));
+                                + "\"model\":\"opus\"," + timeNoAlvo(companyId) + "}",
+                        "Contratar Sirius", null));
 
         approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
                 "prefiro o motor codex neste time", null, ActorType.BOARD, UUID.randomUUID(),
@@ -380,8 +433,8 @@ class ApprovalGateTest {
         UUID companyId = novaCompany();
         UUID ceoId = contrataCeu(companyId);
 
-        Approval primeira = approvals.propose(companyId, ceoId, null, null, hireNix());
-        Approval segunda = approvals.propose(companyId, ceoId, null, null, hireNix());
+        Approval primeira = approvals.propose(companyId, ceoId, null, null, hireNix(companyId));
+        Approval segunda = approvals.propose(companyId, ceoId, null, null, hireNix(companyId));
 
         assertThat(segunda.getId()).isEqualTo(primeira.getId()); // dedupe: a MESMA PENDING
         assertThat(approvals.queue(companyId, ApprovalStatus.PENDING)).hasSize(1);
@@ -392,7 +445,7 @@ class ApprovalGateTest {
         UUID companyId = novaCompany();
         UUID ceoId = contrataCeu(companyId);
         UUID boardUser = UUID.randomUUID();
-        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix());
+        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix(companyId));
 
         // 1ª tentativa sem racional → grelhada (o commit NÃO acontece; a rodada fica contada).
         DecideOutcome vazio = approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,
@@ -443,7 +496,7 @@ class ApprovalGateTest {
     void rejectRegistraDecisaoDoDonoSemDispararAcao() {
         UUID companyId = novaCompany();
         UUID ceoId = contrataCeu(companyId);
-        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix());
+        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix(companyId));
 
         DecideOutcome outcome = approvals.decide(companyId, proposta.getId(), ApprovalDecision.REJECT,
                 "cedo demais: valida o nicho antes de contratar", "valide o nicho primeiro",
@@ -536,7 +589,7 @@ class ApprovalGateTest {
     void supersedeComEnderecoFantasmaE409EPropostaSeguePending() {
         UUID companyId = novaCompany();
         UUID ceoId = contrataCeu(companyId);
-        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix());
+        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix(companyId));
 
         assertThatThrownBy(() -> approvals.decide(companyId, proposta.getId(),
                 ApprovalDecision.APPROVE, "runway curto", null, ActorType.BOARD, UUID.randomUUID(),
@@ -574,7 +627,7 @@ class ApprovalGateTest {
     void decidirApprovalJaDecididaE409() {
         UUID companyId = novaCompany();
         UUID ceoId = contrataCeu(companyId);
-        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix());
+        Approval proposta = approvals.propose(companyId, ceoId, null, null, hireNix(companyId));
         approvals.decide(companyId, proposta.getId(), ApprovalDecision.REJECT,
                 "sem espaco no orcamento deste ciclo", null, ActorType.BOARD, UUID.randomUUID());
 

@@ -1,5 +1,6 @@
 package com.orquestrador.org.team;
 
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,6 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -34,11 +36,9 @@ class TeamHttpTest {
     private ObjectMapper om;
 
     @Test
-    void boardCriaTimeAtribuiAgenteDefineArquitetoEReparenta() throws Exception {
+    void boardCriaTimeAtribuiAgenteDefineArquitetoEAChefiaDerivaDoGestor() throws Exception {
         UUID board = UUID.randomUUID();
         UUID companyId = createCompany(board);
-        UUID lider = createAgent(companyId, board, "Atlas");
-        UUID dev = createAgent(companyId, board, "Nix");
         String teamsUrl = "/api/companies/" + companyId + "/teams";
 
         // cria time SEM arquiteto (201) — trava é no dispatch, não na criação
@@ -51,7 +51,11 @@ class TeamHttpTest {
                 .andReturn().getResponse().getContentAsString();
         UUID teamId = UUID.fromString(om.readTree(created).get("id").asText());
 
-        // atribui o dev ao time (board-only, sub-recurso do agente)
+        // os dois já NASCEM no time: contratar exige time (ADR-0045)
+        UUID lider = createAgent(companyId, board, "Atlas", teamId);
+        UUID dev = createAgent(companyId, board, "Nix", teamId);
+
+        // o sub-recurso de pertencimento segue board-only e continua respondendo o time do agente
         mvc.perform(patch("/api/companies/" + companyId + "/agents/" + dev + "/team")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -67,19 +71,26 @@ class TeamHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.arquitetoAgentId").value(dev.toString()));
 
-        // reparent: dev passa a reportar ao líder; e null vira raiz
-        mvc.perform(patch("/api/companies/" + companyId + "/agents/" + dev + "/reports-to")
+        // A CHEFIA DERIVA (ADR-0045): o PATCH /reports-to morreu, então quem move o chefe do dev é
+        // o posto de GESTOR do time — designar Atlas reescreve o espelho no MESMO ato.
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reportsToId\":\"" + lider + "\"}"))
+                        .content("{\"agentId\":\"" + lider + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.reportsToId").value(lider.toString()));
-        mvc.perform(patch("/api/companies/" + companyId + "/agents/" + dev + "/reports-to")
+                .andExpect(jsonPath("$.gestorAgentId").value(lider.toString()));
+        assertThat(reportsToDe(companyId, board, dev)).isEqualTo(lider.toString());
+        // o próprio gestor não reporta a si mesmo: sobe, e acima deste time só existe a raiz
+        assertThat(reportsToDe(companyId, board, lider)).isNull();
+
+        // limpar o posto devolve o dev pra raiz — sem gestor no caminho, sem chefe
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reportsToId\":null}"))
+                        .content("{\"agentId\":null}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.reportsToId").doesNotExist());
+                .andExpect(jsonPath("$.gestorAgentId").doesNotExist());
+        assertThat(reportsToDe(companyId, board, dev)).isNull();
 
         // GET lista (member serve; board é member) com o time e o arquiteto
         mvc.perform(get(teamsUrl).header("X-Board-User", board.toString()))
@@ -91,7 +102,8 @@ class TeamHttpTest {
     void mutacoesSaoBoardOnly_agenteAutenticadoLeva403EleELeituraPassa() throws Exception {
         UUID board = UUID.randomUUID();
         UUID companyId = createCompany(board);
-        UUID agentId = createAgent(companyId, board, "Echo");
+        UUID teamId = createTeam(companyId, board, "Dev", "gate");
+        UUID agentId = createAgent(companyId, board, "Echo", teamId);
         String teamsUrl = "/api/companies/" + companyId + "/teams";
 
         String apiKey = om.readTree(mvc.perform(
@@ -107,10 +119,16 @@ class TeamHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"dominio\":\"Dev\",\"foco\":\"x\"}"))
                 .andExpect(status().isForbidden());
-        mvc.perform(patch("/api/companies/" + companyId + "/agents/" + agentId + "/reports-to")
+        // os dois postos da árvore (ADR-0045) entraram no lugar do finado PATCH /reports-to
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/gestor")
                         .header("Authorization", "Bearer " + apiKey)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reportsToId\":null}"))
+                        .content("{\"agentId\":null}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(patch(teamsUrl + "/" + teamId + "/parent")
+                        .header("Authorization", "Bearer " + apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentTeamId\":null}"))
                 .andExpect(status().isForbidden());
         mvc.perform(patch("/api/companies/" + companyId + "/agents/" + agentId + "/team")
                         .header("Authorization", "Bearer " + apiKey)
@@ -128,14 +146,9 @@ class TeamHttpTest {
     void wakeupDeTimeSemArquitetoLeva409ComMensagemAcionavel() throws Exception {
         UUID board = UUID.randomUUID();
         UUID companyId = createCompany(board);
-        UUID agentId = createAgent(companyId, board, "Echo");
+        // o agente nasce JÁ no time e o time nasce SEM arquiteto — é essa combinação que trava
         UUID teamId = createTeam(companyId, board, "Dev", "gate");
-
-        mvc.perform(patch("/api/companies/" + companyId + "/agents/" + agentId + "/team")
-                        .header("X-Board-User", board.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"teamId\":\"" + teamId + "\"}"))
-                .andExpect(status().isOk());
+        UUID agentId = createAgent(companyId, board, "Echo", teamId);
 
         mvc.perform(post("/api/companies/" + companyId + "/agents/" + agentId + "/wakeups")
                         .header("X-Board-User", board.toString())
@@ -144,30 +157,44 @@ class TeamHttpTest {
                 .andExpect(status().isConflict());
     }
 
+    /**
+     * O ciclo saiu da cadeia de agentes e passou para a ÁRVORE DE TIMES (ADR-0045) — é lá que o
+     * organograma vive agora. E o hire, que antes validava o {@code reportsToId}, hoje valida o
+     * TIME: sem time é 422 na porta, com time de fora é 404.
+     */
     @Test
-    void reparentComCicloLeva409EHireValidaOReportsTo() throws Exception {
+    void reparentComCicloLeva409EHireValidaOTime() throws Exception {
         UUID board = UUID.randomUUID();
         UUID companyId = createCompany(board);
-        UUID a = createAgent(companyId, board, "A");
-        UUID b = createAgent(companyId, board, "B");
+        String teamsUrl = "/api/companies/" + companyId + "/teams";
+        UUID pai = createTeam(companyId, board, "Dev", "pai");
+        UUID filho = createTeam(companyId, board, "Dev", "filho");
 
-        // B reporta a A; pendurar A debaixo de B fecharia ciclo → 409
-        mvc.perform(patch("/api/companies/" + companyId + "/agents/" + b + "/reports-to")
+        // filho pendura no pai; pendurar o PAI debaixo do filho fecharia o ciclo → 409
+        mvc.perform(patch(teamsUrl + "/" + filho + "/parent")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reportsToId\":\"" + a + "\"}"))
-                .andExpect(status().isOk());
-        mvc.perform(patch("/api/companies/" + companyId + "/agents/" + a + "/reports-to")
+                        .content("{\"parentTeamId\":\"" + pai + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.parentTeamId").value(pai.toString()));
+        mvc.perform(patch(teamsUrl + "/" + pai + "/parent")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reportsToId\":\"" + b + "\"}"))
+                        .content("{\"parentTeamId\":\"" + filho + "\"}"))
                 .andExpect(status().isConflict());
 
-        // o hire agora VALIDA o reportsToId (T.2 ligou a cadeia): id de fora → 404
+        // hire SEM time não passa nem do validador — todo contratado pertence a um time
         mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Z\",\"role\":\"executor\",\"reportsToId\":\""
+                        .content("{\"name\":\"Z\",\"role\":\"executor\"}"))
+                .andExpect(status().isUnprocessableEntity());
+
+        // e time que não é desta company → 404 (o hire valida o time, como validava o chefe)
+        mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Z\",\"role\":\"executor\",\"teamId\":\""
                                 + UUID.randomUUID() + "\"}"))
                 .andExpect(status().isNotFound());
     }
@@ -181,12 +208,28 @@ class TeamHttpTest {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
-    private UUID createAgent(UUID companyId, UUID board, String nome) throws Exception {
+    /** O time é parâmetro porque contratar EXIGE time (ADR-0045) — e aqui ele é o próprio assunto. */
+    private UUID createAgent(UUID companyId, UUID board, String nome, UUID teamId) throws Exception {
         return idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"" + nome + "\",\"role\":\"worker\"}"))
+                        .content("{\"name\":\"" + nome + "\",\"role\":\"worker\",\"teamId\":\""
+                                + teamId + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    /** A chefia é ESPELHO: não existe endpoint pra editá-la, então ela se lê no roster. */
+    private String reportsToDe(UUID companyId, UUID board, UUID agentId) throws Exception {
+        String roster = mvc.perform(get("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        for (JsonNode agente : om.readTree(roster)) {
+            if (agentId.toString().equals(agente.get("id").asText())) {
+                JsonNode chefe = agente.get("reportsToId");
+                return chefe == null || chefe.isNull() ? null : chefe.asText();
+            }
+        }
+        throw new AssertionError("agente " + agentId + " sumiu do roster da company");
     }
 
     private UUID createTeam(UUID companyId, UUID board, String dominio, String foco) throws Exception {

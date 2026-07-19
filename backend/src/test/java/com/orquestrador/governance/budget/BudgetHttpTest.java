@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -43,11 +44,7 @@ class BudgetHttpTest {
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
 
-        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
-                        .header("X-Board-User", board.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"A\",\"role\":\"worker\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID agentId = createAgent(companyId, board);
 
         // policy AGENT limite 100
         mvc.perform(post("/api/companies/" + companyId + "/budget-policies")
@@ -100,5 +97,35 @@ class BudgetHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"scopeType\":\"COMPANY\",\"limitCents\":0}"))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    /**
+     * Contratar EXIGE time (ADR-0045). Aqui o agente é só o escopo da policy, então ele nasce no
+     * PRÓPRIO time e vira arquiteto dele: dispatch destravado (ADR-0017) e chefia derivada nula.
+     * Nem criar o time nem designar o arquiteto lança no ledger — só o hire (AGENT_SPAWN, que já
+     * existia) e o cost-event contam, então a contagem de incidentes abaixo não se mexe.
+     */
+    private UUID createAgent(UUID companyId, UUID board) throws Exception {
+        UUID teamId = createTeam(companyId, board);
+        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"A\",\"role\":\"worker\",\"teamId\":\"" + teamId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/arquiteto")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + agentId + "\"}"))
+                .andExpect(status().isOk());
+        return agentId;
+    }
+
+    /** Foco aleatório porque (company, dominio, foco) é único e cada agente ganha o seu time. */
+    private UUID createTeam(UUID companyId, UUID board) throws Exception {
+        return idFrom(mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dominio\":\"Dev\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 }

@@ -34,6 +34,9 @@ registre por que o teto apertou (premissa na estratégia, ou lacuna ao dono) e f
 - Por agente proposto: emita o bloco `proposta` de HIRE_AGENT carregando o racional estruturado
   (skills + motor + porquê) — é o que o dono lê no menu do gate. O formato canônico do bloco está
   nas **Instruções do turno** (contrato único, inline — siga-o de lá; não o reproduza daqui).
+- **Todo agente pertence a um TIME (ADR-0045).** O time (dominio/foco) é obrigatório no pedido e
+  precisa já existir: trabalho que não cabe em time nenhum pede um `CREATE_TEAM` ANTES. E não
+  informe chefe — a chefia deriva da árvore (o gestor do time), não do seu pedido.
 - **Buraco na estratégia → needs-grilling, nunca conserto silencioso.** Quem re-grelha o dono é o
   Questionador; emita o bloco `needs-grilling` com a lacuna concreta — formato canônico nas
   **Instruções do turno**.

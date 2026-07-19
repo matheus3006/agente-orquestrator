@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -57,12 +58,29 @@ class ApprovalRecusaKickbackTest {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
+    /**
+     * Contratar exige time (ADR-0045): o CEO nasce num time de direção próprio e vira arquiteto
+     * dele — sem arquiteto a trava do dispatch (ADR-0017) barraria o kickback que volta pra
+     * conversa de origem, que é justamente o que este teste prova.
+     */
     private UUID novoCeo(UUID board, UUID companyId) throws Exception {
-        return idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+        String teamsUrl = "/api/companies/" + companyId + "/teams";
+        UUID timeId = idFrom(mvc.perform(post(teamsUrl)
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\"}"))
+                        .content("{\"dominio\":\"Direcao\",\"foco\":\"topo\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID ceoId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\",\"teamId\":\"" + timeId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mvc.perform(patch(teamsUrl + "/" + timeId + "/arquiteto")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + ceoId + "\"}"))
+                .andExpect(status().isOk());
+        return ceoId;
     }
 
     @Test

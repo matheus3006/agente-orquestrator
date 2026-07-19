@@ -14,6 +14,9 @@ public interface AgentRepository extends JpaRepository<Agent, UUID> {
 
     List<Agent> findByCompanyId(UUID companyId);
 
+    /** Os membros de um time — o passo do walk que re-deriva a chefia da subárvore (ADR-0045). */
+    List<Agent> findByTeamId(UUID teamId);
+
     /**
      * Lock pessimista na linha do Agent (SELECT ... FOR UPDATE). Serializa os wakeups
      * concorrentes do mesmo Agent — garante 1 Run ativo por Agent de forma multi-no-safe

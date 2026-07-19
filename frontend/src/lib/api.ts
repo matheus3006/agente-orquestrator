@@ -396,6 +396,11 @@ export interface Team {
   dominio: string;
   foco: string;
   arquitetoAgentId: string | null;
+  // ADR-0045 (a árvore de times É o organograma): o GESTOR é o responsável organizacional — é dele
+  // que a chefia dos membros deriva (o arquiteto responde pela entrega; são postos separados).
+  gestorAgentId: string | null;
+  // null = time pendurado direto na EMPRESA (a raiz) — um "departamento".
+  parentTeamId: string | null;
   createdAt: string;
 }
 
@@ -403,10 +408,16 @@ export function listTeams(companyId: string): Promise<Team[]> {
   return apiFetch<Team[]>(`/api/companies/${companyId}/teams`);
 }
 
-export function createTeam(companyId: string, dominio: string, foco: string): Promise<Team> {
+/** {@code parentTeamId} omitido/null = time pendurado direto na empresa (raiz) — um departamento. */
+export function createTeam(
+  companyId: string,
+  dominio: string,
+  foco: string,
+  parentTeamId: string | null = null,
+): Promise<Team> {
   return apiFetch<Team>(`/api/companies/${companyId}/teams`, {
     method: "POST",
-    body: { dominio, foco },
+    body: { dominio, foco, parentTeamId },
   });
 }
 
@@ -422,15 +433,31 @@ export function setTeamArquiteto(
   });
 }
 
-/** Religa o líder direto do agente (null = vira raiz). Anti-ciclo no backend → 409. Board-only. */
-export function reparentAgent(
+// O `reparentAgent` (PATCH /reports-to) foi REMOVIDO na F-ORG-A (ADR-0045): a chefia DERIVA da
+// árvore de times. Para trocar o chefe de alguém, mova-o de TIME (`assignAgentTeam`) ou troque o
+// GESTOR do time (`setTeamGestor`) — o backend reescreve o espelho no mesmo ato.
+
+/** Designa (ou limpa, com null) o GESTOR do time — a chefia dos membros deriva dele. Board-only. */
+export function setTeamGestor(
   companyId: string,
-  agentId: string,
-  reportsToId: string | null,
-): Promise<AgentSummary> {
-  return apiFetch<AgentSummary>(`/api/companies/${companyId}/agents/${agentId}/reports-to`, {
+  teamId: string,
+  agentId: string | null,
+): Promise<Team> {
+  return apiFetch<Team>(`/api/companies/${companyId}/teams/${teamId}/gestor`, {
     method: "PATCH",
-    body: { reportsToId },
+    body: { agentId },
+  });
+}
+
+/** Move o time na árvore-organograma (null = sobe pra raiz). Anti-ciclo no backend → 409. */
+export function reparentTeam(
+  companyId: string,
+  teamId: string,
+  parentTeamId: string | null,
+): Promise<Team> {
+  return apiFetch<Team>(`/api/companies/${companyId}/teams/${teamId}/parent`, {
+    method: "PATCH",
+    body: { parentTeamId },
   });
 }
 
@@ -803,7 +830,9 @@ export function mintAgentKey(companyId: string, agentId: string): Promise<Minted
 export interface HireAgentInput {
   name: string;
   role: string;
-  reportsToId?: string;
+  // ADR-0045 (D-ORG-9, "nada órfão"): o TIME é OBRIGATÓRIO no hire. O antigo `reportsToId` saiu do
+  // contrato — chefe não é entrada: deriva do time (e do gestor dele) no backend.
+  teamId: string;
   adapterType?: string;
   runtimeCommand?: string;
   executionTarget?: string;

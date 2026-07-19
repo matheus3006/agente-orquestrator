@@ -345,7 +345,7 @@ class AbsorcaoDeIssueRouterTest {
     private Cenario cenarioComTime(String dominio, String foco) {
         UUID companyId = novaCompany();
         UUID planejadorId = persona(companyId, "planejador", "CEO Planejador");
-        Team time = teams.save(new Team(UUID.randomUUID(), companyId, dominio, foco));
+        Team time = teams.save(new Team(UUID.randomUUID(), companyId, dominio, foco, null));
         Agent ana = new Agent(UUID.randomUUID(), companyId, "Ana Arquiteta", "arquiteto", null);
         ana.assignTeam(time.getId());
         UUID arquitetoId = agents.save(ana).getId();
