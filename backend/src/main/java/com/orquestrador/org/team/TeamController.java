@@ -45,7 +45,8 @@ public class TeamController {
     @ResponseStatus(HttpStatus.CREATED)
     public TeamResponse create(@PathVariable UUID companyId, @RequestBody @Valid CreateTeamRequest request) {
         guard.assertBoardMember(companyId);
-        return TeamResponse.from(service.create(companyId, request.dominio(), request.foco()));
+        return TeamResponse.from(service.create(companyId, request.dominio(), request.foco(),
+                request.parentTeamId()));
     }
 
     @PatchMapping("/{teamId}/arquiteto")
@@ -55,18 +56,48 @@ public class TeamController {
         return TeamResponse.from(service.setArquiteto(companyId, teamId, request.agentId()));
     }
 
-    public record CreateTeamRequest(@NotBlank String dominio, @NotBlank String foco) {
+    // O posto de GESTOR (ADR-0045): sub-recurso próprio pela mesma razão do arquiteto — null é
+    // VALOR legal (limpar o posto). Trocar o gestor RE-DERIVA a chefia da subárvore no mesmo ato.
+    @PatchMapping("/{teamId}/gestor")
+    public TeamResponse setGestor(@PathVariable UUID companyId, @PathVariable UUID teamId,
+                                  @RequestBody SetGestorRequest request) {
+        guard.assertBoardMember(companyId);
+        return TeamResponse.from(service.setGestor(companyId, teamId, request.agentId()));
+    }
+
+    // Mover o time na árvore-organograma (ADR-0045): null = sobe pra RAIZ (vira departamento).
+    // Anti-ciclo no TeamService; a subárvore inteira re-deriva a chefia.
+    @PatchMapping("/{teamId}/parent")
+    public TeamResponse reparent(@PathVariable UUID companyId, @PathVariable UUID teamId,
+                                 @RequestBody ReparentTeamRequest request) {
+        guard.assertBoardMember(companyId);
+        return TeamResponse.from(service.reparentTeam(companyId, teamId, request.parentTeamId()));
+    }
+
+    /** {@code parentTeamId} nulo = time pendurado direto na EMPRESA (raiz) — um "departamento". */
+    public record CreateTeamRequest(@NotBlank String dominio, @NotBlank String foco,
+                                    UUID parentTeamId) {
     }
 
     /** {@code agentId} nulo LIMPA o posto (o dispatch do time volta a travar). */
     public record SetArquitetoRequest(UUID agentId) {
     }
 
+    /** {@code agentId} nulo LIMPA o posto (a chefia dos membros volta a subir pro time-pai). */
+    public record SetGestorRequest(UUID agentId) {
+    }
+
+    /** {@code parentTeamId} nulo = sobe pra raiz. */
+    public record ReparentTeamRequest(UUID parentTeamId) {
+    }
+
     public record TeamResponse(UUID id, UUID companyId, String dominio, String foco,
-                               UUID arquitetoAgentId, Instant createdAt) {
+                               UUID arquitetoAgentId, UUID gestorAgentId, UUID parentTeamId,
+                               Instant createdAt) {
         static TeamResponse from(Team team) {
             return new TeamResponse(team.getId(), team.getCompanyId(), team.getDominio(),
-                    team.getFoco(), team.getArquitetoAgentId(), team.getCreatedAt());
+                    team.getFoco(), team.getArquitetoAgentId(), team.getGestorAgentId(),
+                    team.getParentTeamId(), team.getCreatedAt());
         }
     }
 }

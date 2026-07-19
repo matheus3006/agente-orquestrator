@@ -1,10 +1,12 @@
 package com.orquestrador.org.agent;
 
+import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.governance.budget.BudgetService;
 import com.orquestrador.governance.budget.OrchestrationAction;
 import com.orquestrador.org.roletemplate.RoleTemplateService;
+import com.orquestrador.org.team.TeamService;
 import com.orquestrador.skills.CompanySkill;
 import com.orquestrador.skills.Skill;
 import com.orquestrador.skills.SkillInstallService;
@@ -36,34 +38,56 @@ public class AgentHireService {
     private final SkillInstallService skillInstall;
     private final SkillSetService skillSets;
     private final BudgetService budgets;
+    private final TeamService teams;
 
     public AgentHireService(AgentRepository agents, RoleTemplateService roleTemplates, SkillRepository skills,
                             SkillInstallService skillInstall, SkillSetService skillSets,
-                            BudgetService budgets) {
+                            BudgetService budgets, TeamService teams) {
         this.agents = agents;
         this.roleTemplates = roleTemplates;
         this.skills = skills;
         this.skillSets = skillSets;
         this.skillInstall = skillInstall;
         this.budgets = budgets;
+        this.teams = teams;
     }
 
+    /**
+     * A PORTA NORMAL de contratação — a única que a API HTTP e o gate de aprovação alcançam, e ela
+     * <b>EXIGE TIME</b> (ADR-0045, D-ORG-9: "nada órfão"). A chefia não é parâmetro: ela DERIVA do
+     * time (o agente nasce com o espelho já preenchido). Quem pode nascer na raiz não é decidido
+     * por um atributo do agente — é decidido pela PORTA (ver {@link #hireAtRoot}), e por isso
+     * digitar {@code role="ceo"} aqui não fura nada.
+     */
     @Transactional
     public Agent hire(UUID companyId, HireCommand command, ActorType actorType, UUID actorId) {
+        if (command.teamId() == null) {
+            throw new ConflictException("todo agente contratado pertence a um time (ADR-0045):"
+                    + " informe o time no hire — só o CEO e as personas moram na raiz");
+        }
+        return contratar(companyId, command, command.teamId(), actorType, actorId);
+    }
+
+    /**
+     * A PORTA DA RAIZ: contrata SEM time, para os moradores da raiz (CEO + as 3 personas). Chamada
+     * só pelo {@link CeoPersonaSeeder} no nascimento da company — não tem rota HTTP nem bloco de
+     * proposta que chegue aqui. É a exceção da D-ORG-9 CODIFICADA como caminho, não como {@code if}
+     * sobre um campo de texto que o operador digita.
+     */
+    @Transactional
+    public Agent hireAtRoot(UUID companyId, HireCommand command, ActorType actorType, UUID actorId) {
+        return contratar(companyId, command, null, actorType, actorId);
+    }
+
+    private Agent contratar(UUID companyId, HireCommand command, UUID teamId, ActorType actorType,
+                            UUID actorId) {
         RoleTemplateService.Preset preset = command.roleTemplateVersionId() == null
                 ? null
                 : roleTemplates.resolvePreset(command.roleTemplateVersionId());
 
-        // T.2 ligou a cadeia de comando: reports_to no hire agora APONTA de verdade — um líder
-        // inexistente/de outra company é recusado (antes o campo aceitava qualquer UUID solto).
-        if (command.reportsToId() != null) {
-            agents.findById(command.reportsToId())
-                    .filter(lider -> lider.getCompanyId().equals(companyId))
-                    .orElseThrow(() -> new NotFoundException(
-                            "Lider (reportsTo) nao encontrado na company: " + command.reportsToId()));
-        }
-
-        Agent agent = new Agent(UUID.randomUUID(), companyId, command.name(), command.role(), command.reportsToId());
+        // reportsTo nasce NULO e é derivado logo abaixo pelo assignAgent (ADR-0045) — a chefia é
+        // espelho da árvore, nunca entrada. Sem time (porta da raiz) o nulo já é a resposta final.
+        Agent agent = new Agent(UUID.randomUUID(), companyId, command.name(), command.role(), null);
         // Motor: o operador vence o preset campo-a-campo; ausente no operador cai no preset; ausente nos dois
         // = default do plano. Um único configureRuntime/configureEngine com os valores já mesclados (chamar
         // configureEngine duas vezes zeraria o model do preset quando o operador o omite).
@@ -76,6 +100,12 @@ public class AgentHireService {
             agent.pinTemplateVersion(command.roleTemplateVersionId());
         }
         Agent saved = agents.save(agent);
+        if (teamId != null) {
+            // valida time (existe + é da company) E deriva a chefia no mesmo ato — o TeamService é
+            // o dono dos dois invariantes; duplicá-los aqui criaria a segunda verdade que a
+            // ADR-0045 mata.
+            saved = teams.assignAgent(companyId, saved.getId(), teamId);
+        }
 
         // O ato de SPAWNAR entra no ledger de orquestração NA ABERTURA (T.4, anti-enxame), na
         // conta de quem CAUSOU o hire (o agente proponente via approval; nulo = mão humana direta).
@@ -133,10 +163,13 @@ public class AgentHireService {
 
     /**
      * O que o hire precisa saber — desacopla o serviço do record de request do controller.
+     * {@code teamId} = o TIME de destino (ADR-0045): obrigatório na porta normal, ignorado na porta
+     * da raiz. Note que <b>não existe {@code reportsToId} aqui</b>: a chefia deriva da árvore, e um
+     * campo que aceitasse chefe seria convite para a segunda verdade.
      * {@code causedByAgentId} = o agente que CAUSOU a contratação (o proponente da approval);
      * nulo = mão soberana do operador. É a conta do AGENT_SPAWN no ledger de orquestração (T.4).
      */
-    public record HireCommand(String name, String role, UUID reportsToId, String adapterType,
+    public record HireCommand(String name, String role, UUID teamId, String adapterType,
                               String runtimeCommand, String executionTarget, String model, String effort,
                               UUID roleTemplateVersionId, UUID causedByAgentId) {
     }

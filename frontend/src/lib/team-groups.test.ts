@@ -41,6 +41,8 @@ const time = (o: Partial<Team> & { id: string }): Team => ({
   dominio: "Dev",
   foco: "frontend",
   arquitetoAgentId: null,
+  gestorAgentId: null,
+  parentTeamId: null,
   createdAt: "2026-07-01T00:00:00Z",
   ...o,
 });

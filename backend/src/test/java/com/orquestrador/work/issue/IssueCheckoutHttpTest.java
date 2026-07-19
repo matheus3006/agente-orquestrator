@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -48,11 +49,34 @@ class IssueCheckoutHttpTest {
         return idFrom(body);
     }
 
+    /**
+     * Contratar EXIGE time (ADR-0045). Cada agente aqui disputa a Issue por conta própria, então
+     * nasce no PRÓPRIO time e vira arquiteto dele: o dispatch segue destravado (ADR-0017) e nenhum
+     * deles herda chefia do outro — exatamente o mundo que este teste já assumia.
+     */
     private UUID createAgent(UUID boardUser, UUID companyId, String name) throws Exception {
+        UUID teamId = createTeam(boardUser, companyId);
         String body = mvc.perform(post("/api/companies/" + companyId + "/agents")
                         .header("X-Board-User", boardUser.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"" + name + "\",\"role\":\"worker\"}"))
+                        .content("{\"name\":\"" + name + "\",\"role\":\"worker\",\"teamId\":\""
+                                + teamId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID agentId = idFrom(body);
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/arquiteto")
+                        .header("X-Board-User", boardUser.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + agentId + "\"}"))
+                .andExpect(status().isOk());
+        return agentId;
+    }
+
+    /** Foco aleatório porque (company, dominio, foco) é único e cada agente ganha o seu time. */
+    private UUID createTeam(UUID boardUser, UUID companyId) throws Exception {
+        String body = mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", boardUser.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dominio\":\"Dev\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return idFrom(body);
     }

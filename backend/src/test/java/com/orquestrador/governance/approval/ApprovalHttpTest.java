@@ -42,6 +42,24 @@ class ApprovalHttpTest {
         return UUID.fromString(om.readTree(json).get("id").asText());
     }
 
+    /**
+     * Contratar exige time (ADR-0045): o CEO nasce num time de direção próprio e é o arquiteto
+     * dele — sem arquiteto a trava do dispatch (ADR-0017) barraria o wakeup do kickback.
+     */
+    private UUID novoCeo(UUID board, UUID companyId) throws Exception {
+        com.orquestrador.org.team.Team direcao = teams.save(new com.orquestrador.org.team.Team(
+                UUID.randomUUID(), companyId, "Direcao", "topo", null));
+        UUID ceoId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\",\"teamId\":\""
+                                + direcao.getId() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        direcao.designarArquiteto(ceoId);
+        teams.save(direcao);
+        return ceoId;
+    }
+
     @Test
     void filaGrillEDecisaoBoardOnly() throws Exception {
         UUID board = UUID.randomUUID();
@@ -51,15 +69,11 @@ class ApprovalHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-        UUID ceoId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
-                        .header("X-Board-User", board.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID ceoId = novoCeo(board, companyId);
 
         // ADR-0037 (D2): o alvo carrega o time — o APPROVE resolve time→arquiteto (nasce com dono).
         com.orquestrador.org.team.Team time = teams.save(new com.orquestrador.org.team.Team(
-                UUID.randomUUID(), companyId, "Produto", "Nicho"));
+                UUID.randomUUID(), companyId, "Produto", "Nicho", null));
         com.orquestrador.org.agent.Agent ana = new com.orquestrador.org.agent.Agent(
                 UUID.randomUUID(), companyId, "Ana Arquiteta", "arquiteto", null);
         ana.assignTeam(time.getId());
@@ -145,11 +159,7 @@ class ApprovalHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-        UUID ceoId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
-                        .header("X-Board-User", board.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Atlas\",\"role\":\"ceo\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID ceoId = novoCeo(board, companyId);
 
         UUID approvalId = approvals.propose(companyId, ceoId, null, null,
                 new ProposalScanner.Proposal(ApprovalActionType.GRADUATE_PRINCIPLE,

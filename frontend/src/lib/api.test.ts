@@ -4,7 +4,11 @@ import {
   apiFetch,
   batchDecideApprovals,
   decideApproval,
+  createTeam,
+  hireAgent,
   interruptRun,
+  reparentTeam,
+  setTeamGestor,
   streamRunSteps,
 } from "./api";
 
@@ -325,5 +329,66 @@ describe("streamRunSteps (F-N4/ADR-0040: transporte SSE via fetch — EventSourc
     await vi.waitFor(() => expect(errors).toHaveLength(1));
     expect(errors[0]).toBeInstanceOf(ApiError);
     expect((errors[0] as ApiError).status).toBe(404);
+  });
+});
+
+// A ÁRVORE-ORGANOGRAMA no cliente (ADR-0045, F-ORG-A). Três fatos de contrato que a tela depende
+// e que só o cliente prova: o hire CARREGA o time (e não carrega chefe — chefia é derivada); o
+// posto de GESTOR e o PAI do time têm sub-recurso próprio (null é valor legal nos dois: limpar o
+// posto / subir pra raiz). O `reparentAgent` (PATCH /reports-to) deixou de existir.
+describe("árvore-organograma (ADR-0045)", () => {
+  function corpoDaChamada(): Record<string, unknown> {
+    return JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+  }
+
+  it("hireAgent manda o teamId no corpo e NENHUM reportsToId (a chefia deriva do time)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(201, { id: "a1" }));
+
+    await hireAgent("c1", { name: "Nix", role: "executor", teamId: "t1" });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("http://backend-teste:8080/api/companies/c1/agents");
+    expect(init.method).toBe("POST");
+    expect(corpoDaChamada()).toMatchObject({ name: "Nix", role: "executor", teamId: "t1" });
+    expect(corpoDaChamada()).not.toHaveProperty("reportsToId");
+  });
+
+  it("createTeam pendura no pai quando informado, e na RAIZ por omissão", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(201, { id: "t2" }));
+    await createTeam("c1", "Marketing", "conteudo", "t1");
+    expect(corpoDaChamada()).toMatchObject({ dominio: "Marketing", foco: "conteudo", parentTeamId: "t1" });
+
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(jsonResponse(201, { id: "t3" }));
+    await createTeam("c1", "Dev", "backend");
+    expect(corpoDaChamada()).toMatchObject({ parentTeamId: null });
+  });
+
+  it("setTeamGestor bate no sub-recurso do time e aceita null (limpar o posto)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { id: "t1", gestorAgentId: null }));
+
+    await setTeamGestor("c1", "t1", null);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("http://backend-teste:8080/api/companies/c1/teams/t1/gestor");
+    expect(init.method).toBe("PATCH");
+    expect(corpoDaChamada()).toEqual({ agentId: null });
+  });
+
+  it("reparentTeam move o time na árvore e aceita null (sobe pra raiz)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { id: "t2", parentTeamId: null }));
+
+    await reparentTeam("c1", "t2", null);
+
+    expect(fetchMock.mock.calls[0][0]).toBe("http://backend-teste:8080/api/companies/c1/teams/t2/parent");
+    expect(corpoDaChamada()).toEqual({ parentTeamId: null });
+  });
+
+  it("um 409 do backend (ciclo na árvore) vira ApiError com a mensagem acionável", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(409, { error: "conflict", message: "mover fecharia um ciclo na arvore de times" }),
+    );
+
+    await expect(reparentTeam("c1", "t1", "t9")).rejects.toBeInstanceOf(ApiError);
   });
 });

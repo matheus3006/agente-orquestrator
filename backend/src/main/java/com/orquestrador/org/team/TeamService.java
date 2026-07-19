@@ -4,46 +4,84 @@ import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.agent.ChainOfCommandService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * O módulo profundo dos TIMES (ADR-0017, T.2). Segura os três invariantes de composição — o canvas
- * só ESPELHA o que sai daqui:
+ * O módulo profundo dos TIMES (ADR-0017, T.2; ampliado pela ADR-0045). Segura os invariantes de
+ * composição E de ESTRUTURA — o canvas só ESPELHA o que sai daqui:
  * 1) identidade: (company, domínio, foco) é único (pré-check → 409 limpo; o unique da entidade é o backstop);
  * 2) arquiteto é MEMBRO do time — mantido POR CONSTRUÇÃO: designar valida membership, e sair do time
  *    limpa o posto (nunca ponteiro stale);
  * 3) a TRAVA DO DISPATCH: agente em time sem arquiteto não dispara trabalho (ADR-0017 — trava dura,
- *    duas faces: 409 no enqueue + preflight que cancela no dispatcher).
+ *    duas faces: 409 no enqueue + preflight que cancela no dispatcher);
+ * 4) <b>a ÁRVORE (ADR-0045)</b>: todo time pendura em outro time ou na RAIZ (= a empresa); sem ciclo;
+ * 5) <b>gestor é MEMBRO</b> (mesmo invariante do arquiteto) e é dele que a chefia DERIVA — por isso
+ *    toda mutação estrutural daqui re-deriva o espelho ({@link ChainOfCommandService}): mover
+ *    agente, trocar gestor, mover time. Chefia não se edita à mão em lugar nenhum.
  */
 @Service
 public class TeamService {
 
     private final TeamRepository teams;
     private final AgentRepository agents;
+    private final ChainOfCommandService chain;
 
-    public TeamService(TeamRepository teams, AgentRepository agents) {
+    public TeamService(TeamRepository teams, AgentRepository agents, ChainOfCommandService chain) {
         this.teams = teams;
         this.agents = agents;
+        this.chain = chain;
     }
 
+    /**
+     * Cria o time já PENDURADO na árvore: {@code parentTeamId} nulo = filho da RAIZ (um
+     * "departamento", pendurado direto na empresa). Nasce sem arquiteto e sem gestor — o time monta
+     * aos poucos, e nenhum dos dois postos é condição de existir.
+     */
     @Transactional
-    public Team create(UUID companyId, String dominio, String foco) {
+    public Team create(UUID companyId, String dominio, String foco, UUID parentTeamId) {
         String dominioLimpo = exigir(dominio, "dominio");
         String focoLimpo = exigir(foco, "foco");
         if (teams.existsByCompanyIdAndDominioAndFoco(companyId, dominioLimpo, focoLimpo)) {
             throw new ConflictException(
                     "ja existe um time " + dominioLimpo + "/" + focoLimpo + " nesta company");
         }
-        return teams.save(new Team(UUID.randomUUID(), companyId, dominioLimpo, focoLimpo));
+        if (parentTeamId != null) {
+            teamDaCompany(companyId, parentTeamId); // valida existência + company antes de pendurar
+        }
+        return teams.save(new Team(UUID.randomUUID(), companyId, dominioLimpo, focoLimpo, parentTeamId));
     }
 
     @Transactional(readOnly = true)
     public List<Team> list(UUID companyId) {
         return teams.findByCompanyIdOrderByDominioAscFocoAsc(companyId);
+    }
+
+    /**
+     * Move o time na árvore ({@code novoParentId} nulo = sobe pra RAIZ). Recusa fechar CICLO — ser
+     * pai de si mesmo ou descer para debaixo de um descendente. A subárvore inteira re-deriva a
+     * chefia: mudar o time de lugar muda o chefe de todo mundo que está embaixo dele.
+     */
+    @Transactional
+    public Team reparentTeam(UUID companyId, UUID teamId, UUID novoParentId) {
+        Team time = teamDaCompany(companyId, teamId);
+        if (novoParentId != null) {
+            if (novoParentId.equals(teamId)) {
+                throw new ConflictException("um time nao pode ser pai de si mesmo");
+            }
+            Team novoPai = teamDaCompany(companyId, novoParentId);
+            assertNaoFechaCiclo(time, novoPai);
+        }
+        time.pendurarEm(novoParentId);
+        Team salvo = teams.save(time);
+        chain.rederivarSubarvore(teamId);
+        return salvo;
     }
 
     /**
@@ -67,9 +105,31 @@ public class TeamService {
     }
 
     /**
-     * Move o agente de time ({@code teamId} nulo = sai para nenhum). Se ele era o ARQUITETO do time
-     * que está deixando, o posto é limpo na MESMA transação — o invariante "arquiteto é membro"
-     * nunca fica stale (e o dispatch do time antigo passa a travar, honesto).
+     * Designa o GESTOR do time ({@code agentId} nulo LIMPA o posto — a chefia dos membros volta a
+     * subir pro time-pai). Membro do time, como o arquiteto (ADR-0045). Trocar o gestor re-deriva a
+     * SUBÁRVORE: é o chefe de todos os membros que muda, não só o posto.
+     */
+    @Transactional
+    public Team setGestor(UUID companyId, UUID teamId, UUID agentId) {
+        Team team = teamDaCompany(companyId, teamId);
+        if (agentId != null) {
+            Agent agente = agenteDaCompany(companyId, agentId);
+            if (!teamId.equals(agente.getTeamId())) {
+                throw new ConflictException("o gestor tem que ser membro do time que ele gerencia"
+                        + " (ADR-0045): mova o agente para o time antes");
+            }
+        }
+        team.designarGestor(agentId);
+        Team salvo = teams.save(team);
+        chain.rederivarSubarvore(teamId);
+        return salvo;
+    }
+
+    /**
+     * Move o agente de time ({@code teamId} nulo = sai para nenhum). Se ele era ARQUITETO ou GESTOR
+     * do time que está deixando, o posto é limpo na MESMA transação — os invariantes "é membro"
+     * nunca ficam stale (e o dispatch do time antigo passa a travar, honesto). A chefia dele e a
+     * das subárvores tocadas são re-derivadas: mudar de time É mudar de chefe (ADR-0045).
      */
     @Transactional
     public Agent assignAgent(UUID companyId, UUID agentId, UUID teamId) {
@@ -79,15 +139,27 @@ public class TeamService {
         }
         UUID timeAnterior = agente.getTeamId();
         if (timeAnterior != null && !timeAnterior.equals(teamId)) {
-            teams.findById(timeAnterior)
-                    .filter(antigo -> agentId.equals(antigo.getArquitetoAgentId()))
-                    .ifPresent(antigo -> {
-                        antigo.designarArquiteto(null);
-                        teams.save(antigo);
-                    });
+            teams.findById(timeAnterior).ifPresent(antigo -> {
+                boolean mexeu = false;
+                if (agentId.equals(antigo.getArquitetoAgentId())) {
+                    antigo.designarArquiteto(null);
+                    mexeu = true;
+                }
+                if (agentId.equals(antigo.getGestorAgentId())) {
+                    antigo.designarGestor(null);
+                    mexeu = true;
+                }
+                if (mexeu) {
+                    teams.save(antigo);
+                }
+            });
         }
         agente.assignTeam(teamId);
-        return agents.save(agente);
+        Agent salvo = agents.save(agente);
+        // o time que ele DEIXOU pode ter perdido o gestor (subárvore inteira re-deriva); o time em
+        // que ele ENTROU não muda pros outros — só pra ele, no rederivar final.
+        chain.rederivarSubarvore(timeAnterior);
+        return chain.rederivar(salvo);
     }
 
     /** A trava do dispatch, face ENQUEUE: agente em time sem arquiteto → 409 acionável. */
@@ -106,6 +178,20 @@ public class TeamService {
             return false; // sem time, dispatch livre — a trava é DO TIME
         }
         return teams.findById(agente.getTeamId()).map(team -> !team.temArquiteto()).orElse(false);
+    }
+
+    /** Sobe a árvore a partir do novo pai: se passar pelo time, o move fecharia um ciclo. */
+    private void assertNaoFechaCiclo(Team time, Team novoPai) {
+        Set<UUID> visitados = new HashSet<>();
+        UUID cursor = novoPai.getId();
+        while (cursor != null && visitados.add(cursor)) {
+            if (cursor.equals(time.getId())) {
+                throw new ConflictException("mover fecharia um ciclo na arvore de times: "
+                        + novoPai.getDominio() + "/" + novoPai.getFoco() + " ja esta abaixo de "
+                        + time.getDominio() + "/" + time.getFoco());
+            }
+            cursor = teams.findById(cursor).map(Team::getParentTeamId).orElse(null);
+        }
     }
 
     private Team teamDaCompany(UUID companyId, UUID teamId) {

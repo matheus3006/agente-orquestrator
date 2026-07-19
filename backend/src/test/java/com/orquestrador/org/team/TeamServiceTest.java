@@ -41,7 +41,7 @@ class TeamServiceTest {
     void criaTimeSemArquiteto_aTravaEhNoDispatchNaoNaCriacao() {
         UUID companyId = UUID.randomUUID();
 
-        Team time = service.create(companyId, "Dev", "frontend");
+        Team time = service.create(companyId, "Dev", "frontend", null);
 
         Team salvo = teams.findById(time.getId()).orElseThrow();
         assertThat(salvo.getCompanyId()).isEqualTo(companyId);
@@ -53,19 +53,19 @@ class TeamServiceTest {
     @Test
     void dominioMaisFocoSaoUnicosPorCompany_mesmaDuplaEmOutraCompanyPassa() {
         UUID companyId = UUID.randomUUID();
-        service.create(companyId, "Dev", "frontend");
+        service.create(companyId, "Dev", "frontend", null);
 
-        assertThatThrownBy(() -> service.create(companyId, "Dev", "frontend"))
+        assertThatThrownBy(() -> service.create(companyId, "Dev", "frontend", null))
                 .isInstanceOf(ConflictException.class);
         // "vários times por domínio" = focos diferentes; e a mesma dupla vale em OUTRA company
-        assertThatCode(() -> service.create(companyId, "Dev", "backend")).doesNotThrowAnyException();
-        assertThatCode(() -> service.create(UUID.randomUUID(), "Dev", "frontend")).doesNotThrowAnyException();
+        assertThatCode(() -> service.create(companyId, "Dev", "backend", null)).doesNotThrowAnyException();
+        assertThatCode(() -> service.create(UUID.randomUUID(), "Dev", "frontend", null)).doesNotThrowAnyException();
     }
 
     @Test
     void setArquitetoExigeQueOAgenteSejaMembroDoTime() {
         UUID companyId = UUID.randomUUID();
-        Team time = service.create(companyId, "Dev", "frontend");
+        Team time = service.create(companyId, "Dev", "frontend", null);
         Agent deFora = novoAgente(companyId, "Nix");
 
         // agente da company mas FORA do time → o arquiteto é de dentro (composição do time)
@@ -80,7 +80,7 @@ class TeamServiceTest {
     @Test
     void setArquitetoNullLimpaOPosto_eAgenteDeOutraCompanyNaoEncontrado() {
         UUID companyId = UUID.randomUUID();
-        Team time = service.create(companyId, "Dev", "frontend");
+        Team time = service.create(companyId, "Dev", "frontend", null);
         Agent membro = novoAgente(companyId, "Lyra");
         service.assignAgent(companyId, membro.getId(), time.getId());
         service.setArquiteto(companyId, time.getId(), membro.getId());
@@ -96,8 +96,8 @@ class TeamServiceTest {
     @Test
     void sairDoTimeLimpaOArquitetoDoTimeAntigo_nuncaPonteiroStale() {
         UUID companyId = UUID.randomUUID();
-        Team antigo = service.create(companyId, "Dev", "frontend");
-        Team novo = service.create(companyId, "Dev", "backend");
+        Team antigo = service.create(companyId, "Dev", "frontend", null);
+        Team novo = service.create(companyId, "Dev", "backend", null);
         Agent arquiteto = novoAgente(companyId, "Lyra");
         service.assignAgent(companyId, arquiteto.getId(), antigo.getId());
         service.setArquiteto(companyId, antigo.getId(), arquiteto.getId());
@@ -117,12 +117,12 @@ class TeamServiceTest {
     @Test
     void assignAgentValidaTimeECompanyDoAgente() {
         UUID companyId = UUID.randomUUID();
-        Team time = service.create(companyId, "Dev", "frontend");
+        Team time = service.create(companyId, "Dev", "frontend", null);
         Agent agente = novoAgente(companyId, "Echo");
 
         assertThatThrownBy(() -> service.assignAgent(companyId, agente.getId(), UUID.randomUUID()))
                 .isInstanceOf(NotFoundException.class); // time inexistente
-        Team deOutra = service.create(UUID.randomUUID(), "Dev", "frontend");
+        Team deOutra = service.create(UUID.randomUUID(), "Dev", "frontend", null);
         assertThatThrownBy(() -> service.assignAgent(companyId, agente.getId(), deOutra.getId()))
                 .isInstanceOf(NotFoundException.class); // time de outra company
         assertThatThrownBy(() -> service.assignAgent(UUID.randomUUID(), agente.getId(), time.getId()))
@@ -132,7 +132,7 @@ class TeamServiceTest {
     @Test
     void travaDoDispatch_semTimePassa_timeComArquitetoPassa_timeSemArquiteto409() {
         UUID companyId = UUID.randomUUID();
-        Team time = service.create(companyId, "Dev", "frontend");
+        Team time = service.create(companyId, "Dev", "frontend", null);
         Agent solto = novoAgente(companyId, "Solto");
         Agent noTime = novoAgente(companyId, "Echo");
         service.assignAgent(companyId, noTime.getId(), time.getId());

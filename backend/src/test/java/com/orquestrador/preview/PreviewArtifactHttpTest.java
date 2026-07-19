@@ -15,6 +15,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -51,17 +52,42 @@ class PreviewArtifactHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
-                        .header("X-Board-User", board.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"A\",\"role\":\"worker\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID agentId = createAgent(companyId, board);
         UUID issueId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/issues")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"prototipo\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         return new Cenario(board, companyId, agentId, issueId);
+    }
+
+    /**
+     * Contratar EXIGE time (ADR-0045). Aqui o agente e so o dono do artefato, entao ele nasce no
+     * PROPRIO time e vira arquiteto dele: o dispatch segue destravado (ADR-0017) e a chefia
+     * derivada continua nula — exatamente o mundo que este teste ja assumia.
+     */
+    private UUID createAgent(UUID companyId, UUID board) throws Exception {
+        UUID teamId = createTeam(companyId, board);
+        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"A\",\"role\":\"worker\",\"teamId\":\"" + teamId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/arquiteto")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + agentId + "\"}"))
+                .andExpect(status().isOk());
+        return agentId;
+    }
+
+    /** Foco aleatorio porque (company, dominio, foco) e unico e cada agente ganha o seu time. */
+    private UUID createTeam(UUID companyId, UUID board) throws Exception {
+        return idFrom(mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dominio\":\"Dev\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
     }
 
     @Test

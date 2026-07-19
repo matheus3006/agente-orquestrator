@@ -1,10 +1,19 @@
 # ADR-0017: Teams — roles, presets e composição
 
-**Status:** Aceito (2026-07-04)
+**Status:** Aceito (2026-07-04) · **EMENDADA pela ADR-0045** (2026-07-18, F-ORG-A)
 
 > Registro de decisão da frente **Teams** (Camadas A+B). O detalhe do grilling e o "porquê" longo vivem em
 > `docs/handoff-grilling-teams-fechado.md` (seções A.2–A.5) — este ADR é o **endereço citável** da decisão.
 > Camada C (CEO/orquestração) = ADR-0018; memória = ADR-0019/0020.
+>
+> **Emenda da ADR-0045 (a árvore de times É o organograma):** o time deixou de ser uma lista PLANA
+> e virou nó de árvore (`parent_team_id`; nulo = pendurado na empresa/raiz), e ganhou um **segundo
+> posto** — o `gestor_agent_id`, responsável ORGANIZACIONAL, de quem a chefia deriva. O **arquiteto
+> desta ADR está INTOCADO**: segue sendo o responsável técnico e segue sendo o ÚNICO dono da trava
+> do dispatch ("time sem arquiteto não dispara trabalho"). Designar gestor NÃO destrava nada — os
+> dois postos foram deliberadamente mantidos separados. O que mudou de verdade aqui: `Agent.teamId`
+> deixou de ser opcional no hire (todo contratado pertence a um time) e `TeamService.create` passou
+> a receber o pai.
 
 ## Contexto
 O pedido do dono: (1) `role` deve virar **enum** + uma **tela pra adicionar roles** + **pre-settings por role**;

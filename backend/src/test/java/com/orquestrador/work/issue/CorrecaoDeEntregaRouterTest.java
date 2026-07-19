@@ -234,7 +234,7 @@ class CorrecaoDeEntregaRouterTest {
     private Cenario cenarioCompleto() {
         UUID companyId = companies.create("C", "casob-" + UUID.randomUUID().toString().substring(0, 8),
                 UUID.randomUUID()).getId();
-        Team time = teams.save(new Team(UUID.randomUUID(), companyId, "Dev", "Landing"));
+        Team time = teams.save(new Team(UUID.randomUUID(), companyId, "Dev", "Landing", null));
         UUID arquitetoId = agenteNoTime(companyId, "Ana Arquiteta", time.getId());
         UUID executorId = agenteNoTime(companyId, "Feynman", time.getId());
         time.designarArquiteto(arquitetoId);

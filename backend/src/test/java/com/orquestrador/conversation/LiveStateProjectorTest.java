@@ -36,8 +36,8 @@ class LiveStateProjectorTest {
     void equipeSaiAgrupadaPorAreaDeterministica() {
         UUID companyId = companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8),
                 UUID.randomUUID()).getId();
-        Team produto = teams.save(new Team(UUID.randomUUID(), companyId, "produto", "checkout"));
-        Team marketing = teams.save(new Team(UUID.randomUUID(), companyId, "marketing", "aquisicao"));
+        Team produto = teams.save(new Team(UUID.randomUUID(), companyId, "produto", "checkout", null));
+        Team marketing = teams.save(new Team(UUID.randomUUID(), companyId, "marketing", "aquisicao", null));
 
         Agent ceo = new Agent(UUID.randomUUID(), companyId, "Atlas", "ceo", null);
         agents.save(ceo);

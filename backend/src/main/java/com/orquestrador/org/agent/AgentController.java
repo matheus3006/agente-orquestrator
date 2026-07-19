@@ -33,17 +33,15 @@ public class AgentController {
 
     private final AgentRepository agents;
     private final AgentHireService hireService;
-    private final ChainOfCommandService chain;
     private final TeamService teamService;
     private final RoleTemplateVersionRepository templateVersions;
     private final CompanyAccessGuard guard;
 
     public AgentController(AgentRepository agents, AgentHireService hireService,
-                           ChainOfCommandService chain, TeamService teamService,
+                           TeamService teamService,
                            RoleTemplateVersionRepository templateVersions, CompanyAccessGuard guard) {
         this.agents = agents;
         this.hireService = hireService;
-        this.chain = chain;
         this.teamService = teamService;
         this.templateVersions = templateVersions;
         this.guard = guard;
@@ -59,7 +57,7 @@ public class AgentController {
         // Hire-com-role (ADR-0017): com roleTemplateVersionId, o serviço copia o snapshot do preset
         // (motor + skillset + pin); sem ele, é o hire avulso de sempre. O motor/skillset ficam no serviço.
         Agent agent = hireService.hire(companyId, new AgentHireService.HireCommand(
-                request.name(), request.role(), request.reportsToId(), request.adapterType(),
+                request.name(), request.role(), request.teamId(), request.adapterType(),
                 request.runtimeCommand(), request.executionTarget(), request.model(), request.effort(),
                 request.roleTemplateVersionId(), null), actor.type(), actor.id());
         return toResponse(agent);
@@ -78,18 +76,13 @@ public class AgentController {
         return toResponse(agents.save(agent));
     }
 
-    // Cadeia de comando (T.2): reparent é ESTRUTURA organizacional → board-only (como o hire
-    // pós-R1). Sub-recurso próprio porque null é VALOR legal (vira raiz) — num PATCH genérico não
-    // dá pra distinguir "ausente" de "null". Anti-ciclo no ChainOfCommandService (o canvas espelha).
-    @PatchMapping("/{agentId}/reports-to")
-    public AgentResponse reparent(@PathVariable UUID companyId, @PathVariable UUID agentId,
-                                  @RequestBody ReparentRequest request) {
-        guard.assertBoardMember(companyId);
-        return toResponse(chain.reparent(companyId, agentId, request.reportsToId()));
-    }
+    // O `PATCH /{agentId}/reports-to` foi REMOVIDO na F-ORG-A (ADR-0045): a chefia DERIVA da árvore
+    // de times, então editar o chefe à mão criaria a segunda verdade que a D-ORG-9 mata. Quem quer
+    // trocar o chefe de alguém move o agente de TIME (o PATCH abaixo) ou troca o GESTOR do time
+    // (`PATCH /teams/{id}/gestor`) — em ambos o espelho é reescrito no mesmo ato.
 
-    // Pertencimento a time (T.2): idem — board-only, null = sai do time. O TeamService mantém o
-    // invariante arquiteto-é-membro (sair do time limpa o posto do time antigo).
+    // Pertencimento a time (T.2): board-only, null = sai do time. O TeamService mantém os
+    // invariantes de composição (sair do time limpa os postos) e RE-DERIVA a chefia (ADR-0045).
     @PatchMapping("/{agentId}/team")
     public AgentResponse assignTeam(@PathVariable UUID companyId, @PathVariable UUID agentId,
                                     @RequestBody AssignTeamRequest request) {
@@ -134,16 +127,16 @@ public class AgentController {
         return AgentResponse.from(agent, pinnedTemplateId);
     }
 
-    public record CreateAgentRequest(@NotBlank String name, @NotBlank String role, UUID reportsToId,
+    /**
+     * {@code teamId} é OBRIGATÓRIO (ADR-0045): todo contratado pertence a um time. O antigo
+     * {@code reportsToId} saiu do contrato — chefe não é entrada, é derivação.
+     */
+    public record CreateAgentRequest(@NotBlank String name, @NotBlank String role, @NotNull UUID teamId,
                                      String adapterType, String runtimeCommand, String executionTarget,
                                      String model, String effort, UUID roleTemplateVersionId) {
     }
 
     public record UpdateEngineRequest(String adapterType, String model, String effort) {
-    }
-
-    /** {@code reportsToId} nulo = vira raiz da cadeia. */
-    public record ReparentRequest(UUID reportsToId) {
     }
 
     /** {@code teamId} nulo = sai do time. */

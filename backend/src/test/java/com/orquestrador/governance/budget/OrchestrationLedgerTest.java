@@ -13,6 +13,7 @@ import com.orquestrador.governance.approval.ProposalScanner;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.team.TeamService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +54,8 @@ class OrchestrationLedgerTest {
     private AgentRepository agents;
     @Autowired
     private ApprovalService approvals;
+    @Autowired
+    private TeamService times;
 
     @AfterEach
     void drenaAFilaGlobal() {
@@ -109,8 +112,11 @@ class OrchestrationLedgerTest {
         UUID companyId = novaCompany();
         UUID ceoId = agents.save(new Agent(UUID.randomUUID(), companyId, "Atlas", "ceo", null)).getId();
 
+        // O alvo do hire carrega o TIME por NOME (ADR-0045) e ele precisa existir antes do approve.
+        times.create(companyId, "Dev", "backend", null);
         ProposalScanner.Proposal contratacao = new ProposalScanner.Proposal(
-                ApprovalActionType.HIRE_AGENT, "{\"name\":\"Novo\",\"role\":\"executor\"}",
+                ApprovalActionType.HIRE_AGENT,
+                "{\"name\":\"Novo\",\"role\":\"executor\",\"dominio\":\"Dev\",\"foco\":\"backend\"}",
                 "Contratar executor", null);
         Approval proposta = approvals.propose(companyId, ceoId, null, null, contratacao);
         approvals.decide(companyId, proposta.getId(), ApprovalDecision.APPROVE,

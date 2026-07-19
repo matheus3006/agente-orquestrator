@@ -105,7 +105,7 @@ class PersonaBatonFlowTest {
 
     /** Um arquiteto designado no seu time — a ponta da corrente que o caso B resolve. */
     private UUID agenteEmTime(UUID companyId, String nome) {
-        Team time = teams.save(new Team(UUID.randomUUID(), companyId, "Dev", "Landing"));
+        Team time = teams.save(new Team(UUID.randomUUID(), companyId, "Dev", "Landing", null));
         Agent arquiteto = new Agent(UUID.randomUUID(), companyId, nome, "executor", null);
         arquiteto.assignTeam(time.getId());
         UUID arquitetoId = agents.save(arquiteto).getId();

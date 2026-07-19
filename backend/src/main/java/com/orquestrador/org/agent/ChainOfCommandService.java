@@ -1,60 +1,117 @@
 package com.orquestrador.org.agent;
 
-import com.orquestrador.common.error.ConflictException;
-import com.orquestrador.common.error.NotFoundException;
+import com.orquestrador.org.team.Team;
+import com.orquestrador.org.team.TeamRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * A CADEIA DE COMANDO (ADR-0017, T.2 — "ligar o reports_to"): reparent pendura o agente num novo
- * líder direto (nulo = vira raiz). A árvore proíbe SÓ ciclo — nunca QUEM reporta (residual 5 do
- * fechado): o guard sobe a cadeia a partir do novo líder e recusa se passar pelo próprio agente
- * (self incluso). Visited-set no walk: dado pré-corrompido com ciclo não trava a operação.
- * Profundidade fica livre no v1 (o cap de profundidade é do spawn_lineage, T.4).
+ * A CADEIA DE COMANDO DERIVADA (ADR-0045, D-ORG-9). O {@code reports_to_id} deixou de ser fonte:
+ * agora ele é o ESPELHO da árvore de times — "uma verdade, duas leituras". Ninguém liga chefia na
+ * mão (o {@code PATCH /reports-to} foi REMOVIDO nesta fatia); mudou de time = mudou de chefe num
+ * ato só.
+ *
+ * <p>A derivação tem três regras, sendo a segunda a única exceção:
+ * <ol>
+ *   <li>agente comum → o GESTOR do próprio time;</li>
+ *   <li><b>exceção</b>: se o agente É o gestor do time, ele SOBE — senão reportaria a si mesmo;</li>
+ *   <li>time sem gestor → sobe pro pai, avô…; sem achar até a raiz → {@code null} = RAIZ (onde
+ *       moram CEO+personas, os únicos sem time).</li>
+ * </ol>
+ *
+ * <p>O anti-ciclo estrutural vive no {@code TeamService} (é ele que muda a árvore); aqui o walk só
+ * se protege com visited-set — dado pré-corrompido não pode pendurar a leitura (mesma regra do
+ * guard antigo da cadeia). Escrever o espelho é {@link #rederivar}/{@link #rederivarSubarvore},
+ * chamados pelo {@code TeamService} em TODA mutação estrutural.
  */
 @Service
 public class ChainOfCommandService {
 
     private final AgentRepository agents;
+    private final TeamRepository teams;
 
-    public ChainOfCommandService(AgentRepository agents) {
+    public ChainOfCommandService(AgentRepository agents, TeamRepository teams) {
         this.agents = agents;
+        this.teams = teams;
     }
 
-    @Transactional
-    public Agent reparent(UUID companyId, UUID agentId, UUID novoLiderId) {
-        Agent agente = agenteDaCompany(companyId, agentId);
-        if (novoLiderId != null) {
-            if (novoLiderId.equals(agentId)) {
-                throw new ConflictException("agente nao pode reportar a si mesmo");
-            }
-            Agent novoLider = agenteDaCompany(companyId, novoLiderId);
-            assertNaoFechaCiclo(agente, novoLider);
+    /** Deriva o chefe do agente a partir da árvore. {@code null} = raiz (acima dele só o CEO). */
+    @Transactional(readOnly = true)
+    public UUID chefeDe(Agent agente) {
+        if (agente.getTeamId() == null) {
+            return null; // sem time = na raiz, pendurado direto na empresa (CEO + personas)
         }
-        agente.reassignReportsTo(novoLiderId);
+        Team time = teams.findById(agente.getTeamId()).orElse(null);
+        if (time == null) {
+            return null; // ponteiro órfão: honesto é devolver raiz, não explodir a leitura
+        }
+        if (time.temGestor() && !agente.getId().equals(time.getGestorAgentId())) {
+            return time.getGestorAgentId();
+        }
+        // ele É o gestor deste time (ou o time não tem gestor): a chefia está ACIMA
+        return primeiroGestorSubindo(time.getParentTeamId());
+    }
+
+    /** Reescreve o espelho de UM agente. Devolve o agente já salvo. */
+    @Transactional
+    public Agent rederivar(Agent agente) {
+        agente.reassignReportsTo(chefeDe(agente));
         return agents.save(agente);
     }
 
-    /** Sobe a cadeia a partir do novo líder: se passar pelo agente, o reparent fecharia um ciclo. */
-    private void assertNaoFechaCiclo(Agent agente, Agent novoLider) {
-        Set<UUID> visitados = new HashSet<>();
-        UUID cursor = novoLider.getId();
-        while (cursor != null && visitados.add(cursor)) {
-            if (cursor.equals(agente.getId())) {
-                throw new ConflictException("reparent fecharia um ciclo na cadeia de comando: "
-                        + novoLider.getName() + " ja esta abaixo de " + agente.getName());
+    /**
+     * Reescreve o espelho da SUBÁRVORE de um time (ele + descendentes) — o raio de alcance real de
+     * uma mudança estrutural: trocar o gestor muda o chefe dos membros; mover o time muda o chefe
+     * de quem está embaixo; e um time SEM gestor propaga a busca para os filhos.
+     */
+    @Transactional
+    public void rederivarSubarvore(UUID teamId) {
+        if (teamId == null) {
+            return;
+        }
+        for (UUID id : subarvore(teamId)) {
+            for (Agent membro : agents.findByTeamId(id)) {
+                rederivar(membro);
             }
-            cursor = agents.findById(cursor).map(Agent::getReportsToId).orElse(null);
         }
     }
 
-    private Agent agenteDaCompany(UUID companyId, UUID agentId) {
-        return agents.findById(agentId)
-                .filter(candidate -> candidate.getCompanyId().equals(companyId))
-                .orElseThrow(() -> new NotFoundException("Agente nao encontrado: " + agentId));
+    /** Sobe a árvore a partir de {@code teamId} e devolve o primeiro gestor encontrado (ou null). */
+    private UUID primeiroGestorSubindo(UUID teamId) {
+        Set<UUID> visitados = new HashSet<>();
+        UUID cursor = teamId;
+        while (cursor != null && visitados.add(cursor)) {
+            Team time = teams.findById(cursor).orElse(null);
+            if (time == null) {
+                return null;
+            }
+            if (time.temGestor()) {
+                return time.getGestorAgentId();
+            }
+            cursor = time.getParentTeamId();
+        }
+        return null; // chegou na raiz (ou num ciclo pré-existente): o chefe é o topo
+    }
+
+    /** O time + todos os descendentes (BFS com visited-set: ciclo no dado não vira loop infinito). */
+    private List<UUID> subarvore(UUID raizId) {
+        Set<UUID> visitados = new HashSet<>();
+        Deque<UUID> fila = new ArrayDeque<>();
+        fila.add(raizId);
+        while (!fila.isEmpty()) {
+            UUID atual = fila.poll();
+            if (!visitados.add(atual)) {
+                continue;
+            }
+            teams.findByParentTeamId(atual).forEach(filho -> fila.add(filho.getId()));
+        }
+        return List.copyOf(visitados);
     }
 }

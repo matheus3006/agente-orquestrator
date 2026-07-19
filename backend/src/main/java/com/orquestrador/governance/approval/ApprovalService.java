@@ -32,6 +32,8 @@ import com.orquestrador.skills.SkillSetService;
 import com.orquestrador.work.issue.AbsorcaoDeIssueRouter;
 import com.orquestrador.work.issue.Issue;
 import com.orquestrador.work.issue.IssueService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +62,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class ApprovalService {
+
+    private static final Logger log = LoggerFactory.getLogger(ApprovalService.class);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -339,11 +343,16 @@ public class ApprovalService {
                 if (name == null || role == null) {
                     throw new ConflictException("Proposta de hire sem name/role: " + approval.getId());
                 }
+                // ADR-0045 (D-ORG-9): o hire agora carrega o TIME (por dominio/foco, como a issue —
+                // quem escreve o bloco é um LLM, e UUID ele alucina). Sem time não há contratação:
+                // proposta antiga (ou sem time) vira 409 acionável em vez de agente órfão.
+                Team timeDoHire = timeDoAlvo(approval, alvo);
+                avisarSeMandouChefe(approval, alvo);
                 // Motor (A4): o alvo protocolado carrega o trio sugerido; o override do dono no
                 // menu VENCE campo-a-campo (mão soberana — CEO tem viés de motor).
                 EngineOverride doDono = engineOverride == null ? EngineOverride.none() : engineOverride;
                 Agent hired = hires.hire(approval.getCompanyId(), new AgentHireService.HireCommand(
-                                name, role, uuidOrNull(alvo, "reportsToId"),
+                                name, role, timeDoHire.getId(),
                                 preferNonBlank(doDono.adapterType(), textOrNull(alvo, "adapterType")),
                                 null, null,
                                 preferNonBlank(doDono.model(), textOrNull(alvo, "model")),
@@ -396,11 +405,18 @@ public class ApprovalService {
                             + " arquiteto (name/role) — todo time nasce com arquiteto (ADR-0037): "
                             + approval.getId());
                 }
-                Team time = teamService.create(approval.getCompanyId(), dominio, foco);
+                // ADR-0045: o time nasce PENDURADO na árvore. `paiDominio`/`paiFoco` ausentes =
+                // filho da RAIZ (um departamento) — que é exatamente o caso do "crie o
+                // departamento de marketing" da D-ORG-9.
+                Team pai = paiDoTimeAlvo(approval, alvo);
+                Team time = teamService.create(approval.getCompanyId(), dominio, foco,
+                        pai == null ? null : pai.getId());
                 // O trio de motor do arquiteto respeita a mão soberana do dono no menu (A4).
                 EngineOverride doDono = engineOverride == null ? EngineOverride.none() : engineOverride;
+                // O arquiteto já nasce DENTRO do time recém-criado (hire exige time, ADR-0045) —
+                // some o passo "contrata solto e depois move".
                 Agent arquiteto = hires.hire(approval.getCompanyId(), new AgentHireService.HireCommand(
-                                nomeArquiteto, roleArquiteto, null,
+                                nomeArquiteto, roleArquiteto, time.getId(),
                                 preferNonBlank(doDono.adapterType(), textOrNull(arquitetoAlvo, "adapterType")),
                                 null, null,
                                 preferNonBlank(doDono.model(), textOrNull(arquitetoAlvo, "model")),
@@ -408,7 +424,6 @@ public class ApprovalService {
                                 uuidOrNull(arquitetoAlvo, "roleTemplateVersionId"),
                                 approval.getRequestedByAgentId()),
                         actorType, actorId);
-                teamService.assignAgent(approval.getCompanyId(), arquiteto.getId(), time.getId());
                 teamService.setArquiteto(approval.getCompanyId(), time.getId(), arquiteto.getId());
                 detail.put("teamId", time.getId());
                 detail.put("hiredAgentId", arquiteto.getId());
@@ -524,6 +539,50 @@ public class ApprovalService {
      * o time; o arquiteto designado é o dono do que nasce. Cada elo vazio é um 409 ACIONÁVEL —
      * o dispatch roda na tx do decide, então a Approval segue PENDING intacta.
      */
+    /**
+     * Resolve o TIME do alvo por (dominio, foco) — a mesma gramática do CREATE_ISSUE (ADR-0037):
+     * o bloco de proposta é escrito por um LLM, que sabe o NOME do time e alucinaria um UUID.
+     */
+    private Team timeDoAlvo(Approval approval, JsonNode alvo) {
+        String dominio = textOrNull(alvo, "dominio");
+        String foco = textOrNull(alvo, "foco");
+        if (dominio == null || foco == null) {
+            throw new ConflictException("Proposta de hire sem time (dominio/foco) — todo agente"
+                    + " pertence a um time (ADR-0045): rejeite e proponha de novo com o time: "
+                    + approval.getId());
+        }
+        return teams.findByCompanyIdAndDominioAndFoco(approval.getCompanyId(), dominio, foco)
+                .orElseThrow(() -> new ConflictException("O time " + dominio + " / " + foco
+                        + " nao existe nesta company — rejeite e proponha de novo com um time"
+                        + " existente, ou crie o time antes: " + approval.getId()));
+    }
+
+    /**
+     * O PAI do time proposto (ADR-0045), por (paiDominio, paiFoco). Ausente = raiz (departamento).
+     * Nomeado e inexistente é 409 — pendurar no lugar errado é pior que recusar.
+     */
+    private Team paiDoTimeAlvo(Approval approval, JsonNode alvo) {
+        String paiDominio = textOrNull(alvo, "paiDominio");
+        String paiFoco = textOrNull(alvo, "paiFoco");
+        if (paiDominio == null || paiFoco == null) {
+            return null; // filho da raiz = a empresa
+        }
+        return teams.findByCompanyIdAndDominioAndFoco(approval.getCompanyId(), paiDominio, paiFoco)
+                .orElseThrow(() -> new ConflictException("O time-pai " + paiDominio + " / " + paiFoco
+                        + " nao existe nesta company — rejeite e proponha de novo: " + approval.getId()));
+    }
+
+    /**
+     * A chefia DERIVA da árvore (ADR-0045): {@code reportsToId} no alvo virou ruído. Ignorar em
+     * silêncio seria o pecado que a ADR-0036 nomeou — então o descarte é CONTADO (WARN).
+     */
+    private void avisarSeMandouChefe(Approval approval, JsonNode alvo) {
+        if (uuidOrNull(alvo, "reportsToId") != null) {
+            log.warn("proposta {} mandou reportsToId no alvo do hire — IGNORADO: a chefia deriva da"
+                    + " arvore de times (ADR-0045)", approval.getId());
+        }
+    }
+
     private Agent arquitetoDoTimeAlvo(Approval approval, JsonNode alvo) {
         String dominio = textOrNull(alvo, "dominio");
         String foco = textOrNull(alvo, "foco");

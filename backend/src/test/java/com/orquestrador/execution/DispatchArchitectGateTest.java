@@ -39,7 +39,7 @@ class DispatchArchitectGateTest {
     @Test
     void wakeupDeAgenteEmTimeSemArquitetoLeva409SemCriarRun() {
         UUID companyId = UUID.randomUUID();
-        var time = teamService.create(companyId, "Dev", "frontend");
+        var time = teamService.create(companyId, "Dev", "frontend", null);
         Agent agente = agents.save(new Agent(UUID.randomUUID(), companyId, "Echo", "executor", null));
         teamService.assignAgent(companyId, agente.getId(), time.getId());
 
@@ -56,7 +56,7 @@ class DispatchArchitectGateTest {
     @Test
     void runQueEntrouPorForaDoEnqueueEhCanceladoNoPreflightSemExecutar() {
         UUID companyId = UUID.randomUUID();
-        var time = teamService.create(companyId, "Dev", "backend");
+        var time = teamService.create(companyId, "Dev", "backend", null);
         Agent agente = agents.save(new Agent(UUID.randomUUID(), companyId, "Nix", "executor", null));
         teamService.assignAgent(companyId, agente.getId(), time.getId());
 

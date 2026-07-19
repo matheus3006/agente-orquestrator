@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -46,6 +47,35 @@ class Fase0HttpIntegrationTest {
 
     private static String slug(String prefix) {
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /**
+     * Contratar EXIGE time (ADR-0045), e o time é DA COMPANY — quem contrata cria o seu. O agente
+     * nasce no próprio time e vira arquiteto dele: o dispatch segue destravado (ADR-0017) e a chefia
+     * derivada continua nula, o mundo que a Fase 0 já assumia.
+     */
+    private void contrataComTimeProprio(UUID boardUser, UUID companyId, String name, String role)
+            throws Exception {
+        UUID teamId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/teams")
+                        .header("X-Board-User", boardUser.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dominio\":\"Direcao\",\"foco\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        UUID agentId = idFrom(mvc.perform(post("/api/companies/" + companyId + "/agents")
+                        .header("X-Board-User", boardUser.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"" + name + "\",\"role\":\"" + role + "\",\"teamId\":\""
+                                + teamId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mvc.perform(patch("/api/companies/" + companyId + "/teams/" + teamId + "/arquiteto")
+                        .header("X-Board-User", boardUser.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"" + agentId + "\"}"))
+                .andExpect(status().isOk());
+    }
+
+    private UUID idFrom(String json) throws Exception {
+        return UUID.fromString(om.readTree(json).get("id").asText());
     }
 
     @Test
@@ -85,11 +115,7 @@ class Fase0HttpIntegrationTest {
         UUID intruso = UUID.randomUUID();
         UUID companyA = createCompanyAs(dono, slug("gamma"));
 
-        mvc.perform(post("/api/companies/" + companyA + "/agents")
-                        .header("X-Board-User", dono.toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"CEO\",\"role\":\"ceo\"}"))
-                .andExpect(status().isCreated());
+        contrataComTimeProprio(dono, companyA, "CEO", "ceo");
 
         // intruso (sem membership) nao lista agentes de A
         mvc.perform(get("/api/companies/" + companyA + "/agents").header("X-Board-User", intruso.toString()))
