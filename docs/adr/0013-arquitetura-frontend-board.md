@@ -77,3 +77,23 @@ código já documenta isso corretamente no comentário (`frontend/src/app/[compa
 not-found.tsx:3-6`) — o drift é só do texto desta ADR ("chama `notFound()` escopado"). A
 garantia que importa fica de pé: **slug inválido nunca renderiza company errada** (404 em
 qualquer dos dois níveis). Corpo original intocado.
+
+## Nota de reconciliação (2026-07-19 — bug front-500, achado da conferência R31)
+
+**O `fetchQuery` do `[companySlug]/layout.tsx` ganhou try/catch** — antes, uma falha de REDE
+(backend fora do ar; `fetch()` rejeita, não é um status HTTP) subia incapturada e virava 500
+para QUALQUER caminho de um segmento, mesmo os que nunca existiriam independente do backend
+(confirmado ao vivo: caminhos multi-segmento sem página correspondente já resolviam 404 direto
+pela árvore estática do Next, sem invocar o layout — não precisaram de conserto). Para o
+caminho de um segmento (`companySlug` sempre casa estruturalmente; só o backend sabe se é uma
+company real), quando o fetch em si falha o layout não chama `notFound()` (mentiria: o slug
+podia ser válido) nem deixa a exceção subir pro `error.tsx` (500) — renderiza inline o mesmo
+estado "sala de máquinas offline" (`BoardOffline`, compartilhado com `error.tsx`), como um
+render normal, HTTP 200. Decisão consciente de manter 200 em vez de buscar um 503: o App
+Router só expõe status customizado por `notFound()`/`forbidden()`/`unauthorized()` a partir de
+um Server Component — 503 exigiria `middleware.ts` novo, custo não justificado para uma
+ferramenta de uso solo (ver Contexto) onde o que importa é a tela, não o código HTTP externo.
+Mesmo padrão de "engolir erro, mostrar o próprio estado de falha" que `moldes/layout.tsx` e a
+raiz `page.tsx` já usavam — a diferença é que agora `[companySlug]/layout.tsx` também segue
+essa linha em vez de deixar a exceção estourar. Handoff: `HANDOFF-front-500-notfound-offline-
+KICKOFF.md` (kickoff) e o PR desta correção (evidência ao vivo, curl -i, vivo×morto).
