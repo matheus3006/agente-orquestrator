@@ -19,6 +19,7 @@ import com.orquestrador.memory.GateDecisionFactory.GatePassage;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentHireService;
 import com.orquestrador.org.agent.AgentRepository;
+import com.orquestrador.org.agent.ChainOfCommandService;
 import com.orquestrador.org.roletemplate.RoleTemplate;
 import com.orquestrador.org.roletemplate.RoleTemplateService;
 import com.orquestrador.org.roletemplate.TipoFuncao;
@@ -83,6 +84,7 @@ public class ApprovalService {
     private final RoleTemplateService roleTemplates;
     private final SkillRepository skills;
     private final SkillSetService skillSets;
+    private final ChainOfCommandService chain;
 
     public ApprovalService(ApprovalRepository approvals, RacionalPolicy racionalPolicy,
                            DecisionLog decisionLog, GateDecisionFactory gateDecisions,
@@ -91,7 +93,8 @@ public class ApprovalService {
                            SpawnLineageGuard lineageGuard, TeamRepository teams,
                            AgentRepository agents, TeamService teamService,
                            AbsorcaoDeIssueRouter absorcoes, RoleTemplateService roleTemplates,
-                           SkillRepository skills, SkillSetService skillSets) {
+                           SkillRepository skills, SkillSetService skillSets,
+                           ChainOfCommandService chain) {
         this.approvals = approvals;
         this.racionalPolicy = racionalPolicy;
         this.decisionLog = decisionLog;
@@ -108,6 +111,7 @@ public class ApprovalService {
         this.roleTemplates = roleTemplates;
         this.skills = skills;
         this.skillSets = skillSets;
+        this.chain = chain;
     }
 
     /**
@@ -144,16 +148,20 @@ public class ApprovalService {
     /**
      * O DIRIGIR SEM GATE (ADR-0047, D-DSG-3/5): a rota do ramo PROMOVIDO — o ÚNICO call site do
      * caminho nasce-decidida ({@link #nasceDecididaPelaGestora}). Roda ATRÁS do guard de braço
-     * (D-DSG-2, checado pelo {@code DirigirGate} no momento do ato) e é IDEMPOTENTE por
-     * (run, ordem): settle reexecutado (reaper) devolve a linha existente em vez de duplicar
-     * cartão+issue — a 1ª face do dedupe; o índice parcial da V37 é o backstop Postgres. Na MESMA
-     * tx: Approval nasce-APPROVED → issue já atribuída ao alvo com o selo (D-DSG-6) →
-     * {@code ISSUE_DIRECIONADA_SEM_GATE} com detail só-IDs (ADR-0009).
+     * (D-DSG-2, checado pelo {@code DirigirGate} no momento do ato) e REVALIDA a autoridade AQUI
+     * ({@link #exigirGestoraPromovidaComAlvoNoBraco} — defesa em profundidade do hardening: a
+     * recusa é por construção, não por convenção de chamador). IDEMPOTENTE por (run, ordem): o
+     * settle reexecutado (reaper) devolve a linha existente em vez de duplicar cartão+issue — a
+     * 1ª face do dedupe, com a identidade ESTRUTURAL de {@link #fingerprintEstruturalDe} (estável
+     * contra o zumbi que re-executa o LLM e reformula a prosa); o índice parcial da V37 é o
+     * backstop Postgres. Na MESMA tx: Approval nasce-APPROVED → issue já atribuída ao alvo com o
+     * selo (D-DSG-6) → {@code ISSUE_DIRECIONADA_SEM_GATE} com detail só-IDs (ADR-0009).
      */
     @Transactional
     public Approval dirigirIssueSemGate(UUID companyId, UUID gestoraAgentId, UUID runId,
                                         OrdemDirigida ordem) {
-        String fingerprint = fingerprintOf(ordem.targetDetailJson());
+        exigirGestoraPromovidaComAlvoNoBraco(companyId, gestoraAgentId, ordem);
+        String fingerprint = fingerprintEstruturalDe(ordem);
         Approval jaProtocolada = approvals.findFirstByCompanyIdAndRunIdAndActionTypeAndTargetFingerprint(
                 companyId, runId, ApprovalActionType.DIRECT_ISSUE, fingerprint).orElse(null);
         if (jaProtocolada != null) {
@@ -168,6 +176,54 @@ public class ApprovalService {
                         "targetTeamId", ordem.targetTeamId(), "bracoTeamId", ordem.bracoTeamId(),
                         "runId", runId));
         return approval;
+    }
+
+    /**
+     * A defesa em profundidade do caminho sem-gate (hardening pós-conferência da ADR-0047): o
+     * service REVALIDA sozinho, sem confiar no chamador, que (a) o braço existe nesta company e
+     * tem {@code gestoraAgentId} como gestor TITULAR; (b) o braço está PROMOVIDO; (c) o alvo
+     * existe nesta company e o time dele pertence à SUBÁRVORE do braço (o mesmo
+     * {@code pertenceASubarvore} do guard D-DSG-2 — uma régua, duas cercas). Um gate irmão futuro
+     * que chamar {@code dirigirIssueSemGate} pulando o {@code DirigirGate} bate AQUI: fail-closed
+     * ANTES de qualquer efeito (nem o dedupe roda — recusar não pode vazar linha existente).
+     */
+    private void exigirGestoraPromovidaComAlvoNoBraco(UUID companyId, UUID gestoraAgentId,
+                                                      OrdemDirigida ordem) {
+        Team braco = teams.findById(ordem.bracoTeamId())
+                .filter(time -> companyId.equals(time.getCompanyId()))
+                .orElseThrow(() -> new IllegalStateException("dirigir sem gate recusado: o braço "
+                        + ordem.bracoTeamId() + " não existe nesta company (ADR-0047)"));
+        if (!gestoraAgentId.equals(braco.getGestorAgentId())) {
+            throw new IllegalStateException("dirigir sem gate recusado: " + gestoraAgentId
+                    + " não é o gestor titular do braço " + braco.getId() + " (ADR-0047)");
+        }
+        if (!braco.gestorPromovido()) {
+            throw new IllegalStateException("dirigir sem gate recusado: o gestor do braço "
+                    + braco.getId() + " está em ESTÁGIO — sem gate é só PROMOVIDO (ADR-0047)");
+        }
+        Agent alvo = agents.findById(ordem.targetAgentId())
+                .filter(agente -> companyId.equals(agente.getCompanyId()))
+                .orElseThrow(() -> new IllegalStateException("dirigir sem gate recusado: o alvo "
+                        + ordem.targetAgentId() + " não existe nesta company (ADR-0047)"));
+        if (alvo.getTeamId() == null || !chain.pertenceASubarvore(braco.getId(), alvo.getTeamId())) {
+            throw new IllegalStateException("dirigir sem gate recusado: o alvo " + alvo.getId()
+                    + " está FORA da subárvore do braço " + braco.getId() + " (D-ORG-3/ADR-0047)");
+        }
+    }
+
+    /**
+     * A identidade ESTRUTURAL de uma ordem no caminho sem-gate (hardening pós-conferência): só
+     * (alvo, posição per-alvo entre as aceitas do run) — NENHUM campo de prosa. O zumbi do lease
+     * reaper re-executa o MESMO runId com uma chamada REAL nova ao LLM (o cenário que
+     * {@code PreviewArtifactCapturer} já nomeia), e prosa reformulada mudaria um fingerprint de
+     * conteúdo — duplicando issue exatamente no único caminho sem humano pra pegar. O runId fica
+     * FORA daqui porque já é coluna da chave de dedupe (app e índice V37). No ramo ESTÁGIO o
+     * fingerprint segue sendo o conteúdo canônico via {@code propose()} — lá a chave não tem
+     * runId (posição colidiria ordens de runs diferentes) e há humano no gate.
+     */
+    private static String fingerprintEstruturalDe(OrdemDirigida ordem) {
+        return fingerprintOf("{\"ordemDoAlvo\":" + ordem.ordemDoAlvo()
+                + ",\"targetAgentId\":\"" + ordem.targetAgentId() + "\"}");
     }
 
     /**
@@ -205,10 +261,14 @@ public class ApprovalService {
         return approvals.save(approval);
     }
 
-    /** Uma ordem do bloco ```dirigir``` já resolvida pelo guard: alvo por ID, braço confirmado. */
+    /**
+     * Uma ordem do bloco ```dirigir``` já resolvida pelo guard: alvo por ID, braço confirmado.
+     * {@code ordemDoAlvo} é a posição (1-based) desta ordem entre as ACEITAS pro mesmo alvo no
+     * run — a metade estrutural do fingerprint sem-gate ({@link #fingerprintEstruturalDe}).
+     */
     public record OrdemDirigida(UUID targetAgentId, UUID targetTeamId, UUID bracoTeamId,
                                 String titulo, String descricao, Integer risco, String racional,
-                                String targetDetailJson, String resumo) {
+                                String targetDetailJson, String resumo, int ordemDoAlvo) {
     }
 
     /**

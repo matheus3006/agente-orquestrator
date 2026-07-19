@@ -94,7 +94,9 @@ só-IDs `{approvalId, targetAgentId, targetTeamId, bracoTeamId, runId}` (ADR-000
 nasce-decidida é o ÚNICO sem o backstop do `uq_approval_pending` (parcial, só PENDING) — o dedupe
 do settle reexecutado (reaper) tem duas faces: `jaProtocolado` por
 (companyId, runId, DIRECT_ISSUE, fingerprint) no service + índice único parcial
-`uq_approval_dirigir_por_run` (V37, Postgres-only, mesmo desvio consciente do V17).
+`uq_approval_dirigir_por_run` (V37, Postgres-only, mesmo desvio consciente do V17). O fingerprint
+deste caminho é ESTRUTURAL desde o hardening pós-conferência (ver §Hardening, item 1) — não é
+mais o MD5 do `targetDetail` inteiro.
 
 ### 6. "Quem decidiu" na entrega (conferência item 12)
 
@@ -121,6 +123,70 @@ sobre o enum (tipo sem filtro não podia ser decidido em lote — D2 do ADR-0035
 - **ADR-0046 §3:** a recusa "Approval não nasce pré-decidida" foi REVERTIDA pelo dono no grill
   dirigir-sem-gate, com o trade-off apresentado. A reserva `ISSUE_DIRECIONADA_SEM_GATE` sai de
   "sem emissor" para consumida.
+
+## Hardening pós-conferência (2026-07-19, fatia hardening-dirigir-sem-gate)
+
+A conferência adversarial do PR #48 achou 3 gaps no DESENHO da segurança (nenhum explorável no
+estado atual; os 3 tocam o primeiro mecanismo de bypass de aprovação humana da casa). Fechados
+nesta emenda — nenhuma D-DSG reaberta, nenhum schema novo:
+
+### 1. Fingerprint do dedupe sem-gate: de conteúdo pra ESTRUTURAL
+
+**O furo**: o fingerprint era MD5 do `targetDetail` canônico inteiro — incluindo `titulo`,
+`descricao` e `racional`, prosa livre escrita pelo LLM. O zumbi do lease reaper (3 pulsos
+perdidos → run volta a QUEUED com o MESMO `runId`) re-executa o run com uma chamada REAL nova ao
+LLM — que reformula a prosa (LLM não é determinístico). Fingerprint diferente ⇒ nem o
+`jaProtocolado` nem o índice V37 disparam ⇒ uma 2ª Approval nasce-APPROVED + uma 2ª issue, sem
+NENHUM humano concordar — exatamente no único caminho sem gate. (O precedente da casa pro mesmo
+zumbi: `PreviewArtifactCapturer`, que não confia em texto re-gerado.)
+
+**O mecanismo escolhido** (variante do candidato A do kickoff): fingerprint =
+MD5 de `{ordemDoAlvo, targetAgentId}` — zero campo de prosa. `ordemDoAlvo` é a POSIÇÃO (1-based)
+da ordem entre as ACEITAS pro mesmo alvo naquele run (o `DirigirScanner` preserva a ordem do
+documento; o `DirigirGate` conta por-alvo no momento do ato). Por que resolve a tensão dos dois
+lados: (a) retry do MESMO run com prosa reformulada → mesma posição, mesmo alvo → dedupa; (b) 2
+ordens genuínas pro mesmo alvo no mesmo run → posições 1 e 2 → não colidem. Contagem POR-ALVO (e
+não global no run) pra reordenação entre alvos na re-execução não descasar. `runId` fica fora do
+fingerprint porque já é coluna da chave (app e índice V37); `bracoTeamId` fica fora porque é
+estado DERIVADO que pode mudar entre as duas execuções (mexida na árvore) e quebraria o dedupe
+sem distinguir ordem nenhuma; `risco` fica fora porque também é output do LLM e deriva no retry.
+
+**Por que não o candidato B** (similaridade de conteúdo pós-conflito, molde
+`PreviewArtifactCapturer`): lá o conteúdo é um ARQUIVO determinístico re-lido do workspace; aqui
+o conteúdo é prosa re-GERADA — medir "similaridade suficiente" entre duas redações de LLM é
+heurística com falso-negativo exatamente no caso que importa. A identidade estrutural é o mais
+simples que resolve os dois cenários por construção.
+
+**Assimetria consciente entre os ramos**: o ESTÁGIO segue com fingerprint de CONTEÚDO (via
+`propose()`). A chave do dedupe de PENDING não tem `runId` — identidade posicional lá colapsaria
+ordens de RUNS diferentes; e no ESTÁGIO há um humano no gate pra pegar duplicata. O javadoc do
+`DirigirGate` ("idêntico nos dois ramos") foi corrigido.
+
+**Acompanhante**: com posição-como-identidade, um ECO do LLM (bloco byte-idêntico 2× no MESMO
+reply) viraria 2 issues — antes o hash de conteúdo os fundia. O `DirigirGate` colapsa blocos
+idênticos do mesmo reply com aviso contado em `DIRIGIR_DISCARDED` (anti-silêncio).
+
+### 2. Defesa em profundidade em `dirigirIssueSemGate`
+
+**O furo**: o guard de braço (§2) rodava SÓ no `DirigirGate`; `dirigirIssueSemGate` — público,
+num service injetado em 5 lugares — confiava no chamador. Seguro por convenção (1 call site),
+não por construção: um gate irmão futuro chamando direto pularia a subárvore inteira.
+
+**O fecho**: `exigirGestoraPromovidaComAlvoNoBraco` roda DENTRO do service, antes de qualquer
+efeito (inclusive antes do dedupe — recusar não vaza linha existente): braço existe na company e
+tem a gestora como titular; braço PROMOVIDO; alvo existe na company e o time dele pertence à
+subárvore do braço (reuso de `ChainOfCommandService.pertenceASubarvore` — uma régua, duas
+cercas). Violação = `IllegalStateException` fail-closed, mesmo cinto do assert do §3.
+
+### 3. `requestedByAgentId` visível no card PENDING
+
+**O furo**: o §2 justifica "guard só no propose" dizendo que gestor trocado/rebaixado é
+"informação visível no cartão (`requestedByAgentId`)" — mas a fila nunca renderizava o campo pra
+cards PENDING. O racional prometia uma visibilidade que a UI não dava.
+
+**O fecho**: o card PENDING mostra "proposto por \<agente\>" (resolver `nomeDoAgente` já
+existente, mesmo mapa do `AssigneeChip`) — pra TODOS os tipos de ação, não só `DIRECT_ISSUE`
+(quem propôs é informação útil em qualquer card; o custo é zero, o mapa já está carregado).
 
 ## Consequências
 
