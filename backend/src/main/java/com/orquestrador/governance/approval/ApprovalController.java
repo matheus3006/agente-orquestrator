@@ -148,10 +148,14 @@ public class ApprovalController {
         }
     }
 
+    // decidedByActorType/Id (ADR-0047, item 12 da conferência): "QUEM decidiu" sempre existiu na
+    // entidade/banco mas nunca era serializado — vale pra QUALQUER approval; a fila precisa dele
+    // pra renderizar "liberado por <gestor>" no cartão nasce-decidido (decidedByActorType=AGENT).
     public record ApprovalResponse(UUID id, UUID requestedByAgentId, UUID conversationId, UUID runId,
                                    String actionType, String targetDetail, String area, String resumo,
                                    String status, String racional, String racionalTipo,
                                    boolean racionalArrancado, int grillRounds, String decisionReason,
+                                   String decidedByActorType, UUID decidedByActorId,
                                    Instant requestedAt, Instant decidedAt) {
         static ApprovalResponse from(Approval approval) {
             return new ApprovalResponse(approval.getId(), approval.getRequestedByAgentId(),
@@ -160,6 +164,8 @@ public class ApprovalController {
                     approval.getStatus().name(), approval.getRacional(),
                     approval.getRacionalTipo().name(), approval.isRacionalArrancado(),
                     approval.getGrillRounds(), approval.getDecisionReason(),
+                    approval.getDecidedByActorType() != null ? approval.getDecidedByActorType().name() : null,
+                    approval.getDecidedByActorId(),
                     approval.getRequestedAt(), approval.getDecidedAt());
         }
     }

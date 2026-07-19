@@ -40,6 +40,19 @@ export function CorrigeSelo({ selo }: { selo: string | null }) {
 }
 
 /**
+ * O selo da issue dirigida SEM GATE (ADR-0047, D-DSG-6): "dirigida · <gestor>" na
+ * lista do board. `null` = sem selo (issue normal, ou do ramo estágio — que passou
+ * pelo gate e por decisão consciente NÃO carrega a marca). Mesmo tom quieto do
+ * CorrigeSelo: a marca é informação, não perigo.
+ */
+export function DirigidaSelo({ selo }: { selo: string | null }) {
+  if (selo === null) {
+    return null;
+  }
+  return <span className="corrige-selo">{selo}</span>;
+}
+
+/**
  * `null` = SEM assignee (afirma "— livre"); `undefined` = nome ainda não
  * resolvível (agents carregando/falhou) — mostra só "—", nunca afirma
  * "livre" para issue designada (achado da revisão).

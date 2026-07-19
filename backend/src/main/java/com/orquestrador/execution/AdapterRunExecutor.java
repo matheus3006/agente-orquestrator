@@ -12,6 +12,7 @@ import com.orquestrador.execution.adapter.WorkspaceConvention;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTargets;
 import com.orquestrador.execution.runtime.WorkspaceResolver;
+import com.orquestrador.governance.approval.DirigirGate;
 import com.orquestrador.governance.approval.SkillRequestGate;
 import com.orquestrador.governance.budget.BudgetService;
 import com.orquestrador.handoff.ContextHandoffLoop;
@@ -76,6 +77,7 @@ public class AdapterRunExecutor implements RunExecutor {
     private final DistillationSkill distillationSkill;
     private final ContextHandoffLoop handoffLoop;
     private final SkillRequestGate skillRequestGate;
+    private final DirigirGate dirigirGate;
     private final KnowAllMcpMaterializer mcpMaterializer;
     private final KnowAllMcpBridge mcpBridge;
     private final McpCallbackAddress mcpAddress;
@@ -91,6 +93,7 @@ public class AdapterRunExecutor implements RunExecutor {
                               PreviewArtifactCapturer previews, PreviewServerManifestRegistrar serverManifests,
                               PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
                               ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate,
+                              DirigirGate dirigirGate,
                               KnowAllMcpMaterializer mcpMaterializer, KnowAllMcpBridge mcpBridge,
                               McpCallbackAddress mcpAddress, IssuePromptComposer issueComposer,
                               RoleTemplateService roleTemplates, PlanValidationGate planValidationGate) {
@@ -112,6 +115,7 @@ public class AdapterRunExecutor implements RunExecutor {
         this.distillationSkill = distillationSkill;
         this.handoffLoop = handoffLoop;
         this.skillRequestGate = skillRequestGate;
+        this.dirigirGate = dirigirGate;
         this.mcpMaterializer = mcpMaterializer;
         this.mcpBridge = mcpBridge;
         this.mcpAddress = mcpAddress;
@@ -401,6 +405,12 @@ public class AdapterRunExecutor implements RunExecutor {
         if (pontaDoExecutor && result.succeeded()) {
             skillRequestGate.handle(runContext.companyId(), runContext.agentId(), runContext.issueId(),
                     runContext.runId(), replyCollector.text());
+            // ADR-0047 (D-DSG-1): o bloco ```dirigir``` do GESTOR sai pelo MESMO canal de saída
+            // (molde F-AT1) — zero canal vivo novo. O gate roteia pelo gestor_status do braço
+            // (guard de subárvore no momento do ato); quem não é gestor tem os blocos descartados
+            // com aviso visível.
+            dirigirGate.handle(runContext.companyId(), runContext.agentId(), runContext.runId(),
+                    replyCollector.text());
             // Uso B / B-ii (ADR-0044): o MESMO texto do plano vai ao validador local — 2º consumidor
             // do reply, como o gate de skill. O no-op é pulado AQUI porque o guard de no-op do
             // executor só vem mais abaixo, depois do settle-de-falha: sem este guard o validador

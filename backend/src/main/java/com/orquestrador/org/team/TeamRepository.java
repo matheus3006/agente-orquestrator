@@ -23,4 +23,10 @@ public interface TeamRepository extends JpaRepository<Team, UUID> {
 
     /** Os filhos diretos na árvore-organograma (ADR-0045): o passo do walk que DESCE a subárvore. */
     List<Team> findByParentTeamId(UUID parentTeamId);
+
+    /**
+     * Os times que um agente GERE (titular do posto de gestor) — a 1ª condição do guard do
+     * dirigir-sem-gate (ADR-0047, D-DSG-2): quem não é gestor de time nenhum não dirige nada.
+     */
+    List<Team> findByCompanyIdAndGestorAgentId(UUID companyId, UUID gestorAgentId);
 }

@@ -33,6 +33,7 @@ const issue = (o: Partial<IssueSummary> = {}): IssueSummary => ({
   corrigeIssueId: null,
   corrigeSeq: null,
   conversationId: null,
+  dirigidaPorGestorAgentId: null,
   ...o,
 });
 

@@ -83,6 +83,20 @@ public class ChainOfCommandService {
         }
     }
 
+    /**
+     * O time-alvo está no BRAÇO do time-raiz? (raiz ela mesma incluída — o braço é a subárvore
+     * INTEIRA, D-ORG-3/D-DSG-2.) O irmão público do BFS privado {@link #subarvore}: é o guard do
+     * dirigir-sem-gate (ADR-0047) — a gestora só dirige agente cujo time pertence à subárvore de
+     * um time que ela gere. Null em qualquer ponta = fora (fail-closed, nunca explode a leitura).
+     */
+    @Transactional(readOnly = true)
+    public boolean pertenceASubarvore(UUID raizTeamId, UUID alvoTeamId) {
+        if (raizTeamId == null || alvoTeamId == null) {
+            return false;
+        }
+        return subarvore(raizTeamId).contains(alvoTeamId);
+    }
+
     /** Sobe a árvore a partir de {@code teamId} e devolve o primeiro gestor encontrado (ou null). */
     private UUID primeiroGestorSubindo(UUID teamId) {
         Set<UUID> visitados = new HashSet<>();

@@ -55,7 +55,9 @@ gravado uma vez, via `ActivityLogService.record(...)` com o novo
 `ActivityAction.GESTOR_PROMOVIDO` (`actorType=BOARD`, `entityType=team`, `entityId=teamId`,
 `detail={gestorAgentId}`). Esticar `Approval` pra nascer já aprovada foi recusado — não há
 NENHUM precedente na casa de Approval nascendo pré-decidida, e contradiz o próprio contrato "board
-decide" (ADR-0018/0020).
+decide" (ADR-0018/0020). *(Recusa REVERTIDA em 2026-07-19 pelo dono, no grill dirigir-sem-gate —
+vale só pro rastro do dirigir do gestor PROMOVIDO, `DIRECT_ISSUE`, sob o escopo de segurança da
+ADR-0047; o rastro do ATO de promover segue `activity_log` puro, como decidido aqui.)*
 
 O rastro CONTÍNUO — cada issue que um gestor promovido dirigir sem passar pelo gate — é
 explicitamente território da fatia que vai construir esse "dirigir" (F-ORG-D): hoje NENHUM código

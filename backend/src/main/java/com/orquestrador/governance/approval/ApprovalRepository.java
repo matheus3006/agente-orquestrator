@@ -18,4 +18,13 @@ public interface ApprovalRepository extends JpaRepository<Approval, UUID> {
     Optional<Approval> findFirstByCompanyIdAndRequestedByAgentIdAndActionTypeAndTargetFingerprintAndStatus(
             UUID companyId, UUID requestedByAgentId, ApprovalActionType actionType,
             String targetFingerprint, ApprovalStatus status);
+
+    /**
+     * O "jaProtocolado" do caminho nasce-decidida (ADR-0047, item 7 da conferência): o ÚNICO
+     * caminho de criação sem o backstop do {@code uq_approval_pending} (que só cobre PENDING).
+     * Settle reexecutado (reaper) com o MESMO run + mesma ordem devolve a linha existente em vez
+     * de duplicar cartão+issue; no Postgres o índice parcial da V37 é a 2ª face.
+     */
+    Optional<Approval> findFirstByCompanyIdAndRunIdAndActionTypeAndTargetFingerprint(
+            UUID companyId, UUID runId, ApprovalActionType actionType, String targetFingerprint);
 }

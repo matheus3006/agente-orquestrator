@@ -136,6 +136,18 @@ e sem induzir confabulação. Fundamentação: o write-validation-gate das pesqu
   A premissa da triagem *"Frente C está fora do v1, congelada"* estava **DEFASADA** (a Frente C
   é v1 TOTAL) e foi ignorada, conforme o kickoff.
 
+## Revisão 2026-07-19 (ADR-0047 — dirigir sem gate: o grill NÃO roda no caminho nasce-decidida)
+
+A Approval `DIRECT_ISSUE` do gestor PROMOVIDO **nasce `APPROVED`** (ADR-0047, decisão do dono no
+grill dirigir-sem-gate) e o grill do racional **NÃO roda** nesse caminho: o probe foi desenhado
+pra um HUMANO responder (escriba-que-insiste, D6) — um racional gerado por LLM sem supervisão não
+tem quem grelhar, e re-perguntar à gestora criaria um ciclo de retry que não existe. O racional
+segue **OBRIGATÓRIO** — a garantia muda de "arrancado no commit" pra "exigido na EMISSÃO" (bloco
+` ```dirigir ` sem `racional` é descartado com aviso, D-DSG-4); `racional_tipo` é derivado pelo
+MESMO `areaFor`/`deriveTipo` do propose; `racional_arrancado=false` e `grill_rounds=0` por
+construção; `decisionReason=null`. No ramo ESTÁGIO (cartão PENDING decidido pelo dono) o grill
+segue INTACTO. Registro completo: `docs/adr/0047-issue-dirigida-sem-gate.md`.
+
 ## Relaciona
 `docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D6–D12); ADR-0019 (a Decisão-átomo que carrega o racional
 + Playbook/cap na Revisão F-C2); ADR-0018 (a `approval` ganha os campos; o gate arranca); ADR-0012 (o gate pós-hoc

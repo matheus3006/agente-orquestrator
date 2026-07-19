@@ -10,6 +10,7 @@ import { View, ViewHead } from "@/components/view";
 import {
   ApiError,
   batchDecideApprovals,
+  listAgents,
   listApprovals,
   type Approval,
   type ApprovalStatus,
@@ -71,6 +72,22 @@ export default function ApprovalsPage() {
     enabled: !!companyId,
     staleTime: 30_000,
   });
+  // ADR-0047 (item 12): resolve o NOME de quem decidiu — o cartão nasce-decidido do gestor
+  // promovido mostra "liberado por <gestor>" (decidedByActorType=AGENT). Mesmo mapa/queryKey
+  // que a lista de issues já usa pro AssigneeChip.
+  const agentsQuery = useQuery({
+    queryKey: queryKeys.agents(companyId ?? ""),
+    queryFn: () => listAgents(companyId as string),
+    enabled: !!companyId,
+    staleTime: 30_000,
+  });
+  // undefined = agents ainda não resolvidos (não afirma nome); null = sem correspondência.
+  const nomeDoAgente = (agentId: string | null): string | null | undefined =>
+    agentId
+      ? agentsQuery.data
+        ? (agentsQuery.data.find((agent) => agent.id === agentId)?.name ?? null)
+        : undefined
+      : null;
 
   const fila = filaQuery.data ?? [];
   const visiveis = filtrarPorTipo(fila, filtro);
@@ -281,7 +298,11 @@ export default function ApprovalsPage() {
                     <span className="waiting-clock">{fmtAgo(approval.requestedAt, nowMs)}</span>
                   ) : (
                     <span>
-                      {approval.status === "APPROVED" ? "✓ aprovada" : "✕ recusada"}
+                      {approval.status === "APPROVED"
+                        ? approval.decidedByActorType === "AGENT"
+                          ? `✓ liberado por ${nomeDoAgente(approval.decidedByActorId) ?? "—"}`
+                          : "✓ aprovada"
+                        : "✕ recusada"}
                       {approval.decidedAt ? ` ${fmtAgo(approval.decidedAt, nowMs)}` : ""}
                     </span>
                   )}

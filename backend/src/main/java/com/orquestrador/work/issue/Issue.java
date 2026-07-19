@@ -59,6 +59,12 @@ public class Issue {
     @Column(name = "conversation_id")
     private UUID conversationId;
 
+    // Dirigida sem gate (ADR-0047, D-DSG-6, V37): o GESTOR PROMOVIDO que dirigiu esta issue pro
+    // próprio braço sem passar pelo gate humano. Nula em issue normal E na issue do ramo ESTÁGIO
+    // (aprovada em lote — passou pelo gate como qualquer outra; decisão consciente do dono).
+    @Column(name = "dirigida_por_gestor_agent_id")
+    private UUID dirigidaPorGestorAgentId;
+
     // Escala 1-5 do review gate (ADR-0012): 1 = sem risco; risco >= limiar → PENDING_REVIEW no settle.
     @Column(name = "risk_level", nullable = false)
     private int riskLevel = 1;
@@ -151,6 +157,20 @@ public class Issue {
      */
     void nascerAtribuida(UUID assigneeAgentId) {
         this.assigneeAgentId = assigneeAgentId;
+    }
+
+    /**
+     * O selo da issue dirigida SEM GATE (ADR-0047, D-DSG-6): marca qual gestor promovido a
+     * dirigiu — a superfície mostra "dirigida · <gestor>" sem abrir nada. SÓ o caminho
+     * nasce-decidida sela; o ramo ESTÁGIO nunca chama isto. Como os demais nascimentos,
+     * só faz sentido antes do primeiro save.
+     */
+    void selarDirigidaPor(UUID gestorAgentId) {
+        this.dirigidaPorGestorAgentId = gestorAgentId;
+    }
+
+    public UUID getDirigidaPorGestorAgentId() {
+        return dirigidaPorGestorAgentId;
     }
 
     public int getRiskLevel() {

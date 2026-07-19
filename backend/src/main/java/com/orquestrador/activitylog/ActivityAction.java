@@ -68,9 +68,11 @@ public enum ActivityAction {
     // agente); entityType="team"/entityId=teamId; detail.gestorAgentId (ADR-0009) — o rastro do
     // PRÓPRIO ATO de promover, distinto de cada issue dirigida depois (ISSUE_DIRECIONADA_SEM_GATE).
     GESTOR_PROMOVIDO,
-    // RESERVADO por decisão explícita do dono no mini-grill da F-ORG-B (Pergunta 1): o rastro de
-    // CADA issue que um gestor PROMOVIDO dirigir sem passar pelo gate — ação contínua e operacional
-    // que só a fatia que implementa esse "dirigir" (F-ORG-D, ainda não construída) pode emitir de
-    // verdade. Nenhum código grava este valor hoje; nasce aqui só pra reservar o nome.
+    // CONSUMIDO pela fatia dirigir-sem-gate (ADR-0047, D-DSG-3 — reservado na F-ORG-B): o rastro
+    // de CADA issue que um gestor PROMOVIDO dirige sem passar pelo gate. Ator = AGENT (a gestora);
+    // entityType="issue"/entityId=issue criada; detail só-IDs (ADR-0009):
+    // {approvalId, targetAgentId, targetTeamId, bracoTeamId, runId} — o texto (racional) vive na
+    // Approval nasce-decidida, nunca aqui. O ramo ESTÁGIO (lote no gate) NÃO emite este evento:
+    // passou pelo gate como qualquer outra (APPROVAL_APPROVED cobre).
     ISSUE_DIRECIONADA_SEM_GATE
 }

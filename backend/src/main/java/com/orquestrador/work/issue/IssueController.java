@@ -156,15 +156,19 @@ public class IssueController {
     // corrigeIssueId/corrigeSeq (caso B, ADR-0034): aditivos — preenchidos so na corretiva.
     // conversationId (absorção, ADR-0037/D4): a conversa DIRECIONADA da issue — o detalhe do
     // card abre a thread por ele; nulo em issue não-absorvida (gate/corretiva/legado).
+    // dirigidaPorGestorAgentId (ADR-0047/D-DSG-6): o selo da issue dirigida SEM gate — cru (FK);
+    // o NOME resolve no cliente, no mesmo mapa de agentes que o AssigneeChip já carrega.
     public record IssueResponse(UUID id, UUID companyId, int seq, String title, String description,
                                 String status, int riskLevel, UUID assigneeAgentId,
                                 UUID executionLockRunId, Instant createdAt,
-                                UUID corrigeIssueId, Integer corrigeSeq, UUID conversationId) {
+                                UUID corrigeIssueId, Integer corrigeSeq, UUID conversationId,
+                                UUID dirigidaPorGestorAgentId) {
         static IssueResponse from(Issue issue, Integer corrigeSeq) {
             return new IssueResponse(issue.getId(), issue.getCompanyId(), issue.getSeq(), issue.getTitle(),
                     issue.getDescription(), issue.getStatus().name(), issue.getRiskLevel(),
                     issue.getAssigneeAgentId(), issue.getExecutionLockRunId(), issue.getCreatedAt(),
-                    issue.getCorrigeIssueId(), corrigeSeq, issue.getConversationId());
+                    issue.getCorrigeIssueId(), corrigeSeq, issue.getConversationId(),
+                    issue.getDirigidaPorGestorAgentId());
         }
     }
 }

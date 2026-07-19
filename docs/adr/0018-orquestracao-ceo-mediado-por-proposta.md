@@ -1,6 +1,8 @@
 # ADR-0018: Orquestração — o CEO mediado por proposta
 
-**Status:** Aceito (2026-07-04)
+**Status:** Aceito (2026-07-04) · **EMENDADA 2026-07-19 (ADR-0047): primeira exceção deliberada ao
+propose-then-commit — a Approval `DIRECT_ISSUE` do gestor PROMOVIDO nasce APPROVED (ver Revisão
+abaixo)**
 
 > Registro de decisão da **Camada C** da frente Teams. Detalhe/porquê: `docs/handoff-grilling-teams-fechado.md`
 > (A.0–A.1, A.5, A.8). Roles/times e a cadeia de comando (A.2) = ADR-0017; memória/decisão = ADR-0019/0020.
@@ -184,3 +186,17 @@ reconcilia os outros dois + a cascata:
 Parâmetros do grill (R18-B, verbatim do dono): limiar **3** · para **só o par agente×issue** ·
 destrava **só pelo wakeup manual direto**. Racional completo em `docs/handoff-decisoes-lista-h.md`
 (item 3) e no handoff da faixa.
+
+## Revisão 2026-07-19 (ADR-0047 — dirigir sem gate: a primeira exceção deliberada)
+
+O contrato central desta ADR — *"toda mutação estrutural passa por proposta pelo canal de SAÍDA →
+`approval` PENDING → aprovação humana"* — ganha a sua PRIMEIRA exceção, decidida pelo dono no
+grill dirigir-sem-gate (D-DSG-3, contra a recomendação da sessão de controle): o **gestor
+PROMOVIDO** (ADR-0046) cria issue no próprio braço com uma **Approval que NASCE `APPROVED`**
+(`ApprovalActionType.DIRECT_ISSUE`, `decidedByActorType=AGENT`, `decidedByActorId=<a gestora>`),
+sem `propose()`+`decide()` humano. A exceção é ESTREITA por desenho (escopo de segurança da
+conferência, verbatim na ADR-0047 §3): só `DIRECT_ISSUE`, só atrás do guard de subárvore
+(D-DSG-2), só pelo método PRIVADO com literais fixos e um único call site — helper genérico de
+"nascer decidida" é proibido. A escada de autoridade ganha o degrau que a D-ORG-3 prometeu:
+operador > **gestor promovido (dirige o próprio braço sem gate)** > CEO (mediado) > arquiteto >
+executor. Registro completo: `docs/adr/0047-issue-dirigida-sem-gate.md`.

@@ -131,6 +131,21 @@ public class IssueService {
     }
 
     /**
+     * A issue DIRIGIDA SEM GATE (ADR-0047, D-DSG-5/6): o pouso é o MESMO {@link #createAtribuida}
+     * dos demais caminhos (chokepoint + assignee pré-setado = o agente específico que a gestora
+     * escolheu, não o arquiteto), com UM aditivo — o selo {@code dirigida_por_gestor_agent_id}.
+     * Só o caminho nasce-decidida (gestor PROMOVIDO) chama isto; o ramo ESTÁGIO aprovado em lote
+     * pousa pelo {@code createAtribuida} puro e NÃO ganha selo (decisão consciente do dono).
+     */
+    @Transactional
+    public Issue createDirigida(UUID companyId, String title, String description, Integer riskLevel,
+                                UUID assigneeAgentId, UUID dirigidaPorGestorAgentId) {
+        Issue issue = createAtribuida(companyId, title, description, riskLevel, assigneeAgentId);
+        issue.selarDirigidaPor(dirigidaPorGestorAgentId);
+        return issues.save(issue);
+    }
+
+    /**
      * Checkout atomico. Gera um runId se nao vier (na fatia 1 nao ha heartbeat ainda;
      * a partir da fatia 2 o run vem do motor de heartbeat).
      */

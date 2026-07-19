@@ -58,6 +58,22 @@ export function corrigeSelo(issue: IssueSummary): string | null {
   return issue.corrigeSeq === null ? null : `corrige #${issue.corrigeSeq}`;
 }
 
+/**
+ * O selo da issue DIRIGIDA SEM GATE (ADR-0047, D-DSG-6): "dirigida · <gestor>" — bater o olho na
+ * lista e ver o que veio de gestor promovido sem abrir nada. Null = sem selo (issue normal E a do
+ * ramo estágio, que passou pelo gate). O nome resolve no MESMO mapa de agentes do AssigneeChip:
+ * `undefined` (agents carregando/falhou) mostra o selo sem afirmar o nome.
+ */
+export function dirigidaSelo(
+  issue: IssueSummary,
+  gestorNome: string | null | undefined,
+): string | null {
+  if (issue.dirigidaPorGestorAgentId === null) {
+    return null;
+  }
+  return gestorNome ? `dirigida · ${gestorNome}` : "dirigida";
+}
+
 export interface IssueGroup {
   status: string;
   label: string;
