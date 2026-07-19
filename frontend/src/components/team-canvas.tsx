@@ -28,6 +28,7 @@ import {
 import {
   ApiError,
   assignAgentTeam,
+  promoverGestor as promoverGestorApi,
   repinAgent,
   setTeamArquiteto,
   setTeamGestor,
@@ -69,6 +70,8 @@ type DadosDoNo = {
   onDesignarGestor: (teamId: string, agentId: string) => void;
   onMoverParaTime: (agentId: string, teamId: string | null) => void;
   onDesignarArquiteto: (teamId: string, agentId: string) => void;
+  // ADR-0046 (D-ORG-2): promove o gestor titular de ESTAGIO pra PROMOVIDO.
+  onPromoverGestor: (teamId: string) => void;
 };
 
 type NoAgente = Node<DadosDoNo, "agente">;
@@ -76,6 +79,8 @@ type NoAgente = Node<DadosDoNo, "agente">;
 function AgenteNode({ data }: NodeProps<NoAgente>) {
   const { agent, time, times } = data;
   const ehArquiteto = time?.arquitetoAgentId === agent.id;
+  const ehGestor = time?.gestorAgentId === agent.id;
+  const gestorPromovido = time?.gestorStatus === "PROMOVIDO";
   return (
     <div className={`org-node ${data.statusCls}`}>
       {time && (
@@ -114,6 +119,15 @@ function AgenteNode({ data }: NodeProps<NoAgente>) {
               >
                 <span className="motor-dot" aria-hidden />
                 <span className="motor-item-label">designar gestor do time</span>
+              </DropdownMenuItem>
+            )}
+            {ehGestor && time && !gestorPromovido && (
+              <DropdownMenuItem
+                className="motor-item"
+                onSelect={() => data.onPromoverGestor(time.id)}
+              >
+                <span className="motor-dot" aria-hidden />
+                <span className="motor-item-label">promover gestor (encerra o estágio)</span>
               </DropdownMenuItem>
             )}
             <DropdownMenuLabel>mover para time</DropdownMenuLabel>
@@ -155,6 +169,19 @@ function AgenteNode({ data }: NodeProps<NoAgente>) {
           <span className="org-node-arquiteto" title={glossa("arquiteto")}>
             {" "}
             · arquiteto
+          </span>
+        )}
+        {ehGestor && (
+          <span
+            className={cn("org-node-gestor-status", gestorPromovido ? "promovido" : "estagio")}
+            title={
+              gestorPromovido
+                ? "promovido — decide sozinho no braço dele, com rastro de quem/quando (ADR-0046)"
+                : "em estágio — ainda sem autonomia; o dono promove quando confiar (ADR-0046)"
+            }
+          >
+            {" "}
+            · gestor ({gestorPromovido ? "promovido" : "estágio"})
           </span>
         )}
       </div>
@@ -267,6 +294,16 @@ function CanvasDaCadeia({
     onError: (error) => toastDeFalha(error, "designar o arquiteto"),
   });
 
+  // ADR-0046 (D-ORG-2): ato soberano do dono, direto — sem gate, sem proposta de agente.
+  const promoverGestor = useMutation({
+    mutationFn: ({ teamId }: { teamId: string }) => promoverGestorApi(companyId, teamId),
+    onSuccess: (time) => {
+      invalidarOrg();
+      pushToast(`Gestor promovido — ${time.dominio}/${time.foco} decide sozinho agora, com rastro`);
+    },
+    onError: (error) => toastDeFalha(error, "promover o gestor"),
+  });
+
   // R10-A/D5-D6: re-pin COMPLETO — re-aplica o preset da versão corrente (motor + skillset) e move
   // o pin. SUBSTITUI (ajustes manuais descartados); mão soberana board-only. Some o drift-badge.
   const repin = useMutation({
@@ -318,6 +355,7 @@ function CanvasDaCadeia({
                 moverParaTime.mutate({ agentId, teamId }),
               onDesignarArquiteto: (teamId: string, agentId: string) =>
                 designarArquiteto.mutate({ teamId, agentId }),
+              onPromoverGestor: (teamId: string) => promoverGestor.mutate({ teamId }),
             },
             style: { width: ORG_NODE_W, height: ORG_NODE_H },
             connectable: false,

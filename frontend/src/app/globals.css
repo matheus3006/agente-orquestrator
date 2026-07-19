@@ -2071,6 +2071,10 @@ button:focus-visible,
     color: var(--text);
   }
   .org-node-arquiteto { color: var(--phosphor-dim); }
+  /* ADR-0046 (D-ORG-2): marcador de autoridade delegada do gestor — estágio (neutro, como o role)
+     vs promovido (mesmo destaque do "· arquiteto", um posto de confiança conquistada). */
+  .org-node-gestor-status.estagio { color: var(--text-faint); }
+  .org-node-gestor-status.promovido { color: var(--phosphor-dim); }
   .org-node.dragging,
   .react-flow__node.dragging .org-node {
     border-color: var(--phosphor-dim);

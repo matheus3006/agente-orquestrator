@@ -1,5 +1,7 @@
 package com.orquestrador.org.team;
 
+import com.orquestrador.common.security.Actor;
+import com.orquestrador.common.security.ActorType;
 import com.orquestrador.common.security.CompanyAccessGuard;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -57,12 +59,24 @@ public class TeamController {
     }
 
     // O posto de GESTOR (ADR-0045): sub-recurso próprio pela mesma razão do arquiteto — null é
-    // VALOR legal (limpar o posto). Trocar o gestor RE-DERIVA a chefia da subárvore no mesmo ato.
+    // VALOR legal (limpar o posto). Trocar o gestor RE-DERIVA a chefia da subárvore no mesmo ato E
+    // reseta o marcador de autoridade delegada pra ESTAGIO (ADR-0046 — ver TeamService.setGestor).
     @PatchMapping("/{teamId}/gestor")
     public TeamResponse setGestor(@PathVariable UUID companyId, @PathVariable UUID teamId,
                                   @RequestBody SetGestorRequest request) {
         guard.assertBoardMember(companyId);
         return TeamResponse.from(service.setGestor(companyId, teamId, request.agentId()));
+    }
+
+    // A promoção do gestor titular (ADR-0046, D-ORG-2): endpoint direto board-only, mesmo molde do
+    // `/gestor` — ato soberano do dono, sem proposta de agente, então não passa pelo gate de
+    // aprovação (ApprovalActionType é reservado pra "agente propõe, board decide"). Transição só
+    // ESTAGIO→PROMOVIDO; sem gestor designado ou já promovido é 409 acionável.
+    @PatchMapping("/{teamId}/gestor/promover")
+    public TeamResponse promoverGestor(@PathVariable UUID companyId, @PathVariable UUID teamId) {
+        guard.assertBoardMember(companyId);
+        Actor actor = guard.currentActor();
+        return TeamResponse.from(service.promoverGestor(companyId, teamId, actor.type(), actor.id()));
     }
 
     // Mover o time na árvore-organograma (ADR-0045): null = sobe pra RAIZ (vira departamento).
@@ -91,13 +105,22 @@ public class TeamController {
     public record ReparentTeamRequest(UUID parentTeamId) {
     }
 
+    /**
+     * {@code gestorStatus}/{@code gestorPromovidoEm}/{@code gestorPromovidoPorActor*} (ADR-0046):
+     * o marcador de autoridade delegada do gestor titular — quem/quando promoveu, ou tudo null
+     * quando o time nunca teve gestor promovido (ou está em ESTAGIO após reset por troca).
+     */
     public record TeamResponse(UUID id, UUID companyId, String dominio, String foco,
                                UUID arquitetoAgentId, UUID gestorAgentId, UUID parentTeamId,
+                               GestorStatus gestorStatus, Instant gestorPromovidoEm,
+                               ActorType gestorPromovidoPorActorType, UUID gestorPromovidoPorActorId,
                                Instant createdAt) {
         static TeamResponse from(Team team) {
             return new TeamResponse(team.getId(), team.getCompanyId(), team.getDominio(),
                     team.getFoco(), team.getArquitetoAgentId(), team.getGestorAgentId(),
-                    team.getParentTeamId(), team.getCreatedAt());
+                    team.getParentTeamId(), team.getGestorStatus(), team.getGestorPromovidoEm(),
+                    team.getGestorPromovidoPorActorType(), team.getGestorPromovidoPorActorId(),
+                    team.getCreatedAt());
         }
     }
 }

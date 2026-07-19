@@ -62,5 +62,15 @@ public enum ActivityAction {
     // detail.approvalId + requestedByAgentId (ADR-0009) — a decisao do dono segue o padrao
     // generico (APPROVAL_APPROVED/APPROVAL_REJECTED); o attach real emite SKILL_ATTACHED (ja
     // existente) no dispatch do APPROVE.
-    SKILL_INSTALL_REQUESTED
+    SKILL_INSTALL_REQUESTED,
+    // O marcador de autoridade delegada do gestor (F-ORG-B/ADR-0046, D-ORG-2): o dono promoveu um
+    // gestor de ESTAGIO pra PROMOVIDO. Ator = BOARD (quem promoveu, ato soberano, sem proposta de
+    // agente); entityType="team"/entityId=teamId; detail.gestorAgentId (ADR-0009) — o rastro do
+    // PRÓPRIO ATO de promover, distinto de cada issue dirigida depois (ISSUE_DIRECIONADA_SEM_GATE).
+    GESTOR_PROMOVIDO,
+    // RESERVADO por decisão explícita do dono no mini-grill da F-ORG-B (Pergunta 1): o rastro de
+    // CADA issue que um gestor PROMOVIDO dirigir sem passar pelo gate — ação contínua e operacional
+    // que só a fatia que implementa esse "dirigir" (F-ORG-D, ainda não construída) pode emitir de
+    // verdade. Nenhum código grava este valor hoje; nasce aqui só pra reservar o nome.
+    ISSUE_DIRECIONADA_SEM_GATE
 }
