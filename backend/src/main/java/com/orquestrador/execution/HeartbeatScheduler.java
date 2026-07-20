@@ -16,18 +16,18 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "orquestrador.scheduling.enabled", havingValue = "true", matchIfMissing = true)
 public class HeartbeatScheduler {
 
-    private final HeartbeatDispatcher dispatcher;
+    private final DispatchWorker dispatchWorker;
     private final LeaseReaper reaper;
     private final PreviewServerSupervisor previewServers;
     private final WorkspaceReaper workspaceReaper;
     private final RowRetentionReaper rowRetentionReaper;
     private final PreviewThumbnailCapturer thumbnailCapturer;
 
-    public HeartbeatScheduler(HeartbeatDispatcher dispatcher, LeaseReaper reaper,
+    public HeartbeatScheduler(DispatchWorker dispatchWorker, LeaseReaper reaper,
                               PreviewServerSupervisor previewServers, WorkspaceReaper workspaceReaper,
                               RowRetentionReaper rowRetentionReaper,
                               PreviewThumbnailCapturer thumbnailCapturer) {
-        this.dispatcher = dispatcher;
+        this.dispatchWorker = dispatchWorker;
         this.reaper = reaper;
         this.previewServers = previewServers;
         this.workspaceReaper = workspaceReaper;
@@ -35,9 +35,15 @@ public class HeartbeatScheduler {
         this.thumbnailCapturer = thumbnailCapturer;
     }
 
+    /**
+     * ADR-0050: entrega a passada ao {@link DispatchWorker} e VOLTA. Este método executava o run do
+     * agente inteiro na thread do scheduler — os cinco {@code @Scheduled} abaixo dividem essa mesma
+     * thread, então um processo pendurado parava todos eles em silêncio, inclusive o
+     * {@link LeaseReaper}, que é justamente o mecanismo de recuperação.
+     */
     @Scheduled(fixedDelayString = "${orquestrador.heartbeat.dispatch-ms:1000}")
     public void dispatch() {
-        dispatcher.dispatchOnce();
+        dispatchWorker.dispatchAsync();
     }
 
     @Scheduled(fixedDelayString = "${orquestrador.heartbeat.reap-ms:5000}")

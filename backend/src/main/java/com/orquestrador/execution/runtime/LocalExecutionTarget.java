@@ -29,6 +29,23 @@ import java.util.stream.Stream;
 @Component
 public class LocalExecutionTarget implements ExecutionTarget {
 
+    private final PrazosDeExecucao prazos;
+
+    /**
+     * {@code @Autowired} OBRIGATÓRIO aqui: com dois construtores e nenhum anotado, o Spring escolhe
+     * o SEM ARGUMENTO e os prazos configurados são ignorados em silêncio — o teste de unidade passa
+     * (ele chama este construtor na mão) e só a prova viva revela. Foi exatamente o que aconteceu.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    public LocalExecutionTarget(PrazosDeExecucao prazos) {
+        this.prazos = prazos;
+    }
+
+    /** Construção na mão (fixtures) — os prazos de PRODUÇÃO, nunca "sem prazo". */
+    LocalExecutionTarget() {
+        this(PrazosDeExecucao.PADRAO);
+    }
+
     @Override
     public Type type() {
         return Type.LOCAL;
@@ -245,9 +262,13 @@ public class LocalExecutionTarget implements ExecutionTarget {
                 }
             });
             drain.start();
-            if (!shot.waitFor(30, TimeUnit.SECONDS)) {
+            // ADR-0050: era o UNICO prazo da casa, com 30s cravados no codigo. Virou property — o
+            // default segue 30s (comportamento preservado ao byte) e o gemeo Docker desta mesma
+            // operacao passa a ler o MESMO valor, em vez de nao ter prazo nenhum.
+            if (!shot.waitFor(prazos.getScreenshot().toMillis(), TimeUnit.MILLISECONDS)) {
                 shot.destroyForcibly();
-                return ThumbnailCapture.renderFailed("shot local excedeu o tempo");
+                return ThumbnailCapture.renderFailed(
+                        "shot local excedeu o prazo de " + prazos.getScreenshot());
             }
             drain.join(1000);
             int exitCode = shot.exitValue();
@@ -411,14 +432,27 @@ public class LocalExecutionTarget implements ExecutionTarget {
             Process process = localProcess.start();
             processes.register(runId, process);
             try {
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        onStdoutLine.accept(line);
-                    }
+                // ADR-0050: o prazo cerca drain + espera. O drain e que bloqueia quando o motor
+                // pendura (readLine nunca ve EOF), entao ele TEM de estar dentro do prazo; e a
+                // derrubada escala por runId — um SIGKILL so-no-pai deixaria o filho da tool call
+                // orfao e vivo (sonda R6-B), que e o mesmo motivo de existir o interrupt.
+                ProcessoComPrazo.Resultado<Integer> execucao = ProcessoComPrazo.aguardar(
+                        "run do agente", process, prazos.getRun(),
+                        () -> {
+                            try (BufferedReader reader = new BufferedReader(
+                                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                                String line;
+                                while ((line = reader.readLine()) != null) {
+                                    onStdoutLine.accept(line);
+                                }
+                            }
+                            return process.waitFor();
+                        },
+                        () -> processes.interrupt(runId));
+                if (execucao.estourou()) {
+                    return new Result(-1, execucao.motivo());
                 }
-                return new Result(process.waitFor(), null);
+                return new Result(execucao.colhido(), null);
             } finally {
                 processes.unregister(runId);
             }
