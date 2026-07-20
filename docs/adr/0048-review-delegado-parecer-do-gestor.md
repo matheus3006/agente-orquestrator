@@ -59,9 +59,16 @@ inexistente, sem ciclo aberto, fora do braço, auto-review, acima do teto, eco c
 
 `ParecerService.decidirReviewComoGestor(...)` chama o **MESMO** `IssueService.review(...)` que o
 board chama. Não há caminho paralelo: herda de graça tudo que a review humana respeita — REJECT
-exige motivo, âncora `expectedReviewId`, transição guardada por `PENDING_REVIEW` (0 linhas → 409),
-fábrica de Decisão, `unblock {REOPEN|CANCEL}` do dono continuando a valer. **Nada aqui é
-irreversível** — é o que torna a delegação barata (D-ORG-1).
+exige motivo, transição guardada por `PENDING_REVIEW` (0 linhas → 409), fábrica de Decisão.
+
+> ⚠️ **Emendado no hardening do PR #50 (2026-07-20) — ver §Hardening pós-conferência.** Este
+> parágrafo afirmava, em negrito, que "o `unblock {REOPEN|CANCEL}` do dono continua a valer" e que
+> "nada aqui é irreversível". Era **falso para o APPROVE**: `unblock` só aceita `BLOCKED`, e
+> APPROVE leva a `DONE`, que era estado SINK. A reversibilidade passou a existir de verdade pela
+> **ADR-0049** (`reabrirEntregaAprovada`, `DONE → BLOCKED`, board-only) — e só por causa dela a
+> frase "é o que torna a delegação barata (D-ORG-1)" volta a se sustentar. A âncora
+> `expectedReviewId`, também citada aqui originalmente, protege menos do que este texto sugeria:
+> ver §Hardening, item 3.
 
 **Escopo de segurança (molde da ADR-0047 §3, replicado elemento por elemento).** Este é o
 **segundo** caminho de autorização não-humana da casa, e o primeiro que não passa pelos
@@ -96,6 +103,11 @@ nova ao LLM que **reformula a prosa**):
 Prosa reformulada não fura nenhum dos dois ramos **por construção** — o furo que custou o
 hardening do #49 não tem como existir aqui. Reject → REOPEN → re-run abre um ciclo NOVO, com slot
 de parecer novo: a cardinalidade certa é por ciclo, não por issue.
+
+> ⚠️ **Emendado no hardening do PR #50 — ver §Hardening, item 2.** A conclusão sobre a prosa segue
+> de pé; o "**sai de graça**" não. Os dois ramos eram apresentados como igualmente estruturais, e
+> **não eram**: o PROMOVIDO tinha CAS de banco real, o ESTÁGIO era read-then-write puro (lost
+> update sob concorrência). Hoje os dois têm CAS de banco.
 
 ### 5. O parecer é campo, e não carrega voto legível por máquina
 
@@ -155,3 +167,102 @@ mais precisa de rastro.
   embarcou, conscientemente.
 - Parecer em ciclo do ramo PROMOVIDO: não existe (lá o gestor decide). Se o dono um dia quiser
   "decidiu E deixou o porquê separado", o `decisionReason` já carrega o texto — não foi pedido.
+
+## Hardening pós-conferência (2026-07-20, fatia hardening-parecer-seguranca)
+
+A conferência adversarial do PR #50 achou 3 🔴 de segurança e 3 🟠 estruturais. Fechados nesta
+emenda — nenhuma D-ORG reaberta, nenhum schema novo (a reserva **V39 foi DEVOLVIDA**: os 6
+consertos são UPDATEs guardados e lógica, zero coluna nova). O item 1, por mudar um invariante de
+ciclo de vida que **precede** esta fatia (`DONE` terminal), ganhou ADR própria: **ADR-0049**.
+
+### 1. 🔴 O APPROVE do promovido era IRREVERSÍVEL → **ADR-0049**
+
+Ver ADR-0049. Aqui ficam corrigidas as duas afirmações falsas que esta ADR fazia (§3) e que o
+código repetia (`ParecerService`).
+
+### 2. 🔴 O dedupe do ramo ESTÁGIO era lost update
+
+`registrarParecerDoGestor` era read-then-write puro: `temParecer()` e depois `save`. `Review` não
+tem `@Version` e o UPDATE do JPA é `where id = ?`; em READ COMMITTED duas transações liam
+`parecer IS NULL` e a segunda **sobrescrevia em silêncio, devolvendo `true`** — sem o aviso "já
+tinha parecer". Medido, não teorizado: **6 chamadas concorrentes gravaram as 6**.
+
+**Mecanismo:** UPDATE guardado `ReviewRepository.tryRegistrarParecer` com `and parecer is null` —
+o idioma da casa (`tryCheckout`, `tryApprove`, `tryAbsorver`), em que quem arbitra a corrida é o
+`rows affected`. `rows==0` → alguém já gravou → `false` → aviso contado.
+
+**Por que não `@Version`**: pegaria TODOS os writers de `Review` (approve/reject inclusive) e
+trocaria um `false` limpo por uma exceção que cada chamador teria de tratar — blast radius grande
+para um campo só. **Por que não índice parcial** (o remédio da V37/ADR-0047): lá o furo criava
+LINHA nova; aqui é coluna de linha que já existe, e unique não expressa "no máximo um
+preenchimento". O setter `Review.registrarParecer` foi **removido**: com a escrita só pelo UPDATE
+guardado, o caminho inseguro não existe mais para ser reintroduzido por engano.
+
+O teste que dava a falsa confiança chamava o gate **2× em sequência na mesma thread** (zumbi
+SEQUENCIAL). O novo é CONCORRENTE de verdade, com barreira de largada.
+
+### 3. 🔴 O `expectedReviewId` é CAS decorativo — **corrigida a AFIRMAÇÃO, não o mecanismo**
+
+O §3 dizia que este ramo "herda de graça a âncora `expectedReviewId`". **Herda a chamada, não a
+proteção.** O gate resolve o ciclo PENDING ele mesmo e o passa como âncora; o service re-resolve a
+mesma query e compara com o valor que o gate produziu. No caminho humano a âncora vem de FORA (a
+UI do dono viu o ciclo X); aqui **nada carrega a identidade do ciclo sobre o qual o LLM
+raciocinou** — o bloco só traz o `#N`.
+
+**O que ela protege de verdade** (e agora está escrito assim no código): a janela entre a
+resolução no `ParecerService` e a resolução dentro do `IssueService.review` — o TOCTOU do item 4.
+**O que ela não protege:** o cenário que `IssueService` documenta, de um APPROVE atrasado chegando
+depois de reject→REOPEN→re-run abrir um ciclo NOVO.
+
+**Amarrar identidade de raciocínio foi considerado e recusado.** A única âncora disponível sem
+exigir do LLM um UUID que ele não tem seria **temporal** — "o ciclo já existia quando o run do
+gestor começou", comparando `review.requested_at` com `heartbeat_run.started_at`. Ela pega o
+cenário do ciclo novo, mas passa a produzir **recusa FALSA** assim que a F-ORG-E/F-ORG-G derem ao
+gestor tools que listam review DURANTE o run: seria construir um guard que a próxima fatia teria
+de remover. Preferiu-se o limite conhecido e escrito à proteção que não protege — que é pior,
+porque a fatia seguinte confia nela.
+
+### 4. 🟠 TOCTOU dono×gestor travava a issue DO PRÓPRIO GESTOR, para sempre
+
+Se o dono decidisse o ciclo entre a resolução do gate e a do service, o service levantava e
+**ninguém pegava**: o gate não tinha try/catch, o `AdapterRunExecutor` idem, e o `execute` chama
+`runToOutcome` **antes** de `settleAfterRun` ⇒ a exceção **pulava o settle**. A issue ficava
+`IN_PROGRESS` com `execution_lock_run_id` de um run morto; `tryCheckout` exige essa coluna
+null-ou-igual e **não existe reaper para ela** — impegável para sempre. Contradizia o fail-SOFT que
+o próprio gate declara.
+
+**Fecho em duas camadas:** (a) no `ParecerGate`, try/catch POR PARECER — uma recusa do service é
+resultado normal deste canal ("o gestor chegou tarde"), vira aviso contado e o lote segue; e
+try/finally em volta do loop, para que os avisos já acumulados cheguem ao StepTrace em vez de se
+perderem junto com a exceção. (b) No `AdapterRunExecutor`, `semDerrubarOSettle(...)` envolve os
+**4** gates de fim-de-run — **a exposição herdada foi fechada para os 4 de uma vez**
+(`skillRequestGate`, `dirigirGate`, `parecerGate`, `planValidationGate`), porque o dano não é "um
+gate falhou", é a Issue travada para sempre. Não silencia: vira step `GATE_DE_SAIDA_FALHOU`.
+
+### 5. 🟠 Roteamento multi-braço decidido por ordem de linha
+
+`TeamRepository` sem `ORDER BY` + `.findFirst()`: um agente pode constar como gestor de um time PAI
+e de um DESCENDENTE, `gestor_status` é POR TIME, e as duas subárvores contêm o entregador ⇒ **se
+ele apenas OPINA ou DECIDE dependia da ordem arbitrária das linhas.**
+
+**Regra:** vence o **MENOS PRIVILEGIADO** — qualquer braço aplicável em ESTÁGIO ⇒ parecer
+consultivo; `id` como desempate. Fail-safe: na dúvida o humano fica no laço, que é o lado barato de
+errar. A query ganhou `OrderById`, o que também estabiliza o `DirigirGate` (que segue com
+`findFirst`; lá a consequência é sob qual braço a issue nasce, não se um humano está no laço).
+
+**Alcance honesto:** pela porta de serviço o estado de 2 braços é hoje **INALCANÇÁVEL** —
+`Agent.teamId` é único, `setGestor` exige que o gestor seja MEMBRO do time, e `assignAgent` revoga
+o posto no time que o agente deixa. A cerca é defesa em profundidade (e o teste monta o estado
+direto no banco); o que ela não pode é ser descrita como se já estivesse barrando um caminho vivo.
+
+### 6. 🟠 A cerca de auto-review mirava no proxy errado
+
+Usava o `assignee` **ATUAL**, não quem PRODUZIU o artefato sob revisão (`Review.runId` → o agente
+do run). Coincidem hoje, mas por invariante que **nenhum UPDATE guardado afirma**: um endpoint
+futuro de reatribuição converteria a cerca em **lavanderia** (entregar, reatribuir a um
+subordinado, aprovar a própria entrega). Medido: com o assignee trocado, a aprovação da própria
+entrega **passava**.
+
+A cerca passou a mirar em `Review.runId`; a do assignee **fica de pé ao lado**, como cinto. A
+subárvore também passou a ser medida pelo time de quem entregou. E esta era **a única das 5 cercas
+sem teste de chamador direto ao service** — agora tem.

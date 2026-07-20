@@ -4,15 +4,18 @@ import com.orquestrador.activitylog.ActivityAction;
 import com.orquestrador.activitylog.ActivityLogService;
 import com.orquestrador.common.error.BadRequestException;
 import com.orquestrador.common.error.ConflictException;
+import com.orquestrador.common.error.ForbiddenException;
 import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.governance.approval.RacionalPolicy;
 import com.orquestrador.identity.company.CompanyRepository;
 import com.orquestrador.execution.RunOutcome;
+import com.orquestrador.memory.Decision;
 import com.orquestrador.memory.DecisionGrau;
 import com.orquestrador.memory.DecisionLog;
 import com.orquestrador.memory.DecisionOrigem;
+import com.orquestrador.memory.DecisionRepository;
 import com.orquestrador.memory.GateDecisionFactory;
 import com.orquestrador.memory.GateDecisionFactory.Anchor;
 import com.orquestrador.memory.GateDecisionFactory.GatePassage;
@@ -28,6 +31,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -46,12 +50,14 @@ public class IssueService {
     private final RacionalPolicy racionalPolicy;
     private final GateDecisionFactory gateDecisions;
     private final DecisionLog decisionLog;
+    private final DecisionRepository decisions;
     private final int reviewRiskThreshold;
 
     public IssueService(IssueRepository issues, CompanyRepository companies, ReviewRepository reviews,
                         HeartbeatRunRepository heartbeatRuns, ActivityLogService activityLog,
                         AgentRepository agents, TeamRepository teams, RacionalPolicy racionalPolicy,
                         GateDecisionFactory gateDecisions, DecisionLog decisionLog,
+                        DecisionRepository decisions,
                         @Value("${orquestrador.review.risk-threshold:5}") int reviewRiskThreshold) {
         // Fora da escala 1-5 o gate desligaria SILENCIOSAMENTE (limiar 6 nunca é atingível) —
         // fail-open de mecanismo de segurança. Melhor derrubar o boot com mensagem clara.
@@ -70,6 +76,7 @@ public class IssueService {
         this.racionalPolicy = racionalPolicy;
         this.gateDecisions = gateDecisions;
         this.decisionLog = decisionLog;
+        this.decisions = decisions;
         this.reviewRiskThreshold = reviewRiskThreshold;
     }
 
@@ -323,9 +330,15 @@ public class IssueService {
      * (F-ORG-C/ADR-0048). Deriva do carimbo que acabou de ser gravado no ciclo — nenhum chamador
      * declara a própria proveniência.
      *
-     * <p>Consome o {@code DecisionOrigem.AGENTE}, que existia desde a ADR-0019 esperando writer
-     * ("fatia futura — nenhum writer no v1"). Registrar decisão de gestor como DONO_NO_GATE seria
-     * rastro FALSO justamente no caminho que mais precisa de rastro.
+     * <p>É o primeiro writer de {@code DecisionOrigem.AGENTE} <b>pela porta do gate</b>
+     * ({@code GateDecisionFactory}, D5 da ADR-0019) — e essa é a alegação inteira. A F-ORG-C
+     * afirmou aqui que o enum "existia desde a ADR-0019 esperando writer, nenhum writer no v1":
+     * FALSO, e corrigido no hardening do PR #50. Já havia DOIS writers na base —
+     * {@code AbsorcaoDeIssueRouter} (ADR-0037) e {@code CorrecaoDeEntregaRouter} (ADR-0034) —, a
+     * frase citada não é da ADR-0019 (é o javadoc stale de {@code memory/DecisionOrigem}) e a
+     * reserva já tinha sido reivindicada por escrito em {@code docs/handoff-grilling-caso-b.md}.
+     * O que segue verdadeiro: registrar decisão de gestor como DONO_NO_GATE seria rastro FALSO
+     * justamente no caminho que mais precisa de rastro.
      */
     private static DecisionOrigem origemDe(Review cycle) {
         return cycle.getReviewerActorType() == ActorType.AGENT
@@ -368,6 +381,80 @@ public class IssueService {
         ActivityAction action = decision == UnblockDecision.REOPEN
                 ? ActivityAction.ISSUE_REOPENED : ActivityAction.ISSUE_CANCELLED;
         activityLog.record(companyId, actorType, actorId, action, "issue", issueId, Map.of());
+    }
+
+    /**
+     * REABRE uma entrega já APROVADA (ADR-0049 — decisão do dono, 2026-07-20). Fecha a assimetria
+     * que a conferência do PR #50 achou: REJECT → BLOCKED é reabrível, APPROVE → DONE não era, e
+     * {@code DONE} nunca aparecia como estado-ORIGEM em UPDATE guardado nenhum. Isso contradizia a
+     * <b>D-ORG-2</b> — "gestor decide sozinho, com rastro total e <i>qualquer entrega reabrível
+     * pelo dono</i>" —, e a reabertura é justamente a VÁLVULA que torna barato delegar decisão a um
+     * agente: sem ela, promover é porta de mão única.
+     *
+     * <p><b>Board-only, revalidado AQUI e não só no controller</b> (lição do hardening item 2 do
+     * PR #49: guard só na porta é seguro por CONVENÇÃO, não por construção). Um agente que
+     * alcançasse este método reabriria a própria entrega reprovada — o inverso exato da cerca de
+     * auto-review.
+     *
+     * <p><b>O motivo é obrigatório</b>, mesma régua do REJECT ({@code o motivo É a Decisão}): o
+     * porquê de uma reabertura é a contra-evidência que informa se o gestor deve CONTINUAR
+     * promovido. A D-ORG-2 promove quando "os pareceres batem"; este é o sinal do caminho inverso.
+     *
+     * <p><b>O que NÃO acontece</b>, de propósito: o ciclo de review continua APPROVED, com o
+     * carimbo do gestor intacto. Voltá-lo a PENDING apagaria o rastro de que ELE decidiu — e o
+     * rastro é a metade da D-ORG-2 que paga pela outra. A reabertura é fato SOMADO por cima, nunca
+     * apagamento. Um ciclo NOVO nasce sozinho depois, se o dono der REOPEN e o re-run entregar de
+     * novo em risco ≥ 5: aí o PENDING que o dono nunca viu existe de verdade, com entrega fresca
+     * atrás dele.
+     */
+    @Transactional
+    public void reabrirEntregaAprovada(UUID companyId, UUID issueId, String motivo,
+                                       ActorType actorType, UUID actorId) {
+        if (actorType != ActorType.BOARD) {
+            throw new ForbiddenException("apenas o operador (board) reabre uma entrega aprovada"
+                    + " (ADR-0049): reabertura é a válvula do DONO sobre a decisão delegada");
+        }
+        if (motivo == null || motivo.isBlank()) {
+            throw new BadRequestException("reabrir exige o motivo — ele desfaz uma entrega aceita e"
+                    + " vira a Decisao do registro (ADR-0049): diga o que passou batido");
+        }
+        Issue issue = get(companyId, issueId);
+        int rows = issues.tryReabrirAprovada(issueId, companyId);
+        if (rows == 0) {
+            throw new ConflictException("Issue nao esta DONE (reabertura so vale para entrega"
+                    + " aprovada): " + issueId);
+        }
+        activityLog.record(companyId, actorType, actorId, ActivityAction.ISSUE_REABERTA,
+                "issue", issueId, Map.of());
+        fabricaDecisaoDaReabertura(issue, motivo);
+    }
+
+    /**
+     * A reabertura vira Decisão que SUPERSEDE a do carimbo desfeito (linhagem D11). Não basta o
+     * activity_log: a Decisão é o que o executor LÊ na dieta do re-run (R19-A), e um
+     * "[APPROVE REVIEW] #N" sem qualificação seguiria dizendo a todo agente futuro que a entrega
+     * foi aceita. Origem {@code DONO_NO_GATE} — quem desfez foi o dono, mesmo que quem carimbou
+     * tenha sido um gestor.
+     *
+     * <p>A antecessora é procurada pela âncora de CICLO; se não houver (APPROVE em silêncio não
+     * fabrica Decisão — C14), a reabertura nasce sem {@code supersedes} em vez de não nascer.
+     */
+    private void fabricaDecisaoDaReabertura(Issue issue, String motivo) {
+        UUID companyId = issue.getCompanyId();
+        UUID cicloAprovado = reviews.findByCompanyIdAndIssueId(companyId, issue.getId()).stream()
+                .filter(cycle -> cycle.getStatus() == ReviewStatus.APPROVED)
+                .max(Comparator.comparing(Review::getDecidedAt, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .map(Review::getId).orElse(null);
+        UUID supersedesId = cicloAprovado == null ? null
+                : decisions.findByCompanyIdAndIssueIdOrderBySeqAsc(companyId, issue.getId()).stream()
+                        .filter(decisao -> cicloAprovado.equals(decisao.getReviewId()))
+                        .map(Decision::getId).reduce((primeira, ultima) -> ultima).orElse(null);
+        String area = areaDaIssue(issue);
+        gateDecisions.fabricate(new GatePassage(companyId, area, DecisionOrigem.DONO_NO_GATE,
+                "[REABERTURA] #" + issue.getSeq() + " " + issue.getTitle(), motivo,
+                racionalPolicy.deriveTipo(area), false, supersedesId, DecisionGrau.DECISAO, null,
+                cicloAprovado == null ? new Anchor.NaReview(null, issue.getId())
+                        : new Anchor.NaReview(cicloAprovado, issue.getId())));
     }
 
     @Transactional(readOnly = true)

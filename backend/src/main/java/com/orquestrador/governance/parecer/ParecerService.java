@@ -3,6 +3,8 @@ package com.orquestrador.governance.parecer;
 import com.orquestrador.activitylog.ActivityAction;
 import com.orquestrador.activitylog.ActivityLogService;
 import com.orquestrador.common.security.ActorType;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.agent.ChainOfCommandService;
@@ -42,11 +44,14 @@ import java.util.UUID;
  *   <li>call site único de produção: o {@link ParecerGate}.</li>
  * </ul>
  *
- * <p><b>Dedupe é ESTRUTURAL e sai de graça</b> (ADR-0048 §4) — sem fingerprint, ao contrário do
- * caminho sem-gate da ADR-0047. O parecer é 1-para-1 com o CICLO: no zumbi do lease-reaper (mesmo
- * {@code runId} re-executado, com chamada REAL nova ao LLM que reformula a prosa) o ESTÁGIO
- * reencontra o ciclo já com parecer e o PROMOVIDO não reencontra ciclo PENDING nenhum. Identidade
- * de LINHA, não de texto: prosa reformulada não fura nenhum dos dois ramos.
+ * <p><b>Dedupe: identidade de LINHA, arbitrada pelo BANCO nos dois ramos</b> (ADR-0048 §4, emendada
+ * no hardening do PR #50). O parecer é 1-para-1 com o CICLO, então prosa reformulada pelo LLM não
+ * fura nenhum dos dois ramos — mas "sai de graça" era FALSO no ramo ESTÁGIO: ele era read-then-write
+ * puro ({@code temParecer()} e depois {@code save}), e sob concorrência real seis settles
+ * simultâneos gravavam os seis, cada um sobrescrevendo o anterior, todos devolvendo "gravei". O
+ * teste que "provava" o dedupe chamava o gate 2× EM SEQUÊNCIA — provava o zumbi sequencial, não o
+ * split-brain. Hoje os dois ramos têm CAS de banco: PROMOVIDO por
+ * {@code where status='PENDING_REVIEW'}, ESTÁGIO por {@code where parecer is null}.
  */
 @Service
 public class ParecerService {
@@ -58,10 +63,11 @@ public class ParecerService {
     private final TeamRepository teams;
     private final ChainOfCommandService chain;
     private final ActivityLogService activityLog;
+    private final HeartbeatRunRepository runs;
 
     public ParecerService(ReviewRepository reviews, IssueRepository issues, IssueService issueService,
                           AgentRepository agents, TeamRepository teams, ChainOfCommandService chain,
-                          ActivityLogService activityLog) {
+                          ActivityLogService activityLog, HeartbeatRunRepository runs) {
         this.reviews = reviews;
         this.issues = issues;
         this.issueService = issueService;
@@ -69,6 +75,7 @@ public class ParecerService {
         this.teams = teams;
         this.chain = chain;
         this.activityLog = activityLog;
+        this.runs = runs;
     }
 
     /**
@@ -76,21 +83,25 @@ public class ParecerService {
      * {@code reviewerActorType} nem {@code decisionReason} — a autoridade não muda, o dono
      * continua decidindo vendo o parecer ao lado (D-ORG-2).
      *
-     * @return {@code false} se o ciclo JÁ tinha parecer (primeiro-vence: o dedupe estrutural do
-     *         settle reexecutado) — o gate transforma isso em aviso contado, nunca em silêncio.
+     * @return {@code false} se o ciclo JÁ tinha parecer (primeiro-vence, arbitrado pelo BANCO) —
+     *         o gate transforma isso em aviso contado, nunca em silêncio.
      */
     @Transactional
     public boolean registrarParecerDoGestor(UUID companyId, UUID gestorAgentId, PedidoDeParecer pedido) {
-        exigirGestorTitularComAlvoNoBraco(companyId, gestorAgentId, pedido);
         Review ciclo = cicloAbertoAncorado(companyId, pedido);
-        if (ciclo.temParecer()) {
+        exigirGestorTitularComAlvoNoBraco(companyId, gestorAgentId, pedido, ciclo);
+        UUID cicloId = ciclo.getId();
+        // UPDATE guardado (`and parecer is null`), não read-then-write: o read-then-write anterior
+        // era lost update sob concorrência real — 6 settles simultâneos gravavam os 6, cada um
+        // sobrescrevendo o anterior e todos devolvendo "gravei" (hardening do PR #50, achado 🔴 2).
+        int rows = reviews.tryRegistrarParecer(cicloId, companyId, gestorAgentId,
+                textoDoParecer(pedido));
+        if (rows == 0) {
             return false;
         }
-        ciclo.registrarParecer(gestorAgentId, textoDoParecer(pedido));
-        reviews.save(ciclo);
         activityLog.record(companyId, ActorType.AGENT, gestorAgentId,
                 ActivityAction.REVIEW_PARECER_REGISTRADO, "issue", pedido.issueId(),
-                Map.of("reviewId", ciclo.getId(), "bracoTeamId", pedido.bracoTeamId(),
+                Map.of("reviewId", cicloId, "bracoTeamId", pedido.bracoTeamId(),
                         "runId", pedido.runId()));
         return true;
     }
@@ -98,15 +109,35 @@ public class ParecerService {
     /**
      * Ramo PROMOVIDO: o gestor DECIDE o ciclo, com {@code reviewerActorType=AGENT} (o dado já
      * aceita isso desde a ADR-0012). Passa pelo MESMO {@code IssueService.review} do dono, então
-     * herda tudo que a review humana respeita: REJECT exige motivo, âncora {@code expectedReviewId},
-     * transição guardada por {@code PENDING_REVIEW} e a fábrica de Decisão. O dono continua podendo
-     * reabrir pelo {@code unblock} — nada aqui é irreversível.
+     * herda tudo que a review humana respeita: REJECT exige motivo, transição guardada por
+     * {@code PENDING_REVIEW} e a fábrica de Decisão.
+     *
+     * <p><b>Reversível pelo dono nos DOIS lados</b> (ADR-0049, decisão do dono de 2026-07-20).
+     * REJECT → BLOCKED sempre foi reabrível pelo {@code unblock}; APPROVE → DONE <b>não era</b> —
+     * {@code DONE} não aparecia como estado-ORIGEM em UPDATE guardado nenhum, então era SINK, e
+     * esta classe afirmava o contrário. O {@code IssueService.reabrirEntregaAprovada} fecha a
+     * assimetria: é ele, não o {@code unblock}, que desfaz um APPROVE.
+     *
+     * <p><b>O que a âncora {@code expectedReviewId} protege AQUI, com precisão</b> (corrigido no
+     * hardening do PR #50): ela guarda a janela entre a resolução do ciclo neste service e a
+     * resolução dentro do {@code IssueService.review} — se o dono decidir no meio, o UPDATE guardado
+     * casa 0 linhas ou a âncora diverge, e nada é decidido. Ela <b>NÃO</b> é o que é no caminho
+     * humano: lá a âncora vem de FORA (a UI do dono viu o ciclo X), aqui ela é auto-gerada pelo
+     * gate a partir da mesma query. <b>Nada carrega a identidade do ciclo sobre o qual o LLM
+     * raciocinou</b> — o bloco ```parecer``` só traz o {@code #N} da issue. A ADR-0048 §3 dizia que
+     * este ramo "herda de graça a âncora": herda a CHAMADA, não a proteção.
+     *
+     * <p>Amarrar identidade de raciocínio foi considerado e RECUSADO: a única âncora disponível
+     * sem exigir do LLM um UUID que ele não tem seria temporal ("o ciclo já existia quando o run do
+     * gestor começou"), e ela passa a produzir recusa FALSA assim que a F-ORG-E/F-ORG-G derem ao
+     * gestor tools que listam review DURANTE o run — seria construir um guard que a próxima fatia
+     * teria de remover. Fica registrado como limite conhecido, não como proteção que não protege.
      */
     @Transactional
     public void decidirReviewComoGestor(UUID companyId, UUID gestorAgentId, PedidoDeParecer pedido) {
-        exigirGestorTitularComAlvoNoBraco(companyId, gestorAgentId, pedido);
-        exigirBracoPromovido(pedido.bracoTeamId(), companyId);
         Review ciclo = cicloAbertoAncorado(companyId, pedido);
+        exigirGestorTitularComAlvoNoBraco(companyId, gestorAgentId, pedido, ciclo);
+        exigirBracoPromovido(pedido.bracoTeamId(), companyId);
         // Pré-condição: o ciclo que vai ser decidido é o MESMO que passou pelo guard acima.
         // Amarra guard e ato — sem isto, um refactor que reordenasse a resolução abriria janela
         // pra decidir um ciclo diferente do que foi autorizado.
@@ -142,11 +173,18 @@ public class ParecerService {
      * exatamente o que o review gate existe pra impedir. Vale nos DOIS ramos: opinar sobre a
      * própria entrega também não é julgar o time (D-ORG-1).
      *
-     * <p>Issue sem assignee é recusada: sem quem entregou não há braço a que ela pertença, e o
-     * default silencioso seria justamente o furo.
+     * <p><b>A cerca mira em QUEM ENTREGOU, não no assignee ATUAL</b> (hardening do PR #50): o
+     * artefato sob revisão é o output do run que o CICLO aponta ({@code Review.runId}), e é o autor
+     * DELE que não pode se auto-aprovar. Os dois coincidem hoje, mas por invariante que nenhum
+     * UPDATE guardado afirma — com um endpoint de reatribuição, mirar no assignee viraria
+     * LAVANDERIA (entregar, reatribuir a um subordinado, aprovar a própria entrega). A cerca do
+     * assignee fica DE PÉ ao lado, como cinto: quem é o dono atual da issue também não a julga.
+     *
+     * <p>Entregador irresolvível (run sumido) é recusado, e issue sem assignee também: o default
+     * silencioso seria justamente o furo.
      */
     private void exigirGestorTitularComAlvoNoBraco(UUID companyId, UUID gestorAgentId,
-                                                   PedidoDeParecer pedido) {
+                                                   PedidoDeParecer pedido, Review ciclo) {
         Team braco = teams.findById(pedido.bracoTeamId())
                 .filter(time -> companyId.equals(time.getCompanyId()))
                 .orElseThrow(() -> new IllegalStateException("parecer recusado: o braço "
@@ -163,12 +201,26 @@ public class ParecerService {
                     + " é o ASSIGNEE da issue " + issue.getId() + " — gestor não se auto-revisa"
                     + " (ADR-0048)");
         }
-        UUID timeDoEntregador = issue.getAssigneeAgentId() == null ? null
-                : agents.findById(issue.getAssigneeAgentId()).map(Agent::getTeamId).orElse(null);
+        UUID entregador = entregadorDoCiclo(ciclo);
+        if (gestorAgentId.equals(entregador)) {
+            throw new IllegalStateException("parecer recusado: " + gestorAgentId
+                    + " é quem ENTREGOU o artefato do ciclo " + ciclo.getId()
+                    + " — gestor não revisa a própria entrega (ADR-0048)");
+        }
+        UUID timeDoEntregador = entregador == null ? null
+                : agents.findById(entregador).map(Agent::getTeamId).orElse(null);
         if (timeDoEntregador == null || !chain.pertenceASubarvore(braco.getId(), timeDoEntregador)) {
             throw new IllegalStateException("parecer recusado: a issue " + issue.getId()
                     + " está FORA da subárvore do braço " + braco.getId() + " (D-ORG-3/ADR-0048)");
         }
+    }
+
+    /**
+     * QUEM PRODUZIU o artefato sob revisão: o agente do run que o ciclo aponta. É a identidade
+     * certa para as duas cercas (auto-review e subárvore) — o assignee é proxy que pode divergir.
+     */
+    private UUID entregadorDoCiclo(Review ciclo) {
+        return runs.findById(ciclo.getRunId()).map(HeartbeatRun::getAgentId).orElse(null);
     }
 
     /** A cerca EXTRA do ramo que decide: só PROMOVIDO decide, ESTÁGIO só opina. */

@@ -82,5 +82,10 @@ public enum ActivityAction {
     // review (mesma regra do decision_reason), nunca aqui.
     // O ramo PROMOVIDO NAO emite este evento: la o gestor DECIDE, e o rastro e o
     // REVIEW_APPROVED/REVIEW_REJECTED ja existente, com ator AGENT em vez de BOARD.
-    REVIEW_PARECER_REGISTRADO
+    REVIEW_PARECER_REGISTRADO,
+
+    // ADR-0049: o dono DESFAZ uma entrega ja aceita (DONE -> BLOCKED). Distinto do ISSUE_REOPENED,
+    // que destrava um BLOCKED: aqui o que se desfaz e um APPROVE — em geral o de um gestor
+    // promovido, que fechou a issue sem nenhum humano te-la visto como PENDING.
+    ISSUE_REABERTA
 }

@@ -105,6 +105,22 @@ public class IssueController {
         return respond(issues.get(companyId, issueId));
     }
 
+    /**
+     * REABRE uma entrega já aprovada (ADR-0049): {@code DONE -> BLOCKED}, e dali o {@link #unblock}
+     * dá a escolha entre refazer e cancelar. Endpoint SEPARADO do unblock de propósito — a
+     * pré-condição é outra (DONE, não BLOCKED), o motivo é obrigatório aqui e opcional lá, e o que
+     * se desfaz é um APPROVE, em geral o de um gestor promovido. O {@code requireBoard} é a porta;
+     * o service REVALIDA que o ator é board por conta própria.
+     */
+    @PostMapping("/{issueId}/reabrir")
+    public IssueResponse reabrir(@PathVariable UUID companyId, @PathVariable UUID issueId,
+                                 @RequestBody @Valid ReabrirRequest request) {
+        guard.assertMember(companyId);
+        Actor board = requireBoard("Apenas o operador (board) reabre uma entrega aprovada");
+        issues.reabrirEntregaAprovada(companyId, issueId, request.motivo(), board.type(), board.id());
+        return respond(issues.get(companyId, issueId));
+    }
+
     /** Toda resposta de Issue resolve o selo (corrigeSeq) num lugar só — o DTO segue aditivo. */
     private IssueResponse respond(Issue issue) {
         return IssueResponse.from(issue, issues.corrigeSeqDe(issue));
@@ -138,6 +154,12 @@ public class IssueController {
     }
 
     public record UnblockRequest(@NotNull UnblockDecision decision) {
+    }
+
+    // O motivo é OBRIGATÓRIO (ao contrário do reason da review, opcional no APPROVE): desfazer uma
+    // entrega aceita é exatamente o momento em que o porquê tem valor — é a contra-evidência que
+    // informa se o gestor segue promovido (ADR-0049).
+    public record ReabrirRequest(@NotBlank String motivo) {
     }
 
     // reason é opcional no APPROVE (C14: em silêncio commita SEM fabricar Decisão) e obrigatório
