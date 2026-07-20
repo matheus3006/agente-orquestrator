@@ -18,7 +18,7 @@ docker run --rm -d --name <fatia>-pg -p 15432:5432 \
   -e POSTGRES_DB=orquestrador postgres:16-alpine
 
 # 2. JAR + app próprio (porta livre; overrides por argumento)
-cd backend && mvn -o package -DskipTests -q
+cd backend && ./mvnw -o package -DskipTests -q   # o wrapper NÃO está na raiz: da raiz dá EXIT=127 com log VAZIO
 java -jar target/orquestrador-0.0.1-SNAPSHOT.jar \
   --server.port=18081 \
   --spring.datasource.url=jdbc:postgresql://localhost:15432/orquestrador \

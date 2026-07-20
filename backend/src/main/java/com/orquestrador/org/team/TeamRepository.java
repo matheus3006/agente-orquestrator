@@ -27,6 +27,13 @@ public interface TeamRepository extends JpaRepository<Team, UUID> {
     /**
      * Os times que um agente GERE (titular do posto de gestor) — a 1ª condição do guard do
      * dirigir-sem-gate (ADR-0047, D-DSG-2): quem não é gestor de time nenhum não dirige nada.
+     *
+     * <p>{@code OrderById} não é enfeite (hardening do PR #50): sem ele a lista saía na ordem
+     * arbitrária das linhas, e os dois consumidores escolhem o braço com {@code .findFirst()} /
+     * seleção — mesma entrada podia dar braço diferente entre execuções. O {@link
+     * com.orquestrador.governance.parecer.ParecerGate} ainda ordena por PRIVILÉGIO por cima disto
+     * (menos privilegiado vence); aqui a garantia é só de estabilidade, e ela também alcança o
+     * {@code DirigirGate}, que segue com {@code findFirst}.
      */
-    List<Team> findByCompanyIdAndGestorAgentId(UUID companyId, UUID gestorAgentId);
+    List<Team> findByCompanyIdAndGestorAgentIdOrderById(UUID companyId, UUID gestorAgentId);
 }

@@ -83,7 +83,7 @@ public class DirigirGate {
             avisos.add(scan.descartadas() + " bloco(s) `dirigir` malformado(s) ou sem racional (obrigatório)");
         }
 
-        List<Team> bracos = teams.findByCompanyIdAndGestorAgentId(companyId, agentId);
+        List<Team> bracos = teams.findByCompanyIdAndGestorAgentIdOrderById(companyId, agentId);
         Set<DirigirScanner.Ordem> vistas = new HashSet<>();
         Map<UUID, Integer> ordinalDoAlvo = new HashMap<>();
         int aceitas = 0;

@@ -149,6 +149,28 @@ public class AdapterRunExecutor implements RunExecutor {
     }
 
     /**
+     * O cinto de ÚLTIMA INSTÂNCIA dos gates de fim-de-run (hardening do PR #50, achado 🟠 do TOCTOU
+     * — a exposição HERDADA, fechada para os 4 de uma vez).
+     *
+     * <p>Estes gates rodam dentro do {@code runToOutcome}, que o {@link #execute} chama <b>antes</b>
+     * do {@code issues.settleAfterRun}. Uma exceção que suba daqui não é "um gate que falhou": ela
+     * PULA o settle e deixa a Issue em {@code IN_PROGRESS} com {@code execution_lock_run_id}
+     * apontando um run morto. O {@code tryCheckout} exige essa coluna null-ou-igual e <b>não existe
+     * reaper para ela</b> — a Issue fica impegável para sempre, e o dano é permanente e silencioso.
+     *
+     * <p>Cada gate já é fail-soft por dentro; isto é o que mantém a afirmação verdadeira se um
+     * deles regredir amanhã. Não silencia: o incidente vira step VISÍVEL no StepTrace, no mesmo
+     * espírito anti-silêncio dos avisos de descarte.
+     */
+    private void semDerrubarOSettle(RunContext runContext, String gate, Runnable ato) {
+        try {
+            ato.run();
+        } catch (RuntimeException e) {
+            store.recordStep(runContext.runId(), "GATE_DE_SAIDA_FALHOU", gate + ": " + e);
+        }
+    }
+
+    /**
      * As CHECAGENS (texto) que o plano do agente deve satisfazer, resolvidas pela versão de molde PINADA
      * (Uso B / B-i, docs §2/§4.b): agente sem pin → vazio → o compositor omite a seção (gate = "tem
      * checks"; auto-escopa ao arquiteto sem hard-code). Hop inline como o drift-badge de
@@ -406,20 +428,26 @@ public class AdapterRunExecutor implements RunExecutor {
         // do set pelo canal de SAÍDA — mesmo espírito do ```proposta``` do CEO, só que sobre o texto
         // cru (sem outputSchema neste caminho). Só em SUCESSO (espelha entregarPropostasAoGate).
         if (pontaDoExecutor && result.succeeded()) {
-            skillRequestGate.handle(runContext.companyId(), runContext.agentId(), runContext.issueId(),
-                    runContext.runId(), replyCollector.text());
+            // O reply, colhido UMA vez: `replyCollector` é reatribuído no retry (:364), então não
+            // serve dentro de lambda — e os 4 consumidores abaixo liam exatamente o mesmo texto.
+            String reply = replyCollector.text();
+            semDerrubarOSettle(runContext, "skillRequestGate", () ->
+                    skillRequestGate.handle(runContext.companyId(), runContext.agentId(),
+                            runContext.issueId(), runContext.runId(), reply));
             // ADR-0047 (D-DSG-1): o bloco ```dirigir``` do GESTOR sai pelo MESMO canal de saída
             // (molde F-AT1) — zero canal vivo novo. O gate roteia pelo gestor_status do braço
             // (guard de subárvore no momento do ato); quem não é gestor tem os blocos descartados
             // com aviso visível.
-            dirigirGate.handle(runContext.companyId(), runContext.agentId(), runContext.runId(),
-                    replyCollector.text());
+            semDerrubarOSettle(runContext, "dirigirGate", () ->
+                    dirigirGate.handle(runContext.companyId(), runContext.agentId(),
+                            runContext.runId(), reply));
             // ADR-0048 (F-ORG-C): o bloco ```parecer``` do GESTOR sobre um ciclo de review ABERTO
             // no braço dele, pelo mesmo canal de saída. Roteia pelo gestor_status: ESTÁGIO grava
             // parecer consultivo ao lado do card do dono, PROMOVIDO decide o ciclo. Quem não é
             // gestor (ou mira fora da subárvore) tem os blocos descartados com aviso visível.
-            parecerGate.handle(runContext.companyId(), runContext.agentId(), runContext.runId(),
-                    replyCollector.text());
+            semDerrubarOSettle(runContext, "parecerGate", () ->
+                    parecerGate.handle(runContext.companyId(), runContext.agentId(),
+                            runContext.runId(), reply));
             // Uso B / B-ii (ADR-0044): o MESMO texto do plano vai ao validador local — 2º consumidor
             // do reply, como o gate de skill. O no-op é pulado AQUI porque o guard de no-op do
             // executor só vem mais abaixo, depois do settle-de-falha: sem este guard o validador
@@ -427,10 +455,13 @@ public class AdapterRunExecutor implements RunExecutor {
             // best-effort — o que acontecer lá dentro não volta para este caminho, que é o do
             // settle da Issue (§3.6).
             if (!result.noop()) {
-                planValidationGate.handle(
-                        new PlanValidationStore.Scope(runContext.companyId(), runContext.runId(),
-                                runContext.agentId(), runContext.issueId()),
-                        replyCollector.text(), resolveChecks(agent));
+                List<RoleTemplateService.Check> checks = resolveChecks(agent);
+                semDerrubarOSettle(runContext, "planValidationGate", () ->
+                        planValidationGate.handle(
+                                new PlanValidationStore.Scope(runContext.companyId(),
+                                        runContext.runId(), runContext.agentId(),
+                                        runContext.issueId()),
+                                reply, checks));
             }
         }
 

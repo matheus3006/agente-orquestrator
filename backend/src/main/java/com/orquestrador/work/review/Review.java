@@ -82,20 +82,15 @@ public class Review {
     }
 
     /**
-     * O PARECER consultivo do gestor em ESTÁGIO (ADR-0048, D-ORG-2): informação AO LADO do card,
-     * nunca decisão. Não toca {@code status}, {@code reviewerActorType} nem {@code decisionReason}
-     * — quem decide continua sendo quem chama {@link #approve}/{@link #reject}.
+     * O ciclo já tem parecer? LEITURA apenas — a cerca do primeiro-vence mora no UPDATE guardado
+     * {@code ReviewRepository.tryRegistrarParecer} ({@code and parecer is null}), não aqui.
      *
-     * <p>Um ciclo aceita UM parecer: {@link #temParecer()} é a cerca, e é ela que faz o settle
-     * reexecutado (zumbi do lease-reaper) não duplicar mesmo com a prosa reformulada pelo LLM.
+     * <p>Não existe setter de parecer nesta entidade DE PROPÓSITO (hardening do PR #50, achado
+     * 🔴 2): o que havia era um {@code registrarParecer(...)} escrevendo os 3 campos direto, e o
+     * service checava {@link #temParecer()} ANTES de chamá-lo — read-then-write puro, lost update
+     * sob concorrência real. Com a escrita só pelo UPDATE guardado, o caminho inseguro não existe
+     * mais para ser reintroduzido por engano.
      */
-    public void registrarParecer(UUID gestorAgentId, String parecer) {
-        this.parecer = parecer;
-        this.parecerPorAgentId = gestorAgentId;
-        this.parecerEm = Instant.now();
-    }
-
-    /** O ciclo já tem parecer? A cerca do primeiro-vence (dedupe estrutural, ADR-0048 §4). */
     public boolean temParecer() {
         return parecer != null;
     }

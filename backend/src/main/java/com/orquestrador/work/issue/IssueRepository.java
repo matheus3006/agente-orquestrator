@@ -207,6 +207,31 @@ public interface IssueRepository extends JpaRepository<Issue, UUID> {
             """, nativeQuery = true)
     int tryReopen(@Param("issueId") UUID issueId, @Param("companyId") UUID companyId);
 
+    /**
+     * REABRE uma entrega já APROVADA: {@code DONE -> BLOCKED} (ADR-0049, decisão do dono de
+     * 2026-07-20). O único UPDATE guardado da casa que aceita {@code DONE} como estado-ORIGEM —
+     * até aqui {@code DONE} só aparecia como alvo, o que fazia dele um SINK e tornava o APPROVE
+     * irreversível.
+     *
+     * <p>Por que {@code BLOCKED} e não {@code OPEN}: é exatamente onde um REJECT deixa a Issue, e
+     * dali o {@code unblock {REOPEN|CANCEL}} do §7 — que já existe, já é guardado e já é conhecido
+     * — dá ao dono a escolha entre refazer e encerrar. Reabrir CONVERGE para o caminho que já
+     * existe em vez de inventar um segundo jeito de estar "em revisão".
+     *
+     * <p>rows==0 → a Issue não estava DONE (409). Não mexe em {@code execution_lock_run_id}: quem
+     * chega a DONE pelo review gate já teve o lock liberado no {@code trySubmitForReview}.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            update issue
+               set status = 'BLOCKED',
+                   updated_at = now()
+             where id = :issueId
+               and company_id = :companyId
+               and status = 'DONE'
+            """, nativeQuery = true)
+    int tryReabrirAprovada(@Param("issueId") UUID issueId, @Param("companyId") UUID companyId);
+
     /** Destrava BLOCKED -> CANCELLED (encerra a Issue de vez). */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """

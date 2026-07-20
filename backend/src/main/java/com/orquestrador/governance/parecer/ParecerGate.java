@@ -1,5 +1,7 @@
 package com.orquestrador.governance.parecer;
 
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.HeartbeatRunStore;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -14,6 +16,7 @@ import com.orquestrador.work.review.ReviewStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -47,10 +50,12 @@ public class ParecerGate {
     private final ReviewRepository reviews;
     private final ChainOfCommandService chain;
     private final HeartbeatRunStore store;
+    private final HeartbeatRunRepository runs;
 
     public ParecerGate(ParecerScanner scanner, ParecerService pareceres, TeamRepository teams,
                        IssueRepository issues, AgentRepository agents, ReviewRepository reviews,
-                       ChainOfCommandService chain, HeartbeatRunStore store) {
+                       ChainOfCommandService chain, HeartbeatRunStore store,
+                       HeartbeatRunRepository runs) {
         this.scanner = scanner;
         this.pareceres = pareceres;
         this.teams = teams;
@@ -59,6 +64,7 @@ public class ParecerGate {
         this.reviews = reviews;
         this.chain = chain;
         this.store = store;
+        this.runs = runs;
     }
 
     public void handle(UUID companyId, UUID agentId, UUID runId, String reply) {
@@ -71,7 +77,26 @@ public class ParecerGate {
             avisos.add(scan.descartados() + " bloco(s) `parecer` malformado(s), sem o porquê"
                     + " (obrigatório) ou com decisão fora de APROVAR/REJEITAR");
         }
-        List<Team> bracos = teams.findByCompanyIdAndGestorAgentId(companyId, agentId);
+        // O fail-SOFT declarado em :33-35 agora vale de VERDADE, e não só para o que se pré-checa
+        // (hardening do PR #50). Exceção que escapasse daqui subiria até o AdapterRunExecutor, que
+        // chama runToOutcome ANTES de settleAfterRun ⇒ PULARIA o settle, deixando a issue
+        // IN_PROGRESS travada num execution_lock_run_id morto — e não existe reaper para essa
+        // coluna: impegável para sempre. O finally garante que os avisos já acumulados cheguem ao
+        // StepTrace em vez de sumirem junto com a exceção.
+        try {
+            avaliarPareceres(companyId, agentId, runId, scan, avisos);
+        } catch (RuntimeException e) {
+            avisos.add("gate de parecer interrompido: " + e);
+        } finally {
+            if (!avisos.isEmpty()) {
+                store.recordStep(runId, "PARECER_DISCARDED", String.join("; ", avisos));
+            }
+        }
+    }
+
+    private void avaliarPareceres(UUID companyId, UUID agentId, UUID runId,
+                                  ParecerScanner.Scan scan, List<String> avisos) {
+        List<Team> bracos = teams.findByCompanyIdAndGestorAgentIdOrderById(companyId, agentId);
         Set<ParecerScanner.Parecer> vistos = new HashSet<>();
         int aceitos = 0;
 
@@ -105,15 +130,28 @@ public class ParecerGate {
                 avisos.add("issue " + etiqueta + " não tem ciclo de review aberto — nada gravado");
                 continue;
             }
-            if (agentId.equals(issue.getAssigneeAgentId())) {
+            // Espelha a cerca do service: quem ENTREGOU é o agente do run que o CICLO aponta, não
+            // o assignee atual (hardening do PR #50) — mirar só no assignee viraria lavanderia se
+            // um dia existir reatribuição. O assignee segue checado ao lado, como cinto.
+            UUID entregador = runs.findById(ciclo.getRunId())
+                    .map(HeartbeatRun::getAgentId).orElse(null);
+            if (agentId.equals(issue.getAssigneeAgentId()) || agentId.equals(entregador)) {
                 avisos.add(etiqueta + " é entrega do PRÓPRIO gestor — ninguém se auto-revisa");
                 continue;
             }
-            UUID timeDoEntregador = issue.getAssigneeAgentId() == null ? null
-                    : agents.findById(issue.getAssigneeAgentId()).map(Agent::getTeamId).orElse(null);
+            UUID timeDoEntregador = entregador == null ? null
+                    : agents.findById(entregador).map(Agent::getTeamId).orElse(null);
+            // Multi-braço: vence o MENOS PRIVILEGIADO (hardening do PR #50). Um agente pode
+            // constar como gestor de um time PAI e de um DESCENDENTE, e gestor_status é POR TIME —
+            // as duas subárvores contêm o entregador. Com findFirst, se ele OPINAVA ou DECIDIA
+            // dependia da ordem das linhas: mesma entrada, dois níveis de autoridade. ESTÁGIO
+            // antes de PROMOVIDO (false < true), id como desempate: na dúvida o humano fica no
+            // laço, que é o lado barato de errar.
             Team braco = timeDoEntregador == null ? null : bracos.stream()
                     .filter(time -> chain.pertenceASubarvore(time.getId(), timeDoEntregador))
-                    .findFirst().orElse(null);
+                    .min(Comparator.<Team, Boolean>comparing(Team::gestorPromovido)
+                            .thenComparing(Team::getId))
+                    .orElse(null);
             if (braco == null) {
                 avisos.add("issue " + etiqueta + " está FORA do braço do gestor (D-ORG-3)"
                         + " — nada gravado");
@@ -123,15 +161,19 @@ public class ParecerGate {
             ParecerService.PedidoDeParecer pedido = new ParecerService.PedidoDeParecer(
                     issue.getId(), ciclo.getId(), braco.getId(), runId, parecer.decisao(),
                     parecer.texto());
-            if (braco.gestorPromovido()) {
-                pareceres.decidirReviewComoGestor(companyId, agentId, pedido);
-            } else if (!pareceres.registrarParecerDoGestor(companyId, agentId, pedido)) {
-                avisos.add(etiqueta + " já tinha parecer neste ciclo — mantido o primeiro");
+            // O TOCTOU dono×gestor mora AQUI: o dono pode decidir o ciclo entre a resolução acima e
+            // o ato lá dentro, e o service (fail-CLOSED, como deve ser) levanta. Do ponto de vista
+            // deste canal isso é RECUSA NORMAL — o gestor chegou tarde —, não falha do run: vira
+            // aviso contado e o lote SEGUE para os próximos pareceres.
+            try {
+                if (braco.gestorPromovido()) {
+                    pareceres.decidirReviewComoGestor(companyId, agentId, pedido);
+                } else if (!pareceres.registrarParecerDoGestor(companyId, agentId, pedido)) {
+                    avisos.add(etiqueta + " já tinha parecer neste ciclo — mantido o primeiro");
+                }
+            } catch (RuntimeException e) {
+                avisos.add(etiqueta + " recusado pelo service: " + e.getMessage());
             }
-        }
-
-        if (!avisos.isEmpty()) {
-            store.recordStep(runId, "PARECER_DISCARDED", String.join("; ", avisos));
         }
     }
 }

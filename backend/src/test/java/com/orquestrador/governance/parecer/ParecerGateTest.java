@@ -27,12 +27,20 @@ import com.orquestrador.work.review.ReviewStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -40,8 +48,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * GESTOR roteia pelo {@code gestor_status} do braço — ESTÁGIO grava parecer CONSULTIVO ao lado do
  * card (autoridade intacta, o dono decide), PROMOVIDO DECIDE o ciclo com
  * {@code reviewerActorType=AGENT}. Guard de braço (subárvore) nos dois ramos, revalidado
- * fail-closed dentro do service, e dedupe ESTRUTURAL do settle reexecutado — sem fingerprint,
- * porque o parecer é 1-para-1 com o ciclo.
+ * fail-closed dentro do service, e dedupe por identidade de LINHA (o parecer é 1-para-1 com o
+ * ciclo) — com CAS de BANCO nos dois ramos, não read-then-write: ver
+ * {@link #settlesCONCORRENTESNoMesmoCiclo_soUmParecerVence_eNinguemSobrescreve}.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -71,6 +80,8 @@ class ParecerGateTest {
     private HeartbeatRunRepository runs;
     @Autowired
     private HeartbeatRunEventRepository runEvents;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     /**
      * A mesma árvore do cenário-padrão do dirigir: Marketing (Ana gestora) ⊃ Social Media (Bruno,
@@ -298,6 +309,60 @@ class ParecerGateTest {
         assertAviso(c, "auto-revisa");
     }
 
+    // ---------- roteamento multi-braço: o menos privilegiado vence ----------
+
+    /**
+     * Gestor com DOIS braços aplicáveis (hardening do PR #50, achado 🟠). Nada no DADO impede um
+     * agente de constar como gestor de um time PAI e de um DESCENDENTE, e {@code gestor_status} é
+     * POR TIME: as duas subárvores contêm o entregador ⇒ com {@code .findFirst()} sobre uma query
+     * SEM {@code ORDER BY}, qual braço vencia — e portanto se o gestor apenas OPINA ou DECIDE —
+     * dependia da ordem arbitrária das linhas. Mesma entrada, dois níveis de autoridade.
+     *
+     * <p>Regra nova: vence o MENOS PRIVILEGIADO — se QUALQUER braço aplicável está em ESTÁGIO, o
+     * parecer é consultivo. Fail-safe: na dúvida, mantém o humano no laço.
+     *
+     * <p>O estado dos 2 braços é montado direto no banco DE PROPÓSITO. Pela porta de serviço ele
+     * hoje é INALCANÇÁVEL — {@code Agent.teamId} é único, {@code setGestor} exige que o gestor seja
+     * MEMBRO do time, e {@code assignAgent} revoga o posto no time que o agente deixa. A cerca é
+     * defesa em profundidade para o dia em que multi-time/reatribuição existirem; o que ela NÃO
+     * pode é ser descrita como se já estivesse protegendo contra um caminho vivo.
+     */
+    @Test
+    void gestorComDoisBracosAplicaveis_oMENOSPrivilegiadoVence_naoAOrdemDasLinhas() {
+        // Arranjo A: o braço PAI (linha inserida primeiro) é o PROMOVIDO; o descendente, ESTÁGIO.
+        Cenario a = cenario();
+        Team socialA = teams.findByParentTeamId(a.marketing().getId()).getFirst();
+        jdbc.update("update team set gestor_agent_id = ? where id = ?",
+                a.ana().getId(), socialA.getId());
+        promoveAna(a);
+
+        gate.handle(a.companyId(), a.ana().getId(), a.runDaAna(),
+                blocoParecer(a.issueDoBruno().getSeq(), "APROVAR", "vale um parecer"));
+
+        assertThat(recarrega(a).getStatus())
+                .as("ESTÁGIO em QUALQUER braço aplicável ⇒ consultivo, não decisão")
+                .isEqualTo(ReviewStatus.PENDING);
+        assertThat(recarrega(a).getParecer()).isEqualTo("APROVARIA — vale um parecer");
+        assertThat(issues.get(a.companyId(), a.issueDoBruno().getId()).getStatus())
+                .isEqualTo(IssueStatus.PENDING_REVIEW);
+
+        // Arranjo B: espelhado — o DESCENDENTE é o promovido e o pai fica em ESTÁGIO. A resposta
+        // tem que ser a MESMA; é isso que prova que não é a ordem das linhas que decide.
+        Cenario b = cenario();
+        Team socialB = teams.findByParentTeamId(b.marketing().getId()).getFirst();
+        jdbc.update("update team set gestor_agent_id = ? where id = ?",
+                b.ana().getId(), socialB.getId());
+        teamService.promoverGestor(b.companyId(), socialB.getId(), ActorType.BOARD, UUID.randomUUID());
+
+        gate.handle(b.companyId(), b.ana().getId(), b.runDaAna(),
+                blocoParecer(b.issueDoBruno().getSeq(), "APROVAR", "vale um parecer"));
+
+        assertThat(recarrega(b).getStatus()).isEqualTo(ReviewStatus.PENDING);
+        assertThat(recarrega(b).getParecer()).isEqualTo("APROVARIA — vale um parecer");
+        assertThat(issues.get(b.companyId(), b.issueDoBruno().getId()).getStatus())
+                .isEqualTo(IssueStatus.PENDING_REVIEW);
+    }
+
     // ---------- bypass: chamador direto, pulando o gate ----------
 
     @Test
@@ -358,6 +423,66 @@ class ParecerGateTest {
         assertThat(reviews.findById(cicloDoCaio.getId()).orElseThrow().getParecer()).isNull();
     }
 
+    /**
+     * A cerca de auto-review era a ÚNICA das 5 sem teste de chamador direto ao service — justo a
+     * que a fatia anterior reivindicou como descoberta própria (hardening do PR #50, achado 🟠).
+     * O teste que havia (`gestorAssignadoNaPropriaIssue_naoSeAutoRevisa`) passa pelo gate, que
+     * pré-checa e nem chega no service: não prova nada sobre quem chama o service direto.
+     */
+    @Test
+    void chamadorDiretoSobreAPropriaEntrega_oProprioServiceRecusa() {
+        Cenario c = cenario();
+        promoveAna(c);
+        Issue daPropriaAna = emRevisao(c.companyId(), c.ana().getId(), "estratégia do braço");
+        Review cicloDaAna = reviews.findByCompanyIdAndIssueIdAndStatus(c.companyId(),
+                daPropriaAna.getId(), ReviewStatus.PENDING).orElseThrow();
+
+        assertThatThrownBy(() -> parecerService.decidirReviewComoGestor(c.companyId(),
+                c.ana().getId(), new ParecerService.PedidoDeParecer(daPropriaAna.getId(),
+                        cicloDaAna.getId(), c.marketing().getId(), c.runDaAna(),
+                        ReviewDecision.APPROVE, "meu trabalho ficou ótimo")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("auto-revisa");
+        assertThat(reviews.findById(cicloDaAna.getId()).orElseThrow().getStatus())
+                .isEqualTo(ReviewStatus.PENDING);
+        assertThat(issues.get(c.companyId(), daPropriaAna.getId()).getStatus())
+                .isEqualTo(IssueStatus.PENDING_REVIEW);
+    }
+
+    /**
+     * A LAVANDERIA (hardening do PR #50, achado 🟠): a cerca mirava no {@code assignee} ATUAL, não
+     * em QUEM PRODUZIU o artefato sob revisão (o agente do run que o ciclo aponta). Os dois
+     * coincidem hoje — mas por invariante que NENHUM update guardado afirma. Com um endpoint de
+     * reatribuição, o gestor entrega, reatribui a um subordinado e aprova a própria entrega: a
+     * cerca vê "assignee = Bruno ≠ Ana" e libera.
+     *
+     * <p>O estado {@code assignee ≠ entregador} é construído direto no banco DE PROPÓSITO — é
+     * exatamente o que esse endpoint produziria, e uma cerca tem de valer contra o ESTADO, não
+     * contra a sorte de ninguém ainda o produzir.
+     */
+    @Test
+    void gestorAprovandoAPropriaEntregaJaREATRIBUIDA_recusadoPorQuemENTREGOU() {
+        Cenario c = cenario();
+        promoveAna(c);
+        Issue entregaDaAna = emRevisao(c.companyId(), c.ana().getId(), "peça da própria Ana");
+        Review ciclo = reviews.findByCompanyIdAndIssueIdAndStatus(c.companyId(),
+                entregaDaAna.getId(), ReviewStatus.PENDING).orElseThrow();
+        // O endpoint futuro de reatribuição, simulado: o assignee deixa de ser quem produziu.
+        jdbc.update("update issue set assignee_agent_id = ? where id = ?",
+                c.bruno().getId(), entregaDaAna.getId());
+
+        assertThatThrownBy(() -> parecerService.decidirReviewComoGestor(c.companyId(),
+                c.ana().getId(), new ParecerService.PedidoDeParecer(entregaDaAna.getId(),
+                        ciclo.getId(), c.marketing().getId(), c.runDaAna(),
+                        ReviewDecision.APPROVE, "aprovo a minha própria")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ENTREGOU");
+        assertThat(reviews.findById(ciclo.getId()).orElseThrow().getStatus())
+                .isEqualTo(ReviewStatus.PENDING);
+        assertThat(issues.get(c.companyId(), entregaDaAna.getId()).getStatus())
+                .isEqualTo(IssueStatus.PENDING_REVIEW);
+    }
+
     @Test
     void chamadorDiretoComAncoraDeOutroCiclo_oProprioServiceRecusa() {
         Cenario c = cenario();
@@ -390,6 +515,62 @@ class ParecerGateTest {
         assertAviso(c, "já tinha parecer");
     }
 
+    /**
+     * O lost update do ramo ESTÁGIO (hardening do PR #50, achado 🔴 2). O teste vizinho
+     * ({@link #mesmoRunReexecutadoComProsaReformulada_naoDuplicaNemSobrescreveOParecer}) chama o
+     * gate 2× EM SEQUÊNCIA na mesma thread: prova o zumbi SEQUENCIAL, e passava mesmo com o
+     * read-then-write puro — foi essa falsa confiança que a conferência pegou. O split-brain do
+     * lease-reaper é o zumbi CONCORRENTE: duas transações leem {@code parecer IS NULL} antes de
+     * qualquer commit, a segunda espera o row lock e SOBRESCREVE em silêncio, devolvendo
+     * {@code true} sem o aviso "já tinha parecer".
+     *
+     * <p>A cerca passou a ser do BANCO ({@code and parecer is null} no UPDATE guardado): quem
+     * arbitra a corrida é o {@code rows affected}, não a aplicação. Exatamente UM chamador escreve;
+     * os outros recebem {@code false}, que o gate transforma em aviso contado.
+     */
+    @Test
+    void settlesCONCORRENTESNoMesmoCiclo_soUmParecerVence_eNinguemSobrescreve() throws Exception {
+        Cenario c = cenario();
+        int concorrentes = 6;
+        CyclicBarrier largada = new CyclicBarrier(concorrentes);
+        ExecutorService pool = Executors.newFixedThreadPool(concorrentes);
+
+        List<Future<String>> pendentes = new ArrayList<>();
+        for (int i = 0; i < concorrentes; i++) {
+            String texto = "redacao " + i;
+            pendentes.add(pool.submit(() -> {
+                largada.await(10, TimeUnit.SECONDS); // todos largam juntos: sobreposição real
+                try {
+                    boolean gravou = parecerService.registrarParecerDoGestor(c.companyId(),
+                            c.ana().getId(), new ParecerService.PedidoDeParecer(
+                                    c.issueDoBruno().getId(), c.ciclo().getId(),
+                                    c.marketing().getId(), c.runDaAna(), ReviewDecision.APPROVE,
+                                    texto));
+                    return gravou ? "VENCEU:" + texto : "PERDEU";
+                } catch (RuntimeException e) {
+                    return "EXPLODIU:" + e;
+                }
+            }));
+        }
+        pool.shutdown();
+        assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+
+        List<String> saidas = new ArrayList<>();
+        for (Future<String> pendente : pendentes) {
+            saidas.add(pendente.get());
+        }
+
+        // Perder a corrida é resultado NORMAL (false), nunca exceção: o gate conta como aviso.
+        assertThat(saidas).filteredOn(saida -> saida.startsWith("EXPLODIU")).isEmpty();
+        List<String> vencedores = saidas.stream().filter(saida -> saida.startsWith("VENCEU:")).toList();
+        assertThat(vencedores)
+                .as("o banco arbitra a corrida: exatamente UM parecer entra")
+                .hasSize(1);
+        // O que ficou gravado é o do VENCEDOR — não o de quem chegou por último sobrescrevendo.
+        String textoVencedor = vencedores.get(0).substring("VENCEU:".length());
+        assertThat(recarrega(c).getParecer()).isEqualTo("APROVARIA — " + textoVencedor);
+    }
+
     @Test
     void ramoPromovidoReexecutado_naoDecideDuasVezes() {
         Cenario c = cenario();
@@ -405,6 +586,39 @@ class ParecerGateTest {
         assertThat(issues.get(c.companyId(), c.issueDoBruno().getId()).getStatus())
                 .isEqualTo(IssueStatus.DONE);
         assertAviso(c, "não tem ciclo de review aberto");
+    }
+
+    // ---------- fail-SOFT de verdade: nada escapa do gate ----------
+
+    /**
+     * O TOCTOU dono×gestor (hardening do PR #50, achado 🟠). Se o dono decide o ciclo ENTRE a
+     * resolução do gate e a chamada do service, o service levanta — e ninguém pegava: o gate não
+     * tinha try/catch nem é {@code @Transactional}, o {@code AdapterRunExecutor} idem, e o
+     * {@code execute} chama {@code runToOutcome} ANTES do {@code settleAfterRun} ⇒ a exceção
+     * PULAVA o settle. A issue ficava {@code IN_PROGRESS} com {@code execution_lock_run_id} de um
+     * run morto, {@code tryCheckout} exige essa coluna null-ou-igual e não existe reaper para ela:
+     * impegável PARA SEMPRE. E contradizia o fail-SOFT que o próprio gate declara.
+     *
+     * <p>Aqui o estado que a corrida DEIXA é construído direto (issue fora de
+     * {@code PENDING_REVIEW} com o ciclo PENDING para trás) em vez de perseguir a janela de tempo:
+     * é o mesmo caminho de código, sem teste dependente de timing. O bloco malformado vem ANTES de
+     * propósito — prova que os avisos já acumulados chegam ao StepTrace em vez de se perderem
+     * junto com a exceção.
+     */
+    @Test
+    void servicoLevantandoNoMeioDoLote_naoEscapaDoGate_eOsAvisosAcumuladosSOBREVIVEM() {
+        Cenario c = cenario();
+        promoveAna(c);
+        jdbc.update("update issue set status = 'DONE' where id = ?", c.issueDoBruno().getId());
+
+        assertThatCode(() -> gate.handle(c.companyId(), c.ana().getId(), c.runDaAna(),
+                "```parecer\n{\"issue\": 4242}\n```\n"
+                        + blocoParecer(c.issueDoBruno().getSeq(), "APROVAR", "o dono decidiu antes")))
+                .as("fail-SOFT: um ciclo que virou no meio do caminho não derruba o run do gestor")
+                .doesNotThrowAnyException();
+
+        assertAviso(c, "malformado");
+        assertAviso(c, "recusado");
     }
 
     // ---------- higiene do canal: cap, eco, malformado ----------
