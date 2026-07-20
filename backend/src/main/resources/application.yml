@@ -1,6 +1,19 @@
 spring:
   application:
     name: agente-orquestrator
+  task:
+    scheduling:
+      # ADR-0050 — EXPLÍCITO de propósito, e mantido em 1. O defeito que esta fatia veio consertar
+      # não era o valor: era ele valer por OMISSÃO (o default do Boot é 1, e ninguém sabia que os 6
+      # @Scheduled dividiam `scheduling-1`). Subir para N seria falso conserto — só adiaria a
+      # exaustão. O que tira o motor de risco é (a) todo exec() ter prazo e (b) o run do agente sair
+      # desta pool pelo DispatchWorker; com os dois, a ocupação máxima desta thread por tarefa
+      # passou a ser limitada. Revisitar só quando houver MEDIÇÃO de starvation (o candidato é o
+      # lease-reaper de 5s atrás de uma varredura de workspace longa) — e antes disso é preciso
+      # verificar que os 5 @Scheduled restantes são seguros de rodar concorrentemente entre si,
+      # coisa que hoje nunca aconteceu.
+      pool:
+        size: 1
   autoconfigure:
     exclude:
       # F-SAI1 não usa continuidade nem tools do Spring AI. A continuidade segue nos adapters
@@ -50,6 +63,18 @@ management:
 # (medido pós-run pelos CostEvents), o turno destila um bilhete e uma continuação FRESCA retoma,
 # em vez de --resume bruto (a regra de ouro da ADR-0015, agora automatizada).
 orquestrador:
+  # ADR-0050 — PRAZO de todo subprocesso do motor, por natureza de chamada. O racional de cada
+  # default está no javadoc de PrazosDeExecucao (é lá que ele fica junto do código que o usa).
+  # Resumo: 30s = plano de controle do daemon · 5min = operação de workspace (sobe container +
+  # move tar) · 30s = screenshot (o único prazo que já existia, agora valendo para o gêmeo Docker
+  # também) · 2h = teto DURO do run do agente, generoso de propósito (falso positivo aqui mata
+  # trabalho bom, que é pior que a falha original).
+  execution:
+    timeout:
+      comando-curto: 30s
+      workspace: 5m
+      screenshot: 30s
+      run: 2h
   handoff:
     context-threshold-percent: 55
   context:

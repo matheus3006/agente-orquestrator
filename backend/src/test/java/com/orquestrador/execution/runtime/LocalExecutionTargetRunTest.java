@@ -46,6 +46,59 @@ class LocalExecutionTargetRunTest {
     }
 
     /**
+     * ADR-0050: o run que NUNCA termina estoura o prazo em vez de segurar a thread para sempre.
+     *
+     * <p>Sem isto o {@code sleep 3600} bloqueia o chamador indefinidamente — e NAO no
+     * {@code waitFor}: o drain de stdout ({@code readLine}) e que nunca ve EOF, entao o
+     * {@code waitFor} sequer e alcancado. Medido antes de escrever o conserto; e a razao de o
+     * prazo ter de cercar a OPERACAO INTEIRA, nao so a espera final.
+     */
+    @Test
+    void runQueNuncaTerminaEstouraOPrazoEmVezDeSegurarAThreadParaSempre() {
+        LocalExecutionTarget target = new LocalExecutionTarget(
+                PrazosDeExecucao.comPrazos(Duration.ofSeconds(30), Duration.ofSeconds(30),
+                        Duration.ofSeconds(30), Duration.ofMillis(500)));
+        ExecutionTarget.Spec spec = new ExecutionTarget.Spec(
+                workDir, List.of("sh", "-c", "sleep 3600"), Map.of(), null, null, List.of());
+
+        ExecutionTarget.Result result = assertTimeoutPreemptively(Duration.ofSeconds(10),
+                () -> target.run(spec, UUID.randomUUID(), line -> { }));
+
+        assertThat(result.exitCode()).as("run morto por prazo nao pode passar por saida limpa").isNotZero();
+        assertThat(result.error()).contains("prazo");
+    }
+
+    /**
+     * ADR-0050: o estouro de prazo ESCALA a derrubada — nao basta matar o processo do host.
+     *
+     * <p>Um {@code destroyForcibly} so-no-pai deixaria o filho da tool call vivo e orfao (o
+     * requisito duro da sonda R6-B, ja provado para o interrupt manual). Um prazo que devolve a
+     * thread mas deixa o trabalho rodando trocaria uma trava visivel por um vazamento invisivel.
+     */
+    @Test
+    void estouroDePrazoMataTambemODescendenteDaTool() throws Exception {
+        LocalExecutionTarget target = new LocalExecutionTarget(
+                PrazosDeExecucao.comPrazos(Duration.ofSeconds(30), Duration.ofSeconds(30),
+                        Duration.ofSeconds(30), Duration.ofSeconds(1)));
+        Path pidFile = workDir.resolve("childpid");
+        ExecutionTarget.Spec spec = new ExecutionTarget.Spec(workDir,
+                List.of("sh", "-c", "cat /dev/zero > /dev/null & echo $! > childpid; wait"),
+                Map.of(), null, null, List.of());
+
+        CompletableFuture<ExecutionTarget.Result> execucao = CompletableFuture.supplyAsync(
+                () -> target.run(spec, UUID.randomUUID(), line -> { }));
+
+        long childPid = aguardarPid(pidFile, Duration.ofSeconds(5));
+        ExecutionTarget.Result resultado = execucao.get(15, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertThat(resultado.error()).contains("prazo");
+        aguardarMorte(childPid, Duration.ofSeconds(5));
+        assertThat(ProcessHandle.of(childPid).map(ProcessHandle::isAlive).orElse(false))
+                .as("o filho da tool nao pode sobreviver orfao ao estouro de prazo")
+                .isFalse();
+    }
+
+    /**
      * F-N4 (ADR-0040, D4): a integracao real run()->registro->interrupt()->kill, ponta a ponta
      * no alvo LOCAL. O filho (cat lendo /dev/zero, o "tool call" demorado da sonda R6-B) roda
      * dentro do `sh -c` que o run() de fato inicia — matar por runId tem que alcancar os dois.

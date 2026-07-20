@@ -27,6 +27,19 @@ public class DockerExecutionTarget implements ExecutionTarget {
 
     private static final Logger log = LoggerFactory.getLogger(DockerExecutionTarget.class);
 
+    private final PrazosDeExecucao prazos;
+
+    /** {@code @Autowired} OBRIGATÓRIO — ver o gêmeo em {@code LocalExecutionTarget}. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public DockerExecutionTarget(PrazosDeExecucao prazos) {
+        this.prazos = prazos;
+    }
+
+    /** Construção na mão (fixtures) — os prazos de PRODUÇÃO, nunca "sem prazo". */
+    DockerExecutionTarget() {
+        this(PrazosDeExecucao.PADRAO);
+    }
+
     @Override
     public Type type() {
         return Type.DOCKER;
@@ -154,26 +167,48 @@ public class DockerExecutionTarget implements ExecutionTarget {
                     buildWriteArgs(spec, relativePaths, !materialized.isEmpty()));
             writerContainer.redirectErrorStream(true);
             Process writer = writerContainer.start();
-            if (!materialized.isEmpty()) {
-                Process tarProcess = hostTar(spec.workDir(), materialized).start();
-                try (InputStream payload = tarProcess.getInputStream();
-                     OutputStream containerStdin = writer.getOutputStream()) {
-                    payload.transferTo(containerStdin);
-                }
-                String tarError = new String(tarProcess.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-                if (tarProcess.waitFor() != 0) {
-                    writer.destroyForcibly();
-                    return WorkspaceFilesWrite.failure(
-                            "tar da arvore materializada falhou: " + tarError.trim());
-                }
+            // ADR-0050: DOIS processos no mesmo prazo — o container escritor e o tar do host, ligados
+            // por um pipe. Qualquer um dos dois pendurado trava os dois, entao o prazo cerca o par e
+            // a escalacao derruba o tar (o outro lado do pipe) antes do golpe no escritor.
+            java.util.concurrent.atomic.AtomicReference<Process> tarDoHost =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            ProcessoComPrazo.Resultado<WorkspaceFilesWrite> escrita = ProcessoComPrazo.aguardar(
+                    "escrita de workspace", writer, prazos.getWorkspace(),
+                    () -> {
+                        if (!materialized.isEmpty()) {
+                            Process tarProcess = hostTar(spec.workDir(), materialized).start();
+                            tarDoHost.set(tarProcess);
+                            try (InputStream payload = tarProcess.getInputStream();
+                                 OutputStream containerStdin = writer.getOutputStream()) {
+                                payload.transferTo(containerStdin);
+                            }
+                            String tarError = new String(
+                                    tarProcess.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                            if (tarProcess.waitFor() != 0) {
+                                writer.destroyForcibly();
+                                return WorkspaceFilesWrite.failure(
+                                        "tar da arvore materializada falhou: " + tarError.trim());
+                            }
+                        }
+                        String output = new String(
+                                writer.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                        int exitCode = writer.waitFor();
+                        if (exitCode != 0) {
+                            return WorkspaceFilesWrite.failure(
+                                    "escritor docker falhou (exit " + exitCode + "): " + output.trim());
+                        }
+                        return WorkspaceFilesWrite.OK;
+                    },
+                    () -> {
+                        Process tarProcess = tarDoHost.get();
+                        if (tarProcess != null) {
+                            tarProcess.destroyForcibly();
+                        }
+                    });
+            if (escrita.estourou()) {
+                return WorkspaceFilesWrite.failure("escritor docker: " + escrita.motivo());
             }
-            String output = new String(writer.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            int exitCode = writer.waitFor();
-            if (exitCode != 0) {
-                return WorkspaceFilesWrite.failure(
-                        "escritor docker falhou (exit " + exitCode + "): " + output.trim());
-            }
-            return WorkspaceFilesWrite.OK;
+            return escrita.colhido();
         } catch (Exception exception) {
             return WorkspaceFilesWrite.failure("escritor docker falhou: " + exception.getMessage());
         }
@@ -189,22 +224,31 @@ public class DockerExecutionTarget implements ExecutionTarget {
     public WorkspaceFileRead readWorkspaceFile(Spec spec, String relativePath, long maxBytes) {
         try {
             Process reader = new ProcessBuilder(buildReadArgs(spec, relativePath)).start();
-            byte[] bytes = readUpTo(reader.getInputStream(), maxBytes);
-            if (bytes == null) {
-                reader.destroyForcibly();
-                return WorkspaceFileRead.capExceeded(
-                        "arquivo excede o cap de " + maxBytes + " bytes — nunca truncado");
+            ProcessoComPrazo.Resultado<WorkspaceFileRead> leitura = ProcessoComPrazo.aguardar(
+                    "leitura de workspace", reader, prazos.getWorkspace(),
+                    () -> {
+                        byte[] bytes = readUpTo(reader.getInputStream(), maxBytes);
+                        if (bytes == null) {
+                            reader.destroyForcibly();
+                            return WorkspaceFileRead.capExceeded(
+                                    "arquivo excede o cap de " + maxBytes + " bytes — nunca truncado");
+                        }
+                        String stderr = new String(
+                                reader.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                        int exitCode = reader.waitFor();
+                        if (exitCode == 0) {
+                            return WorkspaceFileRead.found(bytes);
+                        }
+                        if (stderr.contains("No such file or directory")) {
+                            return WorkspaceFileRead.ABSENT;
+                        }
+                        return WorkspaceFileRead.failure(
+                                "leitor docker falhou (exit " + exitCode + "): " + stderr.trim());
+                    });
+            if (leitura.estourou()) {
+                return WorkspaceFileRead.failure("leitor docker: " + leitura.motivo());
             }
-            String stderr = new String(reader.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-            int exitCode = reader.waitFor();
-            if (exitCode == 0) {
-                return WorkspaceFileRead.found(bytes);
-            }
-            if (stderr.contains("No such file or directory")) {
-                return WorkspaceFileRead.ABSENT;
-            }
-            return WorkspaceFileRead.failure(
-                    "leitor docker falhou (exit " + exitCode + "): " + stderr.trim());
+            return leitura.colhido();
         } catch (Exception exception) {
             return WorkspaceFileRead.failure("leitor docker falhou: " + exception.getMessage());
         }
@@ -220,21 +264,31 @@ public class DockerExecutionTarget implements ExecutionTarget {
     public WorkspaceDirListing listWorkspaceDir(Spec spec, String relativeDir) {
         try {
             Process listador = new ProcessBuilder(buildListArgs(spec, relativeDir)).start();
-            String stdout = new String(listador.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            String stderr = new String(listador.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-            int exitCode = listador.waitFor();
-            if (exitCode != 0) {
-                if (stderr.contains("No such file or directory")) {
-                    return WorkspaceDirListing.of(List.of());
-                }
-                return WorkspaceDirListing.failure(
-                        "listador docker falhou (exit " + exitCode + "): " + stderr.trim());
+            ProcessoComPrazo.Resultado<WorkspaceDirListing> listagem = ProcessoComPrazo.aguardar(
+                    "listagem de workspace", listador, prazos.getWorkspace(),
+                    () -> {
+                        String stdout = new String(
+                                listador.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                        String stderr = new String(
+                                listador.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                        int exitCode = listador.waitFor();
+                        if (exitCode != 0) {
+                            if (stderr.contains("No such file or directory")) {
+                                return WorkspaceDirListing.of(List.of());
+                            }
+                            return WorkspaceDirListing.failure(
+                                    "listador docker falhou (exit " + exitCode + "): " + stderr.trim());
+                        }
+                        return WorkspaceDirListing.of(stdout.lines()
+                                .filter(linha -> !linha.isBlank())
+                                .map(linha -> linha.substring(linha.lastIndexOf('/') + 1))
+                                .sorted()
+                                .toList());
+                    });
+            if (listagem.estourou()) {
+                return WorkspaceDirListing.failure("listador docker: " + listagem.motivo());
             }
-            return WorkspaceDirListing.of(stdout.lines()
-                    .filter(linha -> !linha.isBlank())
-                    .map(linha -> linha.substring(linha.lastIndexOf('/') + 1))
-                    .sorted()
-                    .toList());
+            return listagem.colhido();
         } catch (Exception exception) {
             return WorkspaceDirListing.failure("listador docker falhou: " + exception.getMessage());
         }
@@ -446,15 +500,26 @@ public class DockerExecutionTarget implements ExecutionTarget {
                 }
             });
             drain.start();
-            byte[] png = readUpTo(shot.getInputStream(), spec.maxBytes());
-            if (png == null) {
-                shot.destroyForcibly();
-                return ThumbnailCapture.capExceeded(
-                        "PNG excede o cap de " + spec.maxBytes() + " bytes — nunca truncado");
+            // ADR-0050: o gemeo LOCAL desta MESMA operacao ja tinha prazo de 30s + destroyForcibly;
+            // este nao tinha, e era o unico par assimetrico da casa. Agora os dois leem o mesmo
+            // {@code prazos.getScreenshot()}, entao a simetria e por CONSTRUCAO, nao por disciplina.
+            ProcessoComPrazo.Resultado<ThumbnailCapture> captura = ProcessoComPrazo.aguardar(
+                    "screenshot docker", shot, prazos.getScreenshot(),
+                    () -> {
+                        byte[] png = readUpTo(shot.getInputStream(), spec.maxBytes());
+                        if (png == null) {
+                            shot.destroyForcibly();
+                            return ThumbnailCapture.capExceeded(
+                                    "PNG excede o cap de " + spec.maxBytes() + " bytes — nunca truncado");
+                        }
+                        int exitCode = shot.waitFor();
+                        drain.join(1000);
+                        return ThumbnailCapture.classify(exitCode, png, stderr.toString(), false);
+                    });
+            if (captura.estourou()) {
+                return ThumbnailCapture.renderFailed("shot docker: " + captura.motivo());
             }
-            int exitCode = shot.waitFor();
-            drain.join(1000);
-            return ThumbnailCapture.classify(exitCode, png, stderr.toString(), false);
+            return captura.colhido();
         } catch (Exception exception) {
             return ThumbnailCapture.renderFailed("shot docker falhou: " + exception.getMessage());
         }
@@ -545,17 +610,35 @@ public class DockerExecutionTarget implements ExecutionTarget {
         return create;
     }
 
-    private record Executed(int exitCode, String output) {
+    /** Visibilidade de PACOTE junto com o {@link #exec} que o produz — ver o javadoc de lá. */
+    record Executed(int exitCode, String output) {
     }
 
-    /** Roda um argv curto capturando saida combinada (stdout+stderr) — o transporte dos comandos acima. */
-    private Executed exec(List<String> argv) {
+    /**
+     * Roda um argv curto capturando saida combinada (stdout+stderr) — o transporte dos comandos
+     * acima, todos no plano de CONTROLE do daemon. Com o daemon travado eles nunca voltavam e
+     * penduravam a thread do chamador; agora o prazo curto (ADR-0050) os limita e o estouro vira
+     * {@code exit -1} com motivo legivel — a MESMA forma de falha que uma excecao ja produzia, entao
+     * nenhum chamador precisa aprender caso novo.
+     *
+     * <p>Sem escalacao: estes comandos nao deixam trabalho para tras alem do proprio cliente.
+     *
+     * <p>Visibilidade de PACOTE de proposito (molde do {@code WorkspaceReaper.sweepTarget}): o prazo
+     * so se prova com um argv que PENDURA, e nenhum comando de daemon pendura sob demanda.
+     */
+    Executed exec(List<String> argv) {
         try {
             ProcessBuilder builder = new ProcessBuilder(argv);
             builder.redirectErrorStream(true);
             Process process = builder.start();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            return new Executed(process.waitFor(), output);
+            ProcessoComPrazo.Resultado<Executed> comando = ProcessoComPrazo.aguardar(
+                    "comando docker", process, prazos.getComandoCurto(),
+                    () -> {
+                        String output = new String(
+                                process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                        return new Executed(process.waitFor(), output);
+                    });
+            return comando.estourou() ? new Executed(-1, comando.motivo()) : comando.colhido();
         } catch (Exception exception) {
             return new Executed(-1, String.valueOf(exception.getMessage()));
         }
@@ -567,14 +650,28 @@ public class DockerExecutionTarget implements ExecutionTarget {
             ProcessBuilder dockerProcess = new ProcessBuilder(buildArgs(spec, runId));
             dockerProcess.redirectErrorStream(true);
             Process process = dockerProcess.start();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    onStdoutLine.accept(line);
-                }
+            // ADR-0050: o prazo cerca drain + espera (o drain e que pendura), e a derrubada ESCALA
+            // para o container pelo NOME. Matar so o cliente `docker run` nao alcancaria o
+            // container — ele nao repassa sinal (o mesmo motivo de o interrupt da ADR-0040
+            // endereçar por nome). Sem a escalacao, o prazo devolveria a thread e deixaria o
+            // agente rodando invisivel, queimando tokens sob um run ja marcado como falho.
+            ProcessoComPrazo.Resultado<Integer> execucao = ProcessoComPrazo.aguardar(
+                    "run do agente", process, prazos.getRun(),
+                    () -> {
+                        try (BufferedReader reader = new BufferedReader(
+                                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                onStdoutLine.accept(line);
+                            }
+                        }
+                        return process.waitFor();
+                    },
+                    () -> interrupt(runId));
+            if (execucao.estourou()) {
+                return new Result(-1, execucao.motivo());
             }
-            return new Result(process.waitFor(), null);
+            return new Result(execucao.colhido(), null);
         } catch (Exception exception) {
             return new Result(-1, exception.getMessage());
         }
