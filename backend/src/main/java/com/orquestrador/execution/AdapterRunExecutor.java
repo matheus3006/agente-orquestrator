@@ -15,6 +15,7 @@ import com.orquestrador.execution.runtime.WorkspaceResolver;
 import com.orquestrador.governance.approval.DirigirGate;
 import com.orquestrador.governance.approval.SkillRequestGate;
 import com.orquestrador.governance.budget.BudgetService;
+import com.orquestrador.governance.parecer.ParecerGate;
 import com.orquestrador.handoff.ContextHandoffLoop;
 import com.orquestrador.handoff.DistillationSkill;
 import com.orquestrador.memory.MemoryAudience;
@@ -78,6 +79,7 @@ public class AdapterRunExecutor implements RunExecutor {
     private final ContextHandoffLoop handoffLoop;
     private final SkillRequestGate skillRequestGate;
     private final DirigirGate dirigirGate;
+    private final ParecerGate parecerGate;
     private final KnowAllMcpMaterializer mcpMaterializer;
     private final KnowAllMcpBridge mcpBridge;
     private final McpCallbackAddress mcpAddress;
@@ -93,7 +95,7 @@ public class AdapterRunExecutor implements RunExecutor {
                               PreviewArtifactCapturer previews, PreviewServerManifestRegistrar serverManifests,
                               PreviewServerSupervisor previewServers, DistillationSkill distillationSkill,
                               ContextHandoffLoop handoffLoop, SkillRequestGate skillRequestGate,
-                              DirigirGate dirigirGate,
+                              DirigirGate dirigirGate, ParecerGate parecerGate,
                               KnowAllMcpMaterializer mcpMaterializer, KnowAllMcpBridge mcpBridge,
                               McpCallbackAddress mcpAddress, IssuePromptComposer issueComposer,
                               RoleTemplateService roleTemplates, PlanValidationGate planValidationGate) {
@@ -116,6 +118,7 @@ public class AdapterRunExecutor implements RunExecutor {
         this.handoffLoop = handoffLoop;
         this.skillRequestGate = skillRequestGate;
         this.dirigirGate = dirigirGate;
+        this.parecerGate = parecerGate;
         this.mcpMaterializer = mcpMaterializer;
         this.mcpBridge = mcpBridge;
         this.mcpAddress = mcpAddress;
@@ -410,6 +413,12 @@ public class AdapterRunExecutor implements RunExecutor {
             // (guard de subárvore no momento do ato); quem não é gestor tem os blocos descartados
             // com aviso visível.
             dirigirGate.handle(runContext.companyId(), runContext.agentId(), runContext.runId(),
+                    replyCollector.text());
+            // ADR-0048 (F-ORG-C): o bloco ```parecer``` do GESTOR sobre um ciclo de review ABERTO
+            // no braço dele, pelo mesmo canal de saída. Roteia pelo gestor_status: ESTÁGIO grava
+            // parecer consultivo ao lado do card do dono, PROMOVIDO decide o ciclo. Quem não é
+            // gestor (ou mira fora da subárvore) tem os blocos descartados com aviso visível.
+            parecerGate.handle(runContext.companyId(), runContext.agentId(), runContext.runId(),
                     replyCollector.text());
             // Uso B / B-ii (ADR-0044): o MESMO texto do plano vai ao validador local — 2º consumidor
             // do reply, como o gate de skill. O no-op é pulado AQUI porque o guard de no-op do

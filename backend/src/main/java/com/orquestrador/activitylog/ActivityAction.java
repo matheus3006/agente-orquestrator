@@ -74,5 +74,13 @@ public enum ActivityAction {
     // {approvalId, targetAgentId, targetTeamId, bracoTeamId, runId} — o texto (racional) vive na
     // Approval nasce-decidida, nunca aqui. O ramo ESTÁGIO (lote no gate) NÃO emite este evento:
     // passou pelo gate como qualquer outra (APPROVAL_APPROVED cobre).
-    ISSUE_DIRECIONADA_SEM_GATE
+    ISSUE_DIRECIONADA_SEM_GATE,
+    // O parecer CONSULTIVO do gestor em ESTAGIO (F-ORG-C/ADR-0048, D-ORG-1/2): o bloco `parecer`
+    // na saida do run gravou a posicao dele no ciclo de review, AO LADO do card do dono — que
+    // continua decidindo. Ator = AGENT (o gestor); entityType="issue"/entityId=issue em revisao;
+    // detail so-IDs (ADR-0009): {reviewId, bracoTeamId, runId} — o texto do parecer vive na tabela
+    // review (mesma regra do decision_reason), nunca aqui.
+    // O ramo PROMOVIDO NAO emite este evento: la o gestor DECIDE, e o rastro e o
+    // REVIEW_APPROVED/REVIEW_REJECTED ja existente, com ator AGENT em vez de BOARD.
+    REVIEW_PARECER_REGISTRADO
 }

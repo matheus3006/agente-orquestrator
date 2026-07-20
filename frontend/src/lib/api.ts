@@ -774,6 +774,11 @@ export interface ReviewSummary {
   racionalTipo: string | null;
   /** A pergunta NÃO-bloqueante do approve, nas palavras da POLÍTICA (a UI é dona do momento). */
   racionalProbe: string | null;
+  /** F-ORG-C (ADR-0048): o parecer CONSULTIVO do gestor em estágio — "APROVARIA — porque X". */
+  parecer: string | null;
+  /** Quem opinou; o nome resolve pela lista de agentes (mesmo mapa do AssigneeChip). */
+  parecerPorAgentId: string | null;
+  parecerEm: string | null;
 }
 
 /** Fila por status (default PENDING no server), ordem de CHEGADA (requestedAt asc). */

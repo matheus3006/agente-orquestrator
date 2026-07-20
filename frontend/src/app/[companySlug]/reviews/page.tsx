@@ -211,6 +211,19 @@ export default function ReviewsPage() {
               </div>
             </div>
 
+            {/* F-ORG-C (ADR-0048, D-ORG-2): o parecer do gestor em ESTÁGIO, AO LADO do card —
+                o dono carimba VENDO a opinião dele. Consultivo por construção: não existe campo
+                de voto legível por máquina, então os botões abaixo NUNCA vêm pré-selecionados. */}
+            {card.parecer && (
+              <div className="review-parecer">
+                <span className="review-parecer-quem">
+                  parecer · {card.parecerPorName ?? "gestor"}
+                  {card.parecerEm ? ` · ${fmtAgo(card.parecerEm, nowMs)}` : ""}
+                </span>
+                <p className="review-parecer-texto">{card.parecer}</p>
+              </div>
+            )}
+
             {pending ? (
               <div className="review-actions">
                 <button
@@ -251,6 +264,11 @@ export default function ReviewsPage() {
                 {card.decisionReason ? `“${card.decisionReason}”` : ""}
                 <div className="review-meta mt-1">
                   {card.decidedAt ? `decidida ${fmtAgo(card.decidedAt, nowMs)}` : "decidida"}
+                  {/* ADR-0048: quem carimbou não foi o dono — o selo torna a autoridade
+                      delegada visível na fila, precedente "dirigida · Ana" do PR #48. */}
+                  {card.decididaPorAgenteSelo && (
+                    <span className="corrige-selo">{card.decididaPorAgenteSelo}</span>
+                  )}
                 </div>
               </div>
             )}
