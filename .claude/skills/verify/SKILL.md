@@ -33,6 +33,12 @@ java -jar target/orquestrador-0.0.1-SNAPSHOT.jar \
 - **Agente que dorme o quanto você quiser** (observa o motor sem CLI de agente):
   `POST /api/companies/{c}/agents` com `"adapterType":"process"`,
   `"runtimeCommand":"sleep 12; echo ok"`, `"executionTarget":"LOCAL"`.
+- ⚠️ **Antes do agente, o time — e o arquiteto dele** (pós-F-ORG-A/ADR-0045 + ADR-0017): o hire
+  exige `"teamId"` (nada de agente órfão), e time SEM arquiteto **não dispara trabalho** — o
+  wakeup responde `409 "time sem arquiteto nao dispara trabalho (ADR-0017)"` e nenhum run nasce.
+  Ordem que funciona: `POST /teams` → `POST /agents` (com `teamId`) →
+  `PATCH /teams/{t}/arquiteto {"agentId":…}` → só então `POST /wakeups`. Custou um ciclo inteiro
+  de prova viva na F-ORG-C, com o sintoma enganoso de "wakeup aceito, run nunca aparece".
 - **Run:** `POST /api/companies/{c}/agents/{a}/wakeups` `{"reason":"prova"}` → runId.
 - **Observar:** `docker exec <fatia>-pg psql -U orquestrador -d orquestrador -c "select …"`
   sobre `heartbeat_run` / `heartbeat_run_event` (o scheduler roda por default fora do perfil

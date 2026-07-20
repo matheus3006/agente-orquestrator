@@ -312,9 +312,24 @@ public class IssueService {
         String area = areaDaIssue(issue);
         String oQueMudou = "[" + decision.name() + " REVIEW] #" + issue.getSeq() + " " + issue.getTitle();
         gateDecisions.fabricate(new GatePassage(issue.getCompanyId(), area,
-                DecisionOrigem.DONO_NO_GATE, oQueMudou, reason, racionalPolicy.deriveTipo(area),
+                origemDe(cycle), oQueMudou, reason, racionalPolicy.deriveTipo(area),
                 false, supersedesId, DecisionGrau.DECISAO, null,
                 new Anchor.NaReview(cycle.getId(), issue.getId())));
+    }
+
+    /**
+     * A proveniência HONESTA da Decisão fabricada (ADR-0019/D4): {@code DONO_NO_GATE} quando quem
+     * carimbou foi o board; {@code AGENTE} quando foi um gestor PROMOVIDO decidindo o próprio braço
+     * (F-ORG-C/ADR-0048). Deriva do carimbo que acabou de ser gravado no ciclo — nenhum chamador
+     * declara a própria proveniência.
+     *
+     * <p>Consome o {@code DecisionOrigem.AGENTE}, que existia desde a ADR-0019 esperando writer
+     * ("fatia futura — nenhum writer no v1"). Registrar decisão de gestor como DONO_NO_GATE seria
+     * rastro FALSO justamente no caminho que mais precisa de rastro.
+     */
+    private static DecisionOrigem origemDe(Review cycle) {
+        return cycle.getReviewerActorType() == ActorType.AGENT
+                ? DecisionOrigem.AGENTE : DecisionOrigem.DONO_NO_GATE;
     }
 
     /**

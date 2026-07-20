@@ -59,6 +59,15 @@ public class Review {
     @Column(name = "decided_at")
     private Instant decidedAt;
 
+    @Column(name = "parecer")
+    private String parecer;
+
+    @Column(name = "parecer_por_agent_id")
+    private UUID parecerPorAgentId;
+
+    @Column(name = "parecer_em")
+    private Instant parecerEm;
+
     protected Review() {
     }
 
@@ -70,6 +79,25 @@ public class Review {
     /** Decide o ciclo (R.3): REJECTED — o motivo orienta a edição da Issue antes do REOPEN (§7). */
     public void reject(ActorType reviewerActorType, UUID reviewerActorId, String decisionReason) {
         decide(ReviewStatus.REJECTED, reviewerActorType, reviewerActorId, decisionReason);
+    }
+
+    /**
+     * O PARECER consultivo do gestor em ESTÁGIO (ADR-0048, D-ORG-2): informação AO LADO do card,
+     * nunca decisão. Não toca {@code status}, {@code reviewerActorType} nem {@code decisionReason}
+     * — quem decide continua sendo quem chama {@link #approve}/{@link #reject}.
+     *
+     * <p>Um ciclo aceita UM parecer: {@link #temParecer()} é a cerca, e é ela que faz o settle
+     * reexecutado (zumbi do lease-reaper) não duplicar mesmo com a prosa reformulada pelo LLM.
+     */
+    public void registrarParecer(UUID gestorAgentId, String parecer) {
+        this.parecer = parecer;
+        this.parecerPorAgentId = gestorAgentId;
+        this.parecerEm = Instant.now();
+    }
+
+    /** O ciclo já tem parecer? A cerca do primeiro-vence (dedupe estrutural, ADR-0048 §4). */
+    public boolean temParecer() {
+        return parecer != null;
     }
 
     private void decide(ReviewStatus decision, ActorType actorType, UUID actorId, String reason) {
@@ -127,5 +155,17 @@ public class Review {
 
     public Instant getDecidedAt() {
         return decidedAt;
+    }
+
+    public String getParecer() {
+        return parecer;
+    }
+
+    public UUID getParecerPorAgentId() {
+        return parecerPorAgentId;
+    }
+
+    public Instant getParecerEm() {
+        return parecerEm;
     }
 }

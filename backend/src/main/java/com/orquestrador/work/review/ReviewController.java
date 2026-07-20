@@ -77,14 +77,19 @@ public class ReviewController {
     public record ReviewResponse(UUID id, UUID issueId, UUID runId, String status,
                                  String reviewerActorType, UUID reviewerActorId,
                                  String decisionReason, Instant requestedAt, Instant decidedAt,
-                                 String area, String racionalTipo, String racionalProbe) {
+                                 String area, String racionalTipo, String racionalProbe,
+                                 String parecer, UUID parecerPorAgentId, Instant parecerEm) {
         static ReviewResponse from(Review review, String area, RacionalTipo tipo, String probe) {
             return new ReviewResponse(review.getId(), review.getIssueId(), review.getRunId(),
                     review.getStatus().name(),
                     review.getReviewerActorType() != null ? review.getReviewerActorType().name() : null,
                     review.getReviewerActorId(), review.getDecisionReason(),
                     review.getRequestedAt(), review.getDecidedAt(),
-                    area, tipo != null ? tipo.name() : null, probe);
+                    area, tipo != null ? tipo.name() : null, probe,
+                    // F-ORG-C (ADR-0048): o parecer do gestor viaja pro card, AO LADO das ações do
+                    // dono. Quem opinou vem como ID — o nome resolve client-side no mapa de agentes
+                    // que a página já carrega (mesmo padrão do AssigneeChip).
+                    review.getParecer(), review.getParecerPorAgentId(), review.getParecerEm());
         }
     }
 }

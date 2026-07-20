@@ -27,6 +27,13 @@ export interface ReviewCard {
   racionalTipo: string | null;
   /** A pergunta não-bloqueante do approve, nas PALAVRAS da política (C14). */
   racionalProbe: string | null;
+  /** F-ORG-C (ADR-0048): o parecer consultivo do gestor, mostrado AO LADO das ações do dono. */
+  parecer: string | null;
+  /** Nome de quem opinou; null = sem parecer OU agente sumido; undefined = agentes carregando. */
+  parecerPorName: string | null | undefined;
+  parecerEm: string | null;
+  /** "decidida · <gestor>" quando quem carimbou foi um AGENT; null = decisão do dono (sem selo). */
+  decididaPorAgenteSelo: string | null;
 }
 
 export function resolveReviewCard(
@@ -50,7 +57,44 @@ export function resolveReviewCard(
     area: review.area ?? null,
     racionalTipo: review.racionalTipo ?? null,
     racionalProbe: review.racionalProbe ?? null,
+    parecer: review.parecer ?? null,
+    parecerPorName: resolveAgentName(review.parecerPorAgentId ?? null, agents),
+    parecerEm: review.parecerEm ?? null,
+    decididaPorAgenteSelo: decididaPorAgenteSelo(review, agents),
   };
+}
+
+/**
+ * O selo da review decidida por um gestor PROMOVIDO (ADR-0048), irmão do `dirigidaSelo` do
+ * PR #48: "decidida · <gestor>". `null` = carimbo do dono, que não ganha selo — o selo marca o
+ * que fugiu do caminho normal, não o caminho normal. O nome degrada como no precedente: agente
+ * que sumiu do quadro ainda mostra "decidida", porque o FATO de não ter sido o dono é a
+ * informação que não pode se perder.
+ */
+function decididaPorAgenteSelo(
+  review: ReviewSummary,
+  agents: AgentSummary[] | undefined,
+): string | null {
+  if (review.reviewerActorType !== "AGENT") {
+    return null;
+  }
+  const nome = resolveAgentName(review.reviewerActorId ?? null, agents);
+  return nome ? `decidida · ${nome}` : "decidida por gestor";
+}
+
+// Mesma semântica null/undefined do assignee: undefined = ainda carregando (nunca afirma
+// "sumiu" para um agente que existe); null = resolvido e sem nome a mostrar.
+function resolveAgentName(
+  agentId: string | null,
+  agents: AgentSummary[] | undefined,
+): string | null | undefined {
+  if (!agentId) {
+    return null;
+  }
+  if (!agents) {
+    return undefined;
+  }
+  return agents.find((agent) => agent.id === agentId)?.name ?? null;
 }
 
 function resolveAssigneeName(

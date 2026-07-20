@@ -15,6 +15,9 @@ const review = (o: Partial<ReviewSummary> = {}): ReviewSummary => ({
   area: "operacao",
   racionalTipo: "LOGICO",
   racionalProbe: "Alguma ressalva ou risco que valha registrar?",
+  parecer: null,
+  parecerPorAgentId: null,
+  parecerEm: null,
   ...o,
 });
 
@@ -129,5 +132,64 @@ describe("resolveReviewCard (a ReviewResponse enxuta resolvida pela lista de iss
     expect(card.decisionReason).toBe("faltou teste");
     expect(card.decidedAt).toBe("2026-07-02T11:00:00Z");
     expect(card.status).toBe("REJECTED");
+  });
+
+  // ---------- F-ORG-C (ADR-0048): parecer do gestor + selo da decisão delegada ----------
+
+  it("resolve o nome de quem opinou pelo mapa de agentes", () => {
+    const card = resolveReviewCard(
+      review({
+        parecer: "APROVARIA — o teste do 409 está lá",
+        parecerPorAgentId: "ag-2",
+        parecerEm: "2026-07-02T10:30:00Z",
+      }),
+      [issue()],
+      [agent(), agent({ id: "ag-2", name: "Ana" })],
+    );
+    expect(card.parecer).toBe("APROVARIA — o teste do 409 está lá");
+    expect(card.parecerPorName).toBe("Ana");
+    expect(card.parecerEm).toBe("2026-07-02T10:30:00Z");
+  });
+
+  it("sem parecer, o card não inventa autor nem texto", () => {
+    const card = resolveReviewCard(review(), [issue()], [agent()]);
+    expect(card.parecer).toBeNull();
+    expect(card.parecerPorName).toBeNull();
+  });
+
+  it("agentes ainda carregando: o autor do parecer fica undefined, nunca vira null afirmativo", () => {
+    const card = resolveReviewCard(
+      review({ parecer: "APROVARIA — ok", parecerPorAgentId: "ag-2" }),
+      [issue()],
+      undefined,
+    );
+    expect(card.parecerPorName).toBeUndefined();
+  });
+
+  it("review decidida por gestor promovido ganha o selo com o nome", () => {
+    const card = resolveReviewCard(
+      review({ status: "APPROVED", reviewerActorType: "AGENT", reviewerActorId: "ag-2" }),
+      [issue()],
+      [agent(), agent({ id: "ag-2", name: "Ana" })],
+    );
+    expect(card.decididaPorAgenteSelo).toBe("decidida · Ana");
+  });
+
+  it("gestor que sumiu do quadro ainda mostra que NÃO foi o dono que decidiu", () => {
+    const card = resolveReviewCard(
+      review({ status: "APPROVED", reviewerActorType: "AGENT", reviewerActorId: "ag-sumido" }),
+      [issue()],
+      [agent()],
+    );
+    expect(card.decididaPorAgenteSelo).toBe("decidida por gestor");
+  });
+
+  it("decisão do dono NÃO ganha selo — o selo marca o que fugiu do caminho normal", () => {
+    const card = resolveReviewCard(
+      review({ status: "APPROVED", reviewerActorType: "BOARD", reviewerActorId: "board-1" }),
+      [issue()],
+      [agent()],
+    );
+    expect(card.decididaPorAgenteSelo).toBeNull();
   });
 });
