@@ -200,3 +200,8 @@ conferência, verbatim na ADR-0047 §3): só `DIRECT_ISSUE`, só atrás do guard
 "nascer decidida" é proibido. A escada de autoridade ganha o degrau que a D-ORG-3 prometeu:
 operador > **gestor promovido (dirige o próprio braço sem gate)** > CEO (mediado) > arquiteto >
 executor. Registro completo: `docs/adr/0047-issue-dirigida-sem-gate.md`.
+
+> **Atualização 2026-07-20 (ADR-0048):** o parêntese que define o degrau ficou incompleto — o gestor
+> promovido também **decide o review** de entregas do próprio braço (`reviewer_actor_type=AGENT`,
+> ADR-0048/F-ORG-C). É o **mesmo degrau com dois poderes**, não um nível novo: a escada de ATORES
+> acima segue exatamente como está.

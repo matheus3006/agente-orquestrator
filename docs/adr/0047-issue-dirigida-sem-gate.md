@@ -113,7 +113,8 @@ sobre o enum (tipo sem filtro não podia ser decidido em lote — D2 do ADR-0035
   deliberada: o gestor PROMOVIDO cria issue no próprio braço com a Approval nascendo decidida por
   ELE (`decidedBy=AGENT`). A exceção é estreita por desenho: só `DIRECT_ISSUE`, só atrás do guard
   de braço, só pelo método privado do §3. A escada de autoridade ganha um degrau real entre
-  operador e CEO: gestor promovido (dirige o próprio braço sem gate).
+  operador e CEO: gestor promovido (dirige o próprio braço sem gate — e, desde a **ADR-0048**,
+  também **decide o review** do próprio braço; o degrau é o MESMO, com dois poderes).
 - **ADR-0020 (racional arrancado por grill):** o grill do racional NÃO roda no caminho
   nasce-decidida — ele foi desenhado pra HUMANO responder o probe; um racional gerado por LLM sem
   supervisão não tem quem grelhar. O racional continua OBRIGATÓRIO (D-DSG-4: bloco sem o porquê é
@@ -137,7 +138,8 @@ nesta emenda — nenhuma D-DSG reaberta, nenhum schema novo:
 perdidos → run volta a QUEUED com o MESMO `runId`) re-executa o run com uma chamada REAL nova ao
 LLM — que reformula a prosa (LLM não é determinístico). Fingerprint diferente ⇒ nem o
 `jaProtocolado` nem o índice V37 disparam ⇒ uma 2ª Approval nasce-APPROVED + uma 2ª issue, sem
-NENHUM humano concordar — exatamente no único caminho sem gate. (O precedente da casa pro mesmo
+NENHUM humano concordar — exatamente no **então único** caminho sem gate; a ADR-0048 abriu o
+segundo, com o gestor promovido decidindo review. (O precedente da casa pro mesmo
 zumbi: `PreviewArtifactCapturer`, que não confia em texto re-gerado.)
 
 **O mecanismo escolhido** (variante do candidato A do kickoff): fingerprint =

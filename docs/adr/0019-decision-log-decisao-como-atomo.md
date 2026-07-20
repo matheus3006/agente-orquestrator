@@ -1,6 +1,8 @@
 # ADR-0019: Decision-log — a decisão como átomo de memória
 
-**Status:** Aceito (método fechado 2026-07-04; persistência/UI = residual a fechar na implementação de T.3)
+**Status:** Aceito (método fechado 2026-07-04; persistência/UI = residual a fechar na implementação de T.3) ·
+**EMENDADA 2026-07-20 (ADR-0048): a fábrica do D5 passa a emitir `origem = agente` — primeiro writer
+de `AGENTE` pela porta do GATE (ver Revisão abaixo)**
 
 > Registro do **método de memória do CEO ("segundo cérebro")**. Detalhe/porquê: `docs/handoff-grilling-memoria-
 > ceo-segundo-cerebro.md` (D1–D12) + `docs/research/2026-07-04-{segundo-cerebro,memoria-de-agentes}.md`. O regime
@@ -203,6 +205,45 @@ Inventário: `docs/roadmap-interno.md §Divergências`.
   bridge MCP da F-AT2 — está na **ADR-0003, Revisão 2026-07-14** (zero canal novo, C10/C10.b).
 - **Zero migração** (V30+ seguem livres) · **sem ADR nova** (ADR-0043 livre).
 
+
+## Revisão 2026-07-20 (ADR-0048 — `origem = agente` chega à fábrica do D5)
+
+**O que muda de fato:** a fábrica de Decisões do **D5** (`memory/GateDecisionFactory`, extraída na
+F-C1/C15) passa a emitir `origem = agente` quando quem carimbou a **review** foi um **gestor
+promovido** em vez do dono (ADR-0048 / F-ORG-C). A origem é **derivada** do carimbo já gravado no
+ciclo (`reviewer_actor_type`) — **nenhum chamador declara a própria proveniência**, que é o que
+mantém o campo confiável. Registrar decisão de gestor como `dono-no-gate` seria rastro **falso**
+justamente no caminho que mais precisa de rastro.
+
+**Correção de registro — a emenda como a ADR-0048 a declarou é FACTUALMENTE FALSA.** A ADR-0048
+(`:7-8` e `:137-138`) afirma que `DecisionOrigem.AGENTE` estava *"reservado desde a ADR-0019 sem
+writer"* e que *"esta fatia é esse writer"*. **Não é.** Na base de partida do PR #50 (`75ab4c9`) já
+existiam **DOIS** writers em produção:
+
+| writer | ADR | PR |
+|---|---|---|
+| `CorrecaoDeEntregaRouter:143` (correção de entrega, caso B) | ADR-0034 | #10 |
+| `AbsorcaoDeIssueRouter:171` (absorção de issue) | ADR-0037 | #14 |
+
+A reserva, aliás, já tinha sido reivindicada **por escrito** em `docs/handoff-grilling-caso-b.md:34`
+(*"1º writer do produto"*), no grill de 2026-07-10.
+
+Dois agravantes registrados para que a correção não se perca: **(a)** a citação estava
+**misatribuída** — a frase *"fatia futura — nenhum writer no v1"* (**afirmação corrigida**) **nunca
+esteve nesta ADR**; era o javadoc de `memory/DecisionOrigem.java` (`:7` na época), corrigido nesta
+mesma passagem.
+Esta ADR só lista, no schema do **D4**, `origem: dono-no-gate | proposta-CEO | agente`, sem dizer
+nada sobre writers. **(b)** o javadoc estava **stale desde o PR #10** e a fatia declarou consumir a
+reserva sem conferi-lo.
+
+**A alegação VERDADEIRA é mais estreita — e continua interessante.** A F-ORG-C é o primeiro writer
+de `agente` **pela PORTA DO GATE**: os dois anteriores gravam **direto** via `DecisionLog.record` e,
+por isso, **não esbarram nos seams D5/D11** — fato que o próprio grill do caso B checou e registrou
+na época (`docs/handoff-grilling-caso-b.md:34`: *"NÃO esbarra nos seams D5/D11"*). O que a ADR-0048
+inaugura é `agente` **atravessando a fábrica**, com tudo que a fábrica carrega junto: a regra C14
+("sem substância → sem Decisão"), a `area` vinda do ARTEFATO, a maiêutica D10 como evidência e a
+consolidação da carta na MESMA tx. É uma afirmação sobre **por onde a Decisão passa**, não sobre
+**se o valor tinha writer**.
 
 ## Relaciona
 `docs/handoff-grilling-memoria-ceo-segundo-cerebro.md` (D1–D12, schema, findability); ADR-0018 (carta/
