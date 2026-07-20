@@ -5,7 +5,6 @@ import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.HeartbeatRunStore;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
-import com.orquestrador.org.agent.ChainOfCommandService;
 import com.orquestrador.org.team.Team;
 import com.orquestrador.org.team.TeamRepository;
 import com.orquestrador.work.issue.Issue;
@@ -18,7 +17,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -52,21 +50,18 @@ public class ParecerGate {
     private final IssueRepository issues;
     private final AgentRepository agents;
     private final ReviewRepository reviews;
-    private final ChainOfCommandService chain;
     private final HeartbeatRunStore store;
     private final HeartbeatRunRepository runs;
 
     public ParecerGate(ParecerScanner scanner, ParecerService pareceres, TeamRepository teams,
                        IssueRepository issues, AgentRepository agents, ReviewRepository reviews,
-                       ChainOfCommandService chain, HeartbeatRunStore store,
-                       HeartbeatRunRepository runs) {
+                       HeartbeatRunStore store, HeartbeatRunRepository runs) {
         this.scanner = scanner;
         this.pareceres = pareceres;
         this.teams = teams;
         this.issues = issues;
         this.agents = agents;
         this.reviews = reviews;
-        this.chain = chain;
         this.store = store;
         this.runs = runs;
     }
@@ -154,16 +149,12 @@ public class ParecerGate {
             }
             UUID timeDoEntregador = entregador == null ? null
                     : agents.findById(entregador).map(Agent::getTeamId).orElse(null);
-            // Multi-braço: vence o MENOS PRIVILEGIADO (hardening do PR #50). Um agente pode
-            // constar como gestor de um time PAI e de um DESCENDENTE, e gestor_status é POR TIME —
-            // as duas subárvores contêm o entregador. Com findFirst, se ele OPINAVA ou DECIDIA
-            // dependia da ordem das linhas: mesma entrada, dois níveis de autoridade. ESTÁGIO
-            // antes de PROMOVIDO (false < true), id como desempate: na dúvida o humano fica no
-            // laço, que é o lado barato de errar.
-            Team braco = timeDoEntregador == null ? null : bracos.stream()
-                    .filter(time -> chain.pertenceASubarvore(time.getId(), timeDoEntregador))
-                    .min(Comparator.<Team, Boolean>comparing(Team::gestorPromovido)
-                            .thenComparing(Team::getId))
+            // Multi-braço: vence o MENOS PRIVILEGIADO (hardening do PR #50). A régua mora no
+            // SERVICE desde a conferência do PR #53 (🟡) e é a MESMA chamada que o guard de lá usa
+            // para conferir a escolha — uma régua, duas cercas. Enquanto for uma chamada só, gate
+            // e service não podem divergir sobre qual braço se aplica; a cópia inline que vivia
+            // aqui era justamente o que permitia divergir.
+            Team braco = pareceres.bracoDeMenorPrivilegio(companyId, agentId, timeDoEntregador)
                     .orElse(null);
             if (braco == null) {
                 avisos.add("issue " + etiqueta + " está FORA do braço do gestor (D-ORG-3)"
@@ -181,12 +172,34 @@ public class ParecerGate {
             try {
                 if (braco.gestorPromovido()) {
                     pareceres.decidirReviewComoGestor(companyId, agentId, pedido);
-                } else if (!pareceres.registrarParecerDoGestor(companyId, agentId, pedido)) {
-                    avisos.add(etiqueta + " já tinha parecer neste ciclo — mantido o primeiro");
+                } else {
+                    ParecerService.ResultadoDoParecer resultado =
+                            pareceres.registrarParecerDoGestor(companyId, agentId, pedido);
+                    if (resultado != ParecerService.ResultadoDoParecer.GRAVADO) {
+                        avisos.add(etiqueta + " " + motivoDaRecusa(resultado));
+                    }
                 }
             } catch (RuntimeException e) {
                 avisos.add(etiqueta + " recusado pelo service: " + e.getMessage());
             }
         }
+    }
+
+    /**
+     * O aviso que o operador lê, UM por causa (conferência do PR #53, 🟡 2). A forma anterior era
+     * uma frase só — <i>"já tinha parecer neste ciclo — mantido o primeiro"</i> — para as DUAS
+     * causas de {@code rows == 0}. Na causa nova (o dono decidiu no meio) ela afirmava duas coisas
+     * falsas de uma vez: que existe um parecer e que ele foi mantido. O operador ia caçar uma
+     * duplicata que não existe, quando o fato é uma corrida com o dono.
+     */
+    static String motivoDaRecusa(ParecerService.ResultadoDoParecer resultado) {
+        return switch (resultado) {
+            case JA_TINHA_PARECER -> "já tinha parecer neste ciclo — mantido o primeiro";
+            case DONO_DECIDIU_NO_MEIO -> "o ciclo foi DECIDIDO antes do parecer chegar — o gestor"
+                    + " chegou tarde e nada foi gravado (não há duplicata)";
+            case CICLO_MUDOU -> "o ciclo não aceitou o parecer e a re-leitura não explica por quê"
+                    + " — nada gravado";
+            case GRAVADO -> throw new IllegalStateException("GRAVADO não é recusa");
+        };
     }
 }

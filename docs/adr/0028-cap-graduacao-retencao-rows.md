@@ -2,6 +2,9 @@
 
 **Status:** Aceito (2026-07-06, execução F.14 — `docs/handoff-grilling-cap-graduacao-rows-fechado.md`)
 
+**EMENDADA 2026-07-20 (ADR-0049): a premissa "terminal = nunca mais volta" DEIXOU de valer também
+para este reaper** (ver §Revisão no fim)
+
 ## Contexto
 A F.12 (ADR-0026) coletou os **workspaces** (dirs/volumes) mas deixou uma premissa explícita: *"as
 rows do banco ficam — banco inteiro < 10 MB"*. A F.13 (ADR-0027) **invalidou** essa premissa: criou
@@ -155,3 +158,33 @@ ADR-0021 (foto v1 eterna — o invariante que B3 afia) · ADR-0027 (o thumbnail 
 disparou o gatilho) · ADR-0012 (estados terminais vs não-terminais) · ADR-0009 (activity_log, detail
 só-IDs/contagens) · ADR-0010 (módulo profundo — `RowRetentionReaper`/`RowRetentionPolicy`) ·
 ADR-0019 (decision-ledger — o contraste de "graduação semântica" que aqui NÃO se aplica).
+
+## Revisão 2026-07-20 (reabertura de entrega aprovada, ADR-0049)
+
+> Emenda recíproca do PR da rodada 2 do parecer, gêmea da §Revisão da ADR-0026. A ADR-0049
+> §Emendas declarava emendar esta ADR e **nunca a tinha tocado** (conferência do PR #53, 🟠 3).
+
+**O que mudou: a PREMISSA, não o comportamento.** `RowRetentionPolicy.collectible` segue
+`isTerminal(status) && updated_at < now - retention`, com `isTerminal` = `{DONE, CANCELLED}` — o
+mesmo molde herdado da ADR-0026. A ADR-0049 tirou de `DONE` a condição de sink
+(`tryReabrirAprovada`, `DONE` → `BLOCKED`), então a âncora TTL-desde-terminal deste reaper passou a
+medir um estado do qual **se volta**.
+
+**Por que aqui dói MENOS que na ADR-0026, com o porquê explícito:**
+
+- este reaper já tem **exceção de pin** — o artifact fixado por uma review é preservado mesmo
+  superseded (B3), então a evidência "R aprovou a v3" sobrevive à reabertura. O `WorkspaceReaper`
+  não tem exceção nenhuma, e é por isso que a cerca de 409 nasceu lá e não aqui;
+- a retenção default daqui (**30 dias**) é 4× a de lá (**7**), então nos defaults a cerca do
+  workspace já recusou a reabertura muito antes de qualquer row vencer.
+
+**⚠️ O segundo ponto é coincidência de configuração, não invariante.** As duas retenções são
+propriedades independentes (`orquestrador.rows.gc.retention-days` e
+`orquestrador.workspace.gc.retention-days`); invertê-las é permitido e nada no código as amarra.
+Com `rows < workspace`, uma reabertura passaria pela cerca do workspace e encontraria
+`heartbeat_run_event` e thumbnails já colhidos — perda parcial de rastro, silenciosa. Fica
+registrado como limite conhecido desta emenda, **não** como proteção existente: nenhuma linha de
+código hoje verifica essa ordem.
+
+## Relaciona (acréscimo de 2026-07-20)
+ADR-0049 (reabertura de entrega aprovada — a ADR que mudou a premissa acima).

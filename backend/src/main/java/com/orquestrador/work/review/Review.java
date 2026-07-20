@@ -59,13 +59,16 @@ public class Review {
     @Column(name = "decided_at")
     private Instant decidedAt;
 
-    @Column(name = "parecer")
+    // As 3 colunas de parecer são updatable = false: NENHUMA escrita do JPA as carrega. Ver o
+    // javadoc de temParecer() para o porquê — é a cerca do lost update ESPELHADO, e a razão de ela
+    // morar no MAPEAMENTO e não numa disciplina de quem escreve.
+    @Column(name = "parecer", updatable = false)
     private String parecer;
 
-    @Column(name = "parecer_por_agent_id")
+    @Column(name = "parecer_por_agent_id", updatable = false)
     private UUID parecerPorAgentId;
 
-    @Column(name = "parecer_em")
+    @Column(name = "parecer_em", updatable = false)
     private Instant parecerEm;
 
     protected Review() {
@@ -88,8 +91,33 @@ public class Review {
      * <p>Não existe setter de parecer nesta entidade DE PROPÓSITO (hardening do PR #50, achado
      * 🔴 2): o que havia era um {@code registrarParecer(...)} escrevendo os 3 campos direto, e o
      * service checava {@link #temParecer()} ANTES de chamá-lo — read-then-write puro, lost update
-     * sob concorrência real. Com a escrita só pelo UPDATE guardado, o caminho inseguro não existe
-     * mais para ser reintroduzido por engano.
+     * sob concorrência real.
+     *
+     * <p><b>⚠️ A frase que estava aqui — "com a escrita só pelo UPDATE guardado, o caminho inseguro
+     * não existe mais" — era FALSA POR CONSTRUÇÃO, e a conferência do PR #53 (🟠 1) provou.</b> O
+     * {@code @Id} desta classe está no CAMPO, então o Hibernate usa <b>field access</b> e escreve
+     * as colunas independentemente de existir setter. Tirar o setter tornou o caminho invisível ao
+     * GREP, não inexistente: o dirty-checking seguia emitindo {@code update review set … parecer =
+     * ?, …} com o valor do persistence context. Bastava o dono decidir o ciclo com o parecer
+     * commitando na janela — e o parecer SUMIA, sem exceção, com o {@code REVIEW_PARECER_REGISTRADO}
+     * já gravado dizendo que tinha entrado.
+     *
+     * <p><b>A cerca de verdade é {@code updatable = false} nas 3 colunas</b>, no mapeamento: o SQL
+     * que o JPA gera para esta entidade não contém as colunas de parecer, então não há valor a
+     * perder — nem por dirty-checking, nem por setter reintroduzido, nem por field access. A
+     * escrita legítima é 100% pelo native query, que não passa pelo mapeamento e por isso não é
+     * afetado.
+     *
+     * <p><b>Alternativas pesadas e recusadas, com o porquê:</b> {@code @DynamicUpdate} protegeria
+     * por CONSEQUÊNCIA (a coluna limpa não entra no UPDATE porque ninguém a sujou) e não por
+     * construção — volta a furar no dia em que alguém escrever no campo; {@code @Version} faria a
+     * decisão do DONO falhar com {@code OptimisticLockException} porque um agente opinou, que é
+     * subordinar o ato autoritativo ao consultivo, e ainda custaria coluna nova (migração).
+     *
+     * <p><b>O preço, dito por extenso:</b> o modo de falha de {@code updatable = false} é o no-op
+     * SILENCIOSO — uma escrita JPA futura nestes campos não estoura, simplesmente não acontece.
+     * Quem for gravar parecer por um caminho novo tem de passar por um UPDATE guardado próprio, e
+     * é a ausência de setter (acima) que torna esse desvio difícil de fazer por acidente.
      */
     public boolean temParecer() {
         return parecer != null;

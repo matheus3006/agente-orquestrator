@@ -20,7 +20,9 @@ import com.orquestrador.work.review.ReviewStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -97,11 +99,13 @@ public class ParecerService {
      * {@code reviewerActorType} nem {@code decisionReason} — a autoridade não muda, o dono
      * continua decidindo vendo o parecer ao lado (D-ORG-2).
      *
-     * @return {@code false} se o ciclo JÁ tinha parecer (primeiro-vence, arbitrado pelo BANCO) —
-     *         o gate transforma isso em aviso contado, nunca em silêncio.
+     * @return {@link ResultadoDoParecer#GRAVADO} quando ESTE chamador escreveu; qualquer outro
+     *         valor diz, com base em RE-LEITURA do ciclo, por que o UPDATE guardado casou 0 linhas
+     *         — o gate transforma isso em aviso contado, nunca em silêncio.
      */
     @Transactional
-    public boolean registrarParecerDoGestor(UUID companyId, UUID gestorAgentId, PedidoDeParecer pedido) {
+    public ResultadoDoParecer registrarParecerDoGestor(UUID companyId, UUID gestorAgentId,
+                                                       PedidoDeParecer pedido) {
         Review ciclo = cicloAbertoAncorado(companyId, pedido);
         exigirGestorTitularComAlvoNoBraco(companyId, gestorAgentId, pedido, ciclo);
         UUID cicloId = ciclo.getId();
@@ -111,13 +115,56 @@ public class ParecerService {
         int rows = reviews.tryRegistrarParecer(cicloId, companyId, gestorAgentId,
                 textoDoParecer(pedido));
         if (rows == 0) {
-            return false;
+            return causaDoZeroLinhas(cicloId);
         }
         activityLog.record(companyId, ActorType.AGENT, gestorAgentId,
                 ActivityAction.REVIEW_PARECER_REGISTRADO, "issue", pedido.issueId(),
                 Map.of("reviewId", cicloId, "bracoTeamId", pedido.bracoTeamId(),
                         "runId", pedido.runId()));
-        return true;
+        return ResultadoDoParecer.GRAVADO;
+    }
+
+    /**
+     * POR QUE o UPDATE guardado casou 0 linhas — <b>observado por re-leitura</b>, nunca inferido.
+     *
+     * <p>O guard tem DUAS cercas ({@code and parecer is null} + {@code and status = 'PENDING'}),
+     * logo {@code rows == 0} tem DUAS causas, e elas pedem avisos OPOSTOS ao operador: "já tinha
+     * parecer" manda caçar uma duplicata; "o dono decidiu no meio" diz que não existe duplicata
+     * nenhuma. Até a conferência do PR #53 o chamador afirmava a primeira nos dois casos — duas
+     * coisas falsas de uma vez na causa nova (🟡 2), e o operador caçava o que não existe.
+     *
+     * <p>Cada ramo abaixo afirma só o que a re-leitura MOSTRA. O {@code parecer} é conferido
+     * primeiro de propósito: quando os dois são verdade (ciclo com parecer E já decidido), "já
+     * tinha parecer — mantido o primeiro" continua literalmente correto. O ramo
+     * {@link ResultadoDoParecer#CICLO_MUDOU} é o resto honesto — a re-leitura é uma transação
+     * DEPOIS do UPDATE, então ela pode não ver mais o estado que causou a recusa (um terceiro ator
+     * no meio, ou a linha sumindo). Nesse caso o aviso diz que não sabe, em vez de escolher uma
+     * causa plausível.
+     */
+    private ResultadoDoParecer causaDoZeroLinhas(UUID cicloId) {
+        Review recarregado = reviews.findById(cicloId).orElse(null);
+        if (recarregado == null) {
+            return ResultadoDoParecer.CICLO_MUDOU;
+        }
+        if (recarregado.temParecer()) {
+            return ResultadoDoParecer.JA_TINHA_PARECER;
+        }
+        if (recarregado.getStatus() != ReviewStatus.PENDING) {
+            return ResultadoDoParecer.DONO_DECIDIU_NO_MEIO;
+        }
+        return ResultadoDoParecer.CICLO_MUDOU;
+    }
+
+    /** O desfecho do ramo ESTÁGIO, com a causa da recusa quando houve recusa. */
+    public enum ResultadoDoParecer {
+        /** Este chamador escreveu o parecer. */
+        GRAVADO,
+        /** O ciclo já tinha parecer: primeiro-vence, e o primeiro foi MANTIDO. */
+        JA_TINHA_PARECER,
+        /** O dono (ou um gestor promovido) fechou o ciclo antes: NÃO existe duplicata. */
+        DONO_DECIDIU_NO_MEIO,
+        /** A re-leitura não explica a recusa — não afirma causa que não observou. */
+        CICLO_MUDOU
     }
 
     /**
@@ -227,6 +274,48 @@ public class ParecerService {
             throw new IllegalStateException("parecer recusado: a issue " + issue.getId()
                     + " está FORA da subárvore do braço " + braco.getId() + " (D-ORG-3/ADR-0048)");
         }
+        // A cerca que faltava (conferência do PR #53, 🟡): as quatro acima validam o braço que o
+        // chamador ENTREGOU; nenhuma re-derivava a ESCOLHA. Um chamador que passasse o braço
+        // PROMOVIDO havendo um em ESTÁGIO aplicável passava em todas e DECIDIA o ciclo, quando a
+        // régua manda opinar. Pela doutrina que esta classe cita ("guard só no gate é seguro por
+        // CONVENÇÃO, não por construção"), "manter o humano no laço" é o último default que pode
+        // depender de o chamador ter escolhido bem.
+        Team deveriaSer = bracoDeMenorPrivilegio(companyId, gestorAgentId, timeDoEntregador)
+                .orElseThrow(() -> new IllegalStateException("parecer recusado: nenhum braço do"
+                        + " gestor " + gestorAgentId + " alcança a issue " + issue.getId()
+                        + " (D-ORG-3/ADR-0048)"));
+        if (!deveriaSer.getId().equals(braco.getId())) {
+            throw new IllegalStateException("parecer recusado: o braço aplicável de MENOR privilégio"
+                    + " para a issue " + issue.getId() + " é " + deveriaSer.getId() + ", não "
+                    + braco.getId() + " — na dúvida o humano fica no laço (ADR-0048)");
+        }
+    }
+
+    /**
+     * <b>A régua ÚNICA de QUAL braço se aplica</b> — uma régua, duas cercas, o idioma da casa. O
+     * gate a usa para ESCOLHER e {@link #exigirGestorTitularComAlvoNoBraco} a usa para CONFERIR a
+     * escolha recebida; enquanto for a mesma chamada, as duas não podem divergir. Antes da
+     * conferência do PR #53 a régua vivia inline no gate e o service não tinha como repeti-la.
+     *
+     * <p>Vence o MENOS PRIVILEGIADO: {@code gestorPromovido} é o critério primário e
+     * {@code false < true}, então ESTÁGIO ganha de PROMOVIDO sempre que os dois se aplicam; o id
+     * desempata para a escolha não depender da ordem das linhas. Um agente pode ser titular de um
+     * time PAI e de um DESCENDENTE, e {@code gestor_status} é POR TIME — as duas subárvores contêm
+     * o entregador, e sem critério estável a MESMA entrada daria dois níveis de autoridade.
+     *
+     * @param timeDoEntregador o time de QUEM ENTREGOU o artefato (não o do assignee atual);
+     *                         {@code null} — entregador irresolvível — devolve vazio, que os dois
+     *                         chamadores tratam como recusa, nunca como default silencioso.
+     */
+    public Optional<Team> bracoDeMenorPrivilegio(UUID companyId, UUID gestorAgentId,
+                                                 UUID timeDoEntregador) {
+        if (timeDoEntregador == null) {
+            return Optional.empty();
+        }
+        return teams.findByCompanyIdAndGestorAgentIdOrderById(companyId, gestorAgentId).stream()
+                .filter(time -> chain.pertenceASubarvore(time.getId(), timeDoEntregador))
+                .min(Comparator.<Team, Boolean>comparing(Team::gestorPromovido)
+                        .thenComparing(Team::getId));
     }
 
     /**

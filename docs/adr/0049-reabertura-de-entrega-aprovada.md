@@ -2,9 +2,14 @@
 
 **Status:** Aceito (2026-07-20, fatia `hardening-parecer-seguranca`) · **decisão do dono**
 registrada em `docs/controle-paralelismo.md` §"2 decisões do dono + 2 kickoffs de hardening"
-(**D-ORG-C.2**) · fecha o achado 🔴 1 da conferência do **PR #50** · **EMENDA a ADR-0011 e a
-ADR-0012** (ver §Emendas) · **sem migração** (a reserva V39 foi devolvida — é UPDATE guardado, não
-schema).
+(**D-ORG-C.2**) · fecha o achado 🔴 1 da conferência do **PR #50** · **EMENDA a ADR-0011, ADR-0012,
+ADR-0026 e ADR-0028** (ver §Emendas) · **sem migração** (a reserva V39 foi devolvida — é UPDATE
+guardado, não schema).
+
+> **Correção de 2026-07-20 (rodada 2 do parecer).** Este cabeçalho dizia *"EMENDA a ADR-0011 e a
+> ADR-0012"* enquanto a §Emendas do MESMO arquivo listava quatro — o documento discordava de si
+> mesmo (conferência do PR #53, 🟠 3). As quatro estão listadas agora, e as quatro têm marcador
+> recíproco no arquivo emendado: 0011 e 0012 desde o PR #52, 0026 e 0028 nesta rodada.
 
 ## Contexto
 
@@ -106,7 +111,8 @@ APPROVE. Enfiar os dois no mesmo verbo apagaria a distinção no lugar onde ela 
   promovido, "final" passou a significar "um agente pode encerrar sozinho" — e é essa combinação,
   não a decisão do board, que exigia a válvula.
 - **ADR-0026 (F.12, `WorkspaceReaper`) e ADR-0028 (F.14, `RowRetentionReaper`) — a emenda que
-  FALTAVA** (acrescentada no fecho do parecer, 2026-07-20; conferência dos PRs #51/#52, 🟠 3).
+  FALTAVA** (acrescentada no fecho do parecer, 2026-07-20; conferência dos PRs #51/#52, 🟠 3;
+  **APLICADA de fato na rodada 2 do parecer, 2026-07-20** — ver §Revisão 2026-07-20 nas duas).
   Esta ADR mudou um invariante do qual **outros componentes vivem** e a lista acima não os
   alcançou. Os dois reapers definem terminal como `{DONE, CANCELLED}` com TTL sobre
   `issue.updated_at`:
