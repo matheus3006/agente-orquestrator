@@ -29,6 +29,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -82,6 +84,8 @@ class ParecerGateTest {
     private HeartbeatRunEventRepository runEvents;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     /**
      * A mesma árvore do cenário-padrão do dirigir: Marketing (Ana gestora) ⊃ Social Media (Bruno,
@@ -569,6 +573,48 @@ class ParecerGateTest {
         // O que ficou gravado é o do VENCEDOR — não o de quem chegou por último sobrescrevendo.
         String textoVencedor = vencedores.get(0).substring("VENCEU:".length());
         assertThat(recarrega(c).getParecer()).isEqualTo("APROVARIA — " + textoVencedor);
+    }
+
+    /**
+     * A corrida dono-decide × gestor-opina no ramo ESTÁGIO (conferência dos PRs #51/#52, 🟠 1). O
+     * teste vizinho ({@link #ramoPromovidoReexecutado_naoDecideDuasVezes}) só cobre o ramo
+     * PROMOVIDO, que fecha por {@code where status='PENDING_REVIEW'}. Aqui a janela é entre
+     * {@code cicloAbertoAncorado} e o UPDATE guardado — e ela NÃO é de nanossegundo: contém
+     * {@code exigirGestorTitularComAlvoNoBraco}, que faz 4 round-trips ao banco.
+     *
+     * <p>O que o teste fixa é a assimetria que a ADR apresentava como simetria: {@code parecer is
+     * null} guarda a DUPLICATA, não o CICLO DE VIDA. Com o dono decidindo no meio, o campo segue
+     * nulo — então o guard antigo deixava passar e gravava parecer consultivo num ciclo já
+     * APPROVED, devolvendo {@code true}, emitindo {@code REVIEW_PARECER_REGISTRADO} e deixando
+     * {@code parecer_em > decided_at} sem aviso nenhum.
+     */
+    @Test
+    void donoDecideNoMeioDaJanela_parecerConsultivoNaoEntraEmCicloFechado() {
+        Cenario c = cenario();
+
+        // O dono decide o ciclo — é isto que acontece DENTRO da janela, enquanto o gestor em
+        // estágio ainda está passando pelas 5 cercas do guard de braço.
+        issues.review(c.companyId(), c.issueDoBruno().getId(), ReviewDecision.APPROVE,
+                "aprovado pelo dono antes do parecer chegar", c.ciclo().getId(),
+                ActorType.BOARD, UUID.randomUUID());
+
+        Review fechado = recarrega(c);
+        assertThat(fechado.getStatus()).isEqualTo(ReviewStatus.APPROVED);
+        // A premissa que torna o guard antigo insuficiente: o campo do parecer continua NULO.
+        assertThat(fechado.getParecer())
+                .as("a janela é real: `parecer is null` segue verdadeiro num ciclo já decidido")
+                .isNull();
+
+        // Em transação, como em produção: o UPDATE guardado faz flush (@Modifying).
+        int rows = new TransactionTemplate(transactionManager).execute(status ->
+                reviews.tryRegistrarParecer(c.ciclo().getId(), c.companyId(), c.ana().getId(),
+                        "APROVARIA — cheguei depois do dono"));
+
+        assertThat(rows)
+                .as("quem arbitra é o BANCO: ciclo fechado não aceita parecer, mesmo sem duplicata")
+                .isZero();
+        assertThat(recarrega(c).getParecer()).isNull();
+        assertThat(recarrega(c).getParecerEm()).isNull();
     }
 
     @Test

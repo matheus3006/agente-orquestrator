@@ -7,9 +7,16 @@
 -- distinção entre "quem opinou" e "quem decidiu", que é exatamente a fronteira desta fatia.
 --
 -- Cardinalidade 1-para-1 com o CICLO (a linha review), não com a issue: reject → REOPEN → re-run
--- abre um ciclo NOVO, com slot de parecer novo. É isso que faz o dedupe do settle reexecutado sair
--- de graça, sem fingerprint (ADR-0048 §4) — o zumbi do lease-reaper reencontra o mesmo ciclo já
--- com parecer e o gate descarta com aviso, mesmo que o LLM tenha reformulado a prosa.
+-- abre um ciclo NOVO, com slot de parecer novo. É isso que faz prosa reformulada pelo LLM não
+-- furar o dedupe sem fingerprint (ADR-0048 §4) — o zumbi do lease-reaper reencontra o mesmo ciclo
+-- já com parecer e o gate descarta com aviso.
+--
+-- ⚠️ CORREÇÃO (fecho do parecer, 2026-07-20): este comentário dizia que a cardinalidade fazia o
+-- dedupe "sair de graça". Isso foi REFUTADO no hardening do PR #50 e a ADR e o Java já tinham sido
+-- emendados — só este arquivo carregava a alegação. De graça saía o dedupe SEQUENCIAL; sob
+-- concorrência real o ramo ESTÁGIO era read-then-write puro e 6 settles simultâneos gravavam os 6.
+-- Hoje quem arbitra é o UPDATE guardado (`and status = 'PENDING' and parecer is null`), não a
+-- cardinalidade. Migração já aplicada não se reescreve; o comentário, sim.
 --
 -- O ramo PROMOVIDO NÃO escreve aqui: lá o gestor decide, e o rastro dele são as colunas de decisão
 -- que já existem desde a V11 (reviewer_actor_type = 'AGENT' + reviewer_actor_id + decided_at).

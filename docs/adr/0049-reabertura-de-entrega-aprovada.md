@@ -105,6 +105,19 @@ APPROVE. Enfiar os dois no mesmo verbo apagaria a distinção no lugar onde ela 
   A ADR-0012 tratava a decisão do board como final; com a ADR-0048 abrindo a decisão para um gestor
   promovido, "final" passou a significar "um agente pode encerrar sozinho" — e é essa combinação,
   não a decisão do board, que exigia a válvula.
+- **ADR-0026 (F.12, `WorkspaceReaper`) e ADR-0028 (F.14, `RowRetentionReaper`) — a emenda que
+  FALTAVA** (acrescentada no fecho do parecer, 2026-07-20; conferência dos PRs #51/#52, 🟠 3).
+  Esta ADR mudou um invariante do qual **outros componentes vivem** e a lista acima não os
+  alcançou. Os dois reapers definem terminal como `{DONE, CANCELLED}` com TTL sobre
+  `issue.updated_at`:
+  - `RowRetentionPolicy` / `RowRetentionReaper` — 30 dias, e ao menos **protege o artifact fixado
+    por review** (o pin da ADR-0028);
+  - `WorkspaceReaper` — retenção default de **7 dias** e **SEM exceção de pin**. Este é o que
+    doía: reabrir uma entrega DONE mais velha que a retenção devolvia a issue ao jogo com o
+    workspace **já deletado**, e o assignee re-executava contra o vazio em silêncio.
+
+  **Classe do erro, registrada para a próxima vez:** "o conserto mudou um invariante do qual outro
+  componente vive". A varredura de quem depende de um invariante é parte do conserto, não follow-up.
 
 ## Consequências
 
@@ -113,8 +126,36 @@ APPROVE. Enfiar os dois no mesmo verbo apagaria a distinção no lugar onde ela 
   mas quem só usa a tela não a alcança. É a mesma classe de lacuna que o hardening do PR #49
   fechou para o `requestedBy` (racional prometendo visibilidade que a UI não dava) — aqui,
   conscientemente, ficou de fora do escopo desta fatia e está declarado no handoff.
-- Reabrir uma issue que já foi reaberta e refeita funciona sem caso especial: cada ciclo tem seu
-  carimbo e sua Decisão, e a linhagem `supersedes` encadeia.
+- Reabrir uma issue que já foi reaberta e refeita funciona sem caso especial **no que diz respeito
+  a ciclos e Decisões**: cada ciclo tem seu carimbo e sua Decisão, e a linhagem `supersedes`
+  encadeia.
+
+  > ⚠️ **Ressalva acrescentada no fecho do parecer (2026-07-20).** A frase original — "funciona sem
+  > caso especial", sem qualificador — era **falsa para o WORKSPACE**. Passada a retenção do
+  > `WorkspaceReaper` (7 dias), o artefato a corrigir não existe mais, e a reabertura entregava uma
+  > issue viva apontando para o nada. **Decisão do dono (D-FP-1): FALHAR ALTO** — o endpoint checa
+  > o evento durável `WORKSPACE_COLLECTED` e **RECUSA com 409**, dizendo a data da coleta e que
+  > reabrir não recupera o artefato. Racional: transforma **perda silenciosa em recusa explícita**;
+  > o dono decide sabendo do custo em vez de descobrir depois que o agente refez do zero.
+  > Descartadas: fixar o workspace (cresce disco indefinidamente, exige política própria de
+  > expiração) e avisar-e-seguir.
+  >
+  > A pergunta "este workspace foi coletado?" é UMA régua só (`ColetaDeWorkspace`), compartilhada
+  > com o preflight do start de preview server (F.12/ADR-0026 B4), que já fazia a mesma checagem.
+  > A fonte é o **evento durável**, não o mundo do alvo, de propósito: `listIssueWorkspaces`
+  > devolve lista vazia quando a listagem FALHA, então perguntar ao daemon faria uma queda de
+  > infraestrutura virar recusa em massa. Limite conhecido e aceito: workspace apagado FORA do
+  > reaper não produz evento e não é visto.
 - **Não existe reabertura de `CANCELLED`.** Não foi pedido, e `CANCELLED` é o único terminal que o
   dono escolhe explicitamente sabendo que encerra — a assimetria que motivou esta ADR é a de uma
   porta que um AGENTE fecha.
+- **O escopo real é `DONE`, que é MAIOR que "um APPROVE de review"** (precisado no fecho do
+  parecer, 2026-07-20; conferência dos PRs #51/#52, 🔵). O guard do UPDATE é `status='DONE'` e
+  nada mais, então a porta também reabre a issue de risco BAIXO que chegou a DONE por
+  `tryComplete` e **nunca teve ciclo de review** (`review_id` é nullable). O nome
+  `reabrirEntregaAprovada`, a mensagem de 409 e o título desta ADR falavam só de "desfazer um
+  APPROVE" — a descrição é que estava estreita, não o código. **Fica assim de propósito:** no
+  vocabulário da casa `DONE` É a entrega ACEITA, pelo revisor quando o risco ≥ limiar ou pela
+  própria política de risco quando está abaixo dele (ADR-0012 — "risco baixo dispensa review" é
+  uma decisão de aceite, não a ausência de uma). Estreitar o guard tiraria do dono a válvula sobre
+  metade das entregas sem ganho de segurança nenhum.

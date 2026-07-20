@@ -317,6 +317,47 @@ class CompanyMemoryMaterializationTest {
     }
 
     /**
+     * A "SUPERSEDIDA" tem de chegar ao leitor que a ADR-0049 cita como MOTIVO de fabricar a Decisão
+     * da reabertura (conferência dos PRs #51/#52, 🔵). O argumento do §3 é: não basta o
+     * activity_log, porque a Decisão é o que o executor LÊ na dieta do re-run — um
+     * {@code [APPROVE REVIEW] #N} sem qualificação seguiria dizendo a todo agente futuro que a
+     * entrega foi aceita.
+     *
+     * <p>Só que o filtro de superseded existia <b>apenas na projeção da carta</b>
+     * ({@code CompanyMemoryConsolidator}). Esta seção renderizava TODAS as ancoradas em ordem de
+     * seq, sem marca nenhuma — então o re-run continuava lendo o APPROVE como se valesse, ao lado
+     * da reabertura que o desfez. O argumento da ADR ficava meio respondido.
+     */
+    @Test
+    void decisaoSUPERSEDIDA_chegaAoExecutorMARCADA_naoComoSeAindaValesse() throws Exception {
+        UUID companyId = novaCompany();
+        Path claudeMd = workDir.resolve(".claude/CLAUDE.md");
+        UUID issueId = issues.create(companyId, "Login flow", null).getId();
+
+        Decision approve = decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.AGENTE, "[APPROVE REVIEW] #1 Login flow",
+                "entrega redonda", RacionalTipo.LOGICO, false)
+                .anchoredToReview(UUID.randomUUID(), issueId));
+        Decision reabertura = decisionLog.record(new Decision(UUID.randomUUID(), companyId, "backend",
+                DecisionTipo.OPERACIONAL, DecisionOrigem.DONO_NO_GATE, "[REABERTURA] #1 Login flow",
+                "o teste do caminho triste não existe", RacionalTipo.LOGICO, false)
+                .superseding(approve.getId())
+                .anchoredToReview(UUID.randomUUID(), issueId));
+
+        materializer.materialize(workDir, ".claude/CLAUDE.md", companyId, MemoryAudience.EXECUTOR, issueId);
+        String dieta = Files.readString(claudeMd);
+
+        // As duas continuam VISÍVEIS — o rastro é a metade da D-ORG-2 que paga pela outra.
+        assertThat(dieta).contains("#" + approve.getSeq()).contains("#" + reabertura.getSeq());
+        String linhaDoApprove = dieta.lines()
+                .filter(linha -> linha.startsWith("- #" + approve.getSeq() + " "))
+                .findFirst().orElseThrow();
+        assertThat(linhaDoApprove)
+                .as("o executor precisa ler que este APPROVE foi DESFEITO, não que ele vale")
+                .contains("SUPERSEDIDA");
+    }
+
+    /**
      * A ponta do CEO fica INALTERADA (R19-A): o turno tem issueId nulo, então nenhuma seção de
      * issue entra — mesmo quando a company TEM Decisões ancoradas em issues. O CEO recebe carta +
      * playbook, como antes; o feedback de issue é material do EXECUTOR daquela issue, não do CEO.

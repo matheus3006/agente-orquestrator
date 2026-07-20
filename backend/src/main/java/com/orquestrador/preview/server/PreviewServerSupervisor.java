@@ -1,12 +1,11 @@
 package com.orquestrador.preview.server;
 
 import com.orquestrador.activitylog.ActivityAction;
-import com.orquestrador.activitylog.ActivityLog;
-import com.orquestrador.activitylog.ActivityLogRepository;
 import com.orquestrador.activitylog.ActivityLogService;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.adapter.AdapterRegistry;
 import com.orquestrador.execution.runtime.ExecutionTarget;
+import com.orquestrador.execution.runtime.ColetaDeWorkspace;
 import com.orquestrador.execution.runtime.ExecutionTargets;
 import com.orquestrador.execution.runtime.WorkspaceResolver;
 import com.orquestrador.org.agent.Agent;
@@ -21,8 +20,6 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,7 +52,7 @@ public class PreviewServerSupervisor {
     private final AdapterRegistry adapters;
     private final WorkspaceResolver workspaces;
     private final ActivityLogService activityLog;
-    private final ActivityLogRepository activityLogEvents;
+    private final ColetaDeWorkspace coletaDeWorkspace;
     private final Duration ttl;
     private final Duration startPoll;
     private final String memory;
@@ -68,7 +65,7 @@ public class PreviewServerSupervisor {
     public PreviewServerSupervisor(PreviewServerManifestRepository manifests, AgentRepository agents,
                                    ExecutionTargets targets, AdapterRegistry adapters,
                                    WorkspaceResolver workspaces, ActivityLogService activityLog,
-                                   ActivityLogRepository activityLogEvents,
+                                   ColetaDeWorkspace coletaDeWorkspace,
                                    @Value("${orquestrador.preview.server.ttl-seconds:900}") long ttlSeconds,
                                    @Value("${orquestrador.preview.server.start-poll-ms:10000}") long startPollMs,
                                    @Value("${orquestrador.preview.server.memory:512m}") String memory,
@@ -80,7 +77,7 @@ public class PreviewServerSupervisor {
         this.adapters = adapters;
         this.workspaces = workspaces;
         this.activityLog = activityLog;
-        this.activityLogEvents = activityLogEvents;
+        this.coletaDeWorkspace = coletaDeWorkspace;
         this.ttl = Duration.ofSeconds(ttlSeconds);
         this.startPoll = Duration.ofMillis(startPollMs);
         this.memory = memory;
@@ -307,23 +304,23 @@ public class PreviewServerSupervisor {
         return false;
     }
 
-    private static final DateTimeFormatter COLLECTED_AT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
-
     /**
      * F.12 (ADR-0026, B4): se o workspace desta Issue foi coletado pelo GC (evento durável no
      * activity_log), devolve o aviso LEGÍVEL com a data — senão {@code null} (o start segue normal).
+     *
+     * <p>A CONSULTA mora na {@link ColetaDeWorkspace} desde o fecho do parecer: a mesma pergunta
+     * passou a guardar também a reabertura de entrega aprovada (D-FP-1/ADR-0049), e duas cópias de
+     * "o que conta como coletado" é justamente a classe de drift que aquela rodada veio limpar.
+     * Uma régua, duas cercas — a MENSAGEM continua de cada porta, porque a consequência é outra:
+     * aqui a app viva não volta; lá o artefato a corrigir não existe mais.
      */
     private StartResult workspaceCollectedNotice(UUID companyId, UUID issueId) {
-        ActivityLog collected = activityLogEvents
-                .findFirstByCompanyIdAndEntityIdAndActionOrderByCreatedAtDesc(
-                        companyId, issueId, ActivityAction.WORKSPACE_COLLECTED.name())
+        return coletaDeWorkspace.coletadoEm(companyId, issueId)
+                .map(quando -> StartResult.failure("workspace coletado pelo GC em "
+                        + ColetaDeWorkspace.formatado(quando)
+                        + " — a app viva nao volta; recrie a demo com um run novo"
+                        + " (a foto do preview segue eterna)"))
                 .orElse(null);
-        if (collected == null) {
-            return null;
-        }
-        return StartResult.failure("workspace coletado pelo GC em " + COLLECTED_AT.format(collected.getCreatedAt())
-                + " UTC — a app viva nao volta; recrie a demo com um run novo (a foto do preview segue eterna)");
     }
 
     private void recordStartOutcome(UUID companyId, UUID issueId, UUID boardUserId, Integer hostPort,
