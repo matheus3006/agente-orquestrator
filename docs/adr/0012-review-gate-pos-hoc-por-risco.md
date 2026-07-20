@@ -1,6 +1,8 @@
 # ADR-0012: Review gate (revisão pós-hoc disparada por risco, runtime-enforced)
 
-**Status:** Aceito (2026-07-02, sessão grilling `docs/handoff-grilling-approval-fechado.md`)
+**Status:** Aceito (2026-07-02, sessão grilling `docs/handoff-grilling-approval-fechado.md`) ·
+**EMENDADA 2026-07-20 (ADR-0048): "revisor = board" ganha a sua primeira exceção deliberada — o
+gestor PROMOVIDO decide o ciclo de uma entrega do próprio braço (ver Revisão abaixo)**
 
 ## Contexto
 Autonomia 24/7 exige que trabalho de alto risco não vire `DONE` sem um humano conferir, e que isso seja
@@ -62,3 +64,64 @@ lideradas por `company_id`. `decision_reason` mora **na tabela**, nunca no activ
   ADR segue **inalterado** — Approval é **pré-hoc** (o CEO propõe ANTES de agir).
 - A "Issue-que-pausa-no-meio morta" vale pros **executores**; o **CEO conversacional é a exceção** (tem canal de
   conversa com o humano — ADR-0018).
+
+## Revisão 2026-07-20 (ADR-0048 — o gestor promovido decide o ciclo)
+
+O contrato **"revisor = board"** (`:18`) ganha a sua **PRIMEIRA exceção deliberada**: um gestor
+**PROMOVIDO** (`team.gestor_status`, ADR-0046) decide o ciclo de review de uma entrega do **próprio
+braço**, com `reviewer_actor_type = 'AGENT'` — valor que **o dado já aceitava desde esta ADR** (a
+coluna nasceu `text` livre na V11); o que faltava era o **writer**. Decidido pelo dono no grill de
+org-design (**D-ORG-1**: validação delegada é **só trabalho**, a governança segue 100% humana;
+**D-ORG-2**: o gestor não nasce decidindo — nasce em ESTÁGIO, dando parecer, e o dono o promove por
+ato explícito) e executado na fatia F-ORG-C. Registro completo:
+`docs/adr/0048-review-delegado-parecer-do-gestor.md`.
+
+**A exceção é ESTREITA por desenho** (escopo de segurança da ADR-0048 §2/§3, molde replicado
+elemento por elemento da ADR-0047): só sobre entrega cujo **assignee** pertence à **subárvore** de
+um time que o ator gere (`ChainOfCommandService.pertenceASubarvore`) · **nunca sobre a própria
+entrega** — o gestor não se auto-revisa, porque `pertenceASubarvore` inclui a raiz nela mesma e,
+sem essa cerca, um gestor assignado a uma issue do próprio time aprovaria o próprio trabalho,
+exatamente o que este gate existe para impedir · só pelo método atrás do guard **revalidado no
+service**, nunca confiando no chamador · `ActorType.AGENT` como **literal fixo**, jamais parâmetro
+(um `decidirReviewComo(ActorType, …)` seria bypass permanente do `requireBoard` para qualquer ator).
+
+⚠️ **A quinta cerca — "o `unblock` do dono continua soberano" — vale só de um lado, e isso está em
+aberto.** A ADR-0048 (`:63-64`) e o `ParecerService` afirmam que *"nada aqui é irreversível"*; a
+conferência do PR #50 (achado 🔴 1) mediu o contrário e **esta emenda não propaga a afirmação**:
+
+- **REJECT** → `tryBlock` → `BLOCKED` → o `unblock {REOPEN|CANCEL}` do §7 pega. **Reversível** ✅
+- **APPROVE** → `tryApprove` → **`DONE`**, e `tryReopen`/`tryCancel` são ambos
+  `where status = 'BLOCKED'` (`IssueRepository:206`, `:219`). `DONE` **nunca aparece como origem**
+  de transição guardada, só como alvo: é **sink**. O `unblock` lança `ConflictException`.
+
+Ou seja: **a direção irreversível é justamente a perigosa** — um gestor promovido carimba entrega
+ruim e fecha a issue sem nenhum humano tê-la visto como PENDING. Isso **contradiz a D-ORG-2**
+(*"gestor decide sozinho… e qualquer entrega reabrível pelo dono"*), que é decisão do DONO — e a
+reabertura era a válvula que justificava dar autoridade de decisão a um agente. O recurso que existe
+hoje é issue corretiva (`CorrecaoDeEntregaRouter`), que é **trabalho novo, não reabertura**.
+**PENDENTE DE DECISÃO DO DONO** — registrado aqui para que o contrato durável não herde a afirmação
+não-medida; esta passagem documental não resolve (nem tem mandato para resolver) a contradição.
+
+**O `:16` fica incompleto, não errado.** *"O board decide via endpoint board-only"* segue valendo
+para o caminho humano, mas deixou de ser o **único**: `ParecerService.decidirReviewComoGestor`
+chama o **MESMO** `IssueService.review(...)` que o board chama, **sem passar pelo `requireBoard` do
+`ReviewController`** (`:55`). É o segundo caminho de autorização não-humana da casa (o primeiro foi
+o `DIRECT_ISSUE` da ADR-0047) e o **primeiro que não passa por um `requireBoard`**. A garantia
+migra do **controller** para o **guard do service** — revalidado como primeira linha das duas
+entradas públicas, antes de qualquer efeito e antes do dedupe (lição do hardening do PR #49: guard
+só no gate é seguro por **convenção**, não por **construção**).
+
+**A entidade `review` do `:29-30` ganhou 3 colunas (V38)**, todas do ramo consultivo: `parecer` (o
+texto composto deterministicamente pelo service, `"APROVARIA — <porquê>"`), `parecer_por_agent_id`
+e `parecer_em` — molde valor/quem/quando da V36. O ramo PROMOVIDO **não escreve nelas**: lá o rastro
+são as colunas de decisão que já existem desde a V11. **Não há coluna de voto legível por máquina, e
+isso é deliberado** — a D-ORG-2 proíbe pré-selecionar a decisão do dono a partir do parecer, e com
+um enum ao lado do texto a proibição valeria por disciplina; sem ele, a UI **não tem como** quebrá-la.
+O `decision_reason` desta ADR **não foi sequestrado**: ele segue pertencendo a quem **decide** — a
+fronteira entre "quem opinou" e "quem decidiu" é justamente a que a ADR-0048 desenha.
+
+**Nota de precisão sobre a escada de autoridade.** A escada é de **ATORES** — operador > gestor
+promovido > CEO (mediado) > arquiteto > executor. O que esta emenda registra é o **segundo PODER**
+do degrau que a ADR-0047 abriu, **não um degrau novo**: o gestor promovido *dirige o próprio braço
+sem gate* (ADR-0047) **e agora** *decide o review do próprio braço* (ADR-0048). Nenhum nível novo
+foi criado entre operador e CEO.

@@ -47,6 +47,10 @@ atualizado. `ApprovalActionType` (ADR-0018) é reservado para "agente PROPÕE, b
 propondo — é 100% julgamento do dono sobre desempenho observado (hoje, ainda sem o parecer
 estruturado da F-ORG-C; o julgamento é qualitativo, e tudo bem). Forçar esse ato pelo gate
 significaria inventar uma proposta fantasma só pra caber no vocabulário errado.
+*(O "hoje" venceu em 2026-07-20: a F-ORG-C embarcou (ADR-0048) e o parecer estruturado do gestor em
+ESTÁGIO passa a existir, ao lado do card, como a D-ORG-2 pediu. **A decisão acima não muda** — o
+promover segue endpoint direto board-only, e o julgamento do dono segue sendo dele; o que mudou é
+que agora ele tem o parecer na mesa ao carimbar.)*
 
 ### 3. O rastro do ATO de promover é `activity_log`; o vocabulário do rastro contínuo nasce reservado
 
@@ -92,3 +96,17 @@ dois vão ler.
 reservado mas sem nenhum emissor — F-ORG-D decide a forma exata do `detail` (que IDs entram, se
 precisa de mais de um valor de enum pra fases distintas) quando desenhar o mecanismo real de
 dirigir sem gate.
+
+## Nota de nomenclatura (2026-07-20) — "F-ORG-D" é a fatia que embarcou como ADR-0047
+
+O corpo desta ADR chama a fatia do *dirigir sem gate* de **F-ORG-D** (`:7`, `:15`, `:67`, `:77`,
+`:82`, `:92`, `:96`) — era o nome de plano em 2026-07-19, e fica **intacto como registro do que se
+pensava na época**. Ela embarcou com outro rótulo: **`docs/adr/0047-issue-dirigida-sem-gate.md`**
+("dirigir-sem-gate", PR #48 + hardening no #49). Leia toda menção a "F-ORG-D" aqui como ponteiro
+para a ADR-0047. Consequência já registrada lá (§Emendas): a reserva
+`ISSUE_DIRECIONADA_SEM_GATE` **saiu de "sem emissor" para consumida**, então o "Ficou aberto" acima
+está **fechado pela ADR-0047**, não pendente.
+
+O mesmo rótulo de plano sobrevive em `org/team/GestorStatus.java:6` e `org/team/TeamService.java:151`
+— **declarado e deixado** (fora da fronteira desta passagem documental); esta nota é o ponteiro
+único que resolve os dois.
