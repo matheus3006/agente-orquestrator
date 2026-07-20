@@ -1,6 +1,8 @@
 # ADR-0005: Modelo de heartbeat / execução
 
 **Status:** Aceito (2026-06-30)
+**EMENDADA 2026-07-20 (ADR-0050): o run pendurado deixa de renovar lease para sempre** — ver
+§Revisão 2026-07-20 ao final.
 
 ## Contexto
 O motor de execução é o subsistema mais difícil (no Paperclip virou um arquivo de ~12.528 linhas). Precisa: prevenir double-work e runaway, nunca perder sinal de wakeup, e — melhoria sobre o Paperclip — não ficar preso a single-node.
@@ -68,3 +70,27 @@ no **Agent** (`AgentRepository.findByIdForUpdate`), que serializa o dispatch por
 claim do Run. Direção decidida no levantamento de paralelismo: **doc passa a refletir o código**;
 adotar SKIP LOCKED fica como otimização possível se a enumeração virar gargalo multi-worker (não
 é correção de corretude).
+
+## Revisão 2026-07-20 (prazo de subprocesso, ADR-0050)
+
+> Emenda ADITIVA da fatia motor-thread-única. **Nenhuma regra do renovador muda** — o que muda é um
+> fato sobre o mundo em que ele opera.
+
+Esta ADR desenhou a renovação de lease assumindo que um run **termina**. A conferência do PR #53
+mostrou que isso não era garantido: sem prazo nos subprocessos, um run pendurado ficava vivo
+indefinidamente e o `LeaseRenewer` — que roda em daemon própria, justamente para não depender da
+thread do scheduler — **continuava renovando o lease de um trabalho morto, que nunca parecia
+expirado**. Era uma das duas travas que tornavam a recuperação automática estruturalmente
+impossível (a outra: o `LeaseReaper` estava na thread travada).
+
+A ADR-0050 fecha isso **sem tocar a regra do renovador**, e isso é decisão consciente:
+
+- O prazo garante que o run termina. Terminado o run — por sucesso, falha ou **estouro de prazo** —
+  o `Pulse` fecha pelo try-with-resources do `HeartbeatDispatcher.dispatchOnce` e a renovação para.
+  O estouro de prazo é só mais um caminho para o mesmo `finally` que já existia.
+- **O renovador NÃO ganha prazo próprio.** Foi a alternativa tentadora e está errada: seria um
+  segundo relógio, concorrente com o do processo, capaz de declarar morto um run vivo. Ele mantém
+  uma regra só — *enquanto eu tiver posse, renovo* — e quem sabe que o run acabou é quem o executou.
+
+Leitura que fica obsoleta: *"um run pendurado renova o lease para sempre"*. Ele não fica mais
+pendurado para sempre.

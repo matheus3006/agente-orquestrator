@@ -2,6 +2,8 @@
 
 **Status:** Aceito (2026-07-12, execução da faixa R8-A da rodada 8 —
 `docs/handoff-grilling-motor-nativo.md` §1 D4, §3 F-N4; `docs/laudo-sondas-nativas.md` §Sonda 2)
+**EMENDADA 2026-07-20 (ADR-0050): o `interrupt` ganha um 2º chamador — a escalação do estouro de
+prazo** (zero mudança no caminho manual) — ver §Revisão 2026-07-20 ao final.
 
 ## Contexto
 O grill do laudo motor-nativo (R5-A, D4) decidiu o desenho macro: o botão "parar" do v1 mata o
@@ -194,3 +196,25 @@ descartável H2 em :18081, NUNCA :8080): run real (`process` adapter, LOCAL) com
 cada 500ms). Prova em ambos os motores reais (claude/codex) do resume pós-kill fica para a
 verificação de campo do operador (o mecanismo de resume em si é zero-código-novo, D4.3 — a prova
 E2E com CLI real é a mesma que já valida o ADR-0038).
+
+## Revisão 2026-07-20 (prazo de subprocesso, ADR-0050)
+
+> Emenda ADITIVA da fatia motor-thread-única. **Zero mudança no caminho manual** — o `interrupt`
+> ganha um segundo chamador, não um segundo comportamento.
+
+O `interrupt(runId)` desta ADR foi desenhado como ato do OPERADOR (o botão "parar"). A ADR-0050 o
+reusa como **mecanismo de escalação do estouro de prazo**, pela razão que esta própria ADR
+estabeleceu: `destroyForcibly` no processo do host **não basta**.
+
+- Em DOCKER, o cliente `docker run` não repassa sinal ao container — é exatamente por isso que o
+  `buildInterruptArgs` endereça o container pelo **nome determinístico**.
+- Em LOCAL, um SIGKILL só-no-pai deixa o filho da tool call vivo e órfão — o requisito duro medido
+  pela sonda R6-B, que motivou o "descendentes primeiro" do `RunProcessRegistry.interrupt`.
+
+Um prazo que apenas devolvesse a thread do chamador, deixando container ou descendente rodando,
+trocaria uma **trava visível** por um **vazamento invisível** — trabalho queimando tokens sob um run
+já marcado como `FAILED`. Por isso o estouro chama `interrupt(runId)` **antes** do golpe no cliente.
+
+Consequência prática: `interrupt` passa a ter dois chamadores (o `RunInterruptService`, na thread do
+Tomcat, e o `ProcessoComPrazo`, na thread de dispatch). Ambos são idempotentes por construção — o
+`docker rm -f` trata "no such container" como sucesso e o registry de processos ignora runId ausente.
