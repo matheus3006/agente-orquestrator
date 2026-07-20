@@ -1,5 +1,7 @@
 package com.orquestrador.execution;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.orquestrador.conversation.ConversationTurnCoordinator;
 import com.orquestrador.context.ContextCompilationException;
 import com.orquestrador.context.ContextPackage;
@@ -56,6 +58,8 @@ import java.util.UUID;
  */
 @Component
 public class AdapterRunExecutor implements RunExecutor {
+
+    private static final Logger log = LoggerFactory.getLogger(AdapterRunExecutor.class);
 
     /** O env por onde o prompt do turno chega a QUALQUER runtime (o process não o aceita como command). */
     static final String PROMPT_ENV = "ORQ_PROMPT";
@@ -161,12 +165,31 @@ public class AdapterRunExecutor implements RunExecutor {
      * <p>Cada gate já é fail-soft por dentro; isto é o que mantém a afirmação verdadeira se um
      * deles regredir amanhã. Não silencia: o incidente vira step VISÍVEL no StepTrace, no mesmo
      * espírito anti-silêncio dos avisos de descarte.
+     *
+     * <p><b>A RECUPERAÇÃO também é protegida</b> (conferência dos PRs #51/#52, 🔵). O
+     * {@code recordStep} desce em {@code findById().orElseThrow()}: com o run já apagado (reaper de
+     * linhas, company removida) ou o banco fora, a gravação do incidente levantava DE DENTRO do
+     * catch e escapava — <b>pulando exatamente o settle que este cinto existe para garantir</b>.
+     * Um cinto cuja falha reproduz o dano que ele previne não é cinto. O último recurso é o log:
+     * perder a linha do StepTrace é ruim, deixar a Issue impegável para sempre é pior.
+     *
+     * <p>Visibilidade de PACOTE de propósito (mesmo recurso do {@code WorkspaceReaper.sweepTarget}):
+     * o cinto só se prova com um {@code ato} que explode, e nenhum gate real explode sob demanda —
+     * é um belt para regressão FUTURA. Sem isto, a única coisa que garante o settle é a que não
+     * tinha teste.
      */
-    private void semDerrubarOSettle(RunContext runContext, String gate, Runnable ato) {
+    void semDerrubarOSettle(RunContext runContext, String gate, Runnable ato) {
         try {
             ato.run();
         } catch (RuntimeException e) {
-            store.recordStep(runContext.runId(), "GATE_DE_SAIDA_FALHOU", gate + ": " + e);
+            try {
+                store.recordStep(runContext.runId(), "GATE_DE_SAIDA_FALHOU", gate + ": " + e);
+            } catch (RuntimeException aoRegistrar) {
+                log.error("gate {} falhou no run {} e o registro do incidente TAMBEM falhou"
+                                + " ({}); seguindo para o settle mesmo assim — issue travada"
+                                + " seria pior que step perdido. Falha original: {}",
+                        gate, runContext.runId(), aoRegistrar.toString(), e.toString());
+            }
         }
     }
 

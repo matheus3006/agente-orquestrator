@@ -14,6 +14,7 @@ import com.orquestrador.org.team.TeamRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -112,11 +113,22 @@ public class DirigirGate {
                 continue;
             }
             Agent alvo = candidatos.get(0);
-            // O braço é a SUBÁRVORE (D-ORG-3): o primeiro time gerido cuja subárvore contém o
-            // time do alvo decide o ramo. Fora de todas = fora do braço, REJEITADO (não ambíguo).
+            // O braço é a SUBÁRVORE (D-ORG-3): o time gerido cuja subárvore contém o time do alvo
+            // decide o ramo. Fora de todas = fora do braço, REJEITADO (não ambíguo).
+            //
+            // Multi-braço: vence o MENOS PRIVILEGIADO, a MESMA regra do ParecerGate (conferência
+            // dos PRs #51/#52, 🟠 2). O `findFirst` anterior escolhia por ordem de linha; com o
+            // OrderById da query virou determinístico por comparação de UUID ALEATÓRIO — que é
+            // repetível, mas não é fail-safe. E a consequência aqui NÃO é só "sob qual braço a
+            // issue nasce": se vence o PROMOVIDO a issue nasce born-APPROVED e o dono nunca a vê;
+            // se vence o ESTÁGIO o cartão para PENDING no gate. É exatamente "se um humano está no
+            // laço", decidido por sorteio de UUID. ESTÁGIO antes de PROMOVIDO (false < true), id
+            // como desempate: na dúvida o humano fica no laço, o lado barato de errar.
             Team braco = alvo.getTeamId() == null ? null : bracos.stream()
                     .filter(time -> chain.pertenceASubarvore(time.getId(), alvo.getTeamId()))
-                    .findFirst().orElse(null);
+                    .min(Comparator.<Team, Boolean>comparing(Team::gestorPromovido)
+                            .thenComparing(Team::getId))
+                    .orElse(null);
             if (braco == null) {
                 avisos.add("alvo '" + ordem.alvo() + "' está FORA do braço do gestor (D-ORG-3) — nada criado");
                 continue;

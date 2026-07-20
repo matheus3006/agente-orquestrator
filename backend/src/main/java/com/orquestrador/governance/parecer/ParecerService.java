@@ -31,10 +31,16 @@ import java.util.UUID;
  * PROMOVIDO é a SEGUNDA porta de autorização não-humana da casa: ele decide um ciclo de review
  * sem passar pelos dois {@code requireBoard} (IssueController/ReviewController). Por isso:
  * <ul>
- *   <li>{@link #exigirGestorTitularComAlvoNoBraco} roda como <b>PRIMEIRA linha</b> das duas
- *       entradas públicas, ANTES de qualquer efeito e antes do dedupe — o service REVALIDA
- *       sozinho, sem confiar no chamador (a lição do hardening item 2 do PR #49: guard só no gate
- *       é seguro por CONVENÇÃO, não por construção);</li>
+ *   <li>{@link #exigirGestorTitularComAlvoNoBraco} roda <b>antes de qualquer EFEITO</b> e antes do
+ *       dedupe nas duas entradas públicas — o service REVALIDA sozinho, sem confiar no chamador
+ *       (a lição do hardening item 2 do PR #49: guard só no gate é seguro por CONVENÇÃO, não por
+ *       construção). <b>Não é a primeira LINHA</b>, e a distinção importa para quem grepar isto
+ *       amanhã: desde o PR #52 ele roda em SEGUNDO ({@code :91-92} e {@code :138-139}), depois de
+ *       {@link #cicloAbertoAncorado}, porque a cerca de auto-review passou a mirar em QUEM
+ *       ENTREGOU e o entregador só se resolve a partir do ciclo. O que precede o guard é leitura
+ *       pura + {@code throw}, de efeito ZERO — a propriedade de segurança (nenhum efeito antes da
+ *       autorização) continua valendo; o que mudou foi só QUAL exceção aflora quando o chamador é
+ *       não-titular E não há ciclo aberto: hoje vence "não tem ciclo de review aberto";</li>
  *   <li>{@link ActorType#AGENT} entra como <b>literal fixo</b> no único call site do decide,
  *       nunca como parâmetro. Um {@code decidirReviewComo(ActorType, ...)} parametrizável seria
  *       bypass PERMANENTE do {@code requireBoard} pra QUALQUER ator — proibido como consequência
@@ -50,8 +56,16 @@ import java.util.UUID;
  * puro ({@code temParecer()} e depois {@code save}), e sob concorrência real seis settles
  * simultâneos gravavam os seis, cada um sobrescrevendo o anterior, todos devolvendo "gravei". O
  * teste que "provava" o dedupe chamava o gate 2× EM SEQUÊNCIA — provava o zumbi sequencial, não o
- * split-brain. Hoje os dois ramos têm CAS de banco: PROMOVIDO por
- * {@code where status='PENDING_REVIEW'}, ESTÁGIO por {@code where parecer is null}.
+ * split-brain.
+ *
+ * <p><b>Os dois ramos guardam o CICLO DE VIDA, não só a duplicata</b> (conferência dos PRs
+ * #51/#52, 🟠 1). A forma anterior desta frase — "hoje os dois ramos têm CAS de banco: PROMOVIDO
+ * por {@code where status='PENDING_REVIEW'}, ESTÁGIO por {@code where parecer is null}" —
+ * apresentava como SIMÉTRICOS dois guards que guardavam coisas diferentes: o promovido barrava
+ * ciclo já decidido, o estágio só barrava parecer repetido. Era a mesma forma de over-claim do
+ * "sai de graça" que esta classe veio corrigir, um nível abaixo. O UPDATE do estágio hoje carrega
+ * as DUAS cercas ({@code and status = 'PENDING'} + {@code and parecer is null}), então a simetria
+ * afirmada aqui existe de fato — ver {@link ReviewRepository#tryRegistrarParecer}.
  */
 @Service
 public class ParecerService {

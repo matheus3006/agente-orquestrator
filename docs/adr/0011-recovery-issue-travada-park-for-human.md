@@ -1,6 +1,9 @@
 # ADR-0011: Recovery de Issue travada por Run FAILED (park-for-human)
 
-**Status:** Aceito (2026-07-01, sessão grilling 7c)
+**Status:** Aceito (2026-07-01, sessão grilling 7c) ·
+**EMENDADA 2026-07-20 (ADR-0049): `BLOCKED` ganha um TERCEIRO motivo — a reabertura de entrega
+aprovada — e o `unblock` do §7 deixa de ser a única porta de volta de uma Issue liquidada
+(ver Revisão 2026-07-20 abaixo)**
 
 ## Contexto
 Um Run que falha estacionava a Issue travada **para sempre**: `checkout` seta `execution_lock_run_id`;
@@ -52,6 +55,26 @@ com o mesmo agente, pelo caminho normal); `CANCEL → CANCELLED`.
 - O `unblock {REOPEN|CANCEL}` **serve os dois sem mudança** (REOPEN mantém o agente → re-run normal). No reject,
   o feedback do revisor entra na **edição da Issue antes do REOPEN** (human-mediated — o agente selado não tem
   canal inbound).
+
+## Revisão 2026-07-20 (reabertura de entrega aprovada, ADR-0049)
+
+> Emenda ADITIVA do fecho do parecer. Esta ADR **nunca tinha sido tocada** pela esteira da ADR-0049,
+> apesar de ser a dona do estado `BLOCKED` e do `unblock` — conferência dos PRs #51/#52.
+
+- **`BLOCKED` passa a cobrir TRÊS motivos**, não dois. Ao lado de run **FAILED** (o §7 original) e
+  review **REJEITADA** (ADR-0012), entra a **reabertura de entrega aprovada** (ADR-0049): o dono
+  desfaz um `DONE` — possivelmente carimbado por um gestor promovido sem humano nenhum ter visto o
+  ciclo — e a Issue volta para `BLOCKED`. Os três seguem se distinguindo pelo **evento** no
+  activity log, não pelo status: `ISSUE_BLOCKED` · `REVIEW_REJECTED` · **`ISSUE_REABERTA`**.
+- **O `unblock` continua servindo os três sem mudança**, e continua soberano sobre `BLOCKED`. O que
+  mudou é que ele **deixou de ser a única porta de volta** de uma Issue liquidada: agora existe um
+  degrau ANTES dele para entregas aceitas (`DONE → BLOCKED`), e os dois se compõem em vez de
+  competir. A reabertura NÃO é um segundo jeito de estar "em revisão" — ela converge para o
+  caminho que já existia.
+- **O terceiro motivo tem uma recusa que os outros dois não têm:** se o `WorkspaceReaper` já
+  coletou o workspace da entrega (retenção default de 7 dias), reabrir é **RECUSADO com 409** em
+  vez de devolver uma Issue viva apontando para um artefato que não existe mais (D-FP-1). Ver
+  ADR-0049 §Emendas — é a peça que a ADR-0049 não tinha varrido.
 
 ## Nota de reconciliação (2026-07-14 — fecho documental; divergência MÉDIA da auditoria doc×código de 2026-07-11)
 

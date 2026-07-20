@@ -13,6 +13,8 @@ import com.orquestrador.work.issue.IssueRepository;
 import com.orquestrador.work.review.Review;
 import com.orquestrador.work.review.ReviewRepository;
 import com.orquestrador.work.review.ReviewStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -39,6 +41,8 @@ import java.util.UUID;
  */
 @Component
 public class ParecerGate {
+
+    private static final Logger log = LoggerFactory.getLogger(ParecerGate.class);
 
     static final int CAP_PARECERES_POR_RUN = 5;
 
@@ -89,7 +93,16 @@ public class ParecerGate {
             avisos.add("gate de parecer interrompido: " + e);
         } finally {
             if (!avisos.isEmpty()) {
-                store.recordStep(runId, "PARECER_DISCARDED", String.join("; ", avisos));
+                // A gravação do aviso também pode falhar (recordStep desce em
+                // findById().orElseThrow()) — e uma exceção no FINALLY substitui a original e sobe,
+                // que é o dano que este bloco existe para evitar (conferência dos PRs #51/#52, 🔵).
+                // Mesmo remédio do semDerrubarOSettle: último recurso é o log.
+                try {
+                    store.recordStep(runId, "PARECER_DISCARDED", String.join("; ", avisos));
+                } catch (RuntimeException aoRegistrar) {
+                    log.error("gate de parecer do run {}: os avisos {} nao chegaram ao StepTrace"
+                            + " ({})", runId, avisos, aoRegistrar.toString());
+                }
             }
         }
     }

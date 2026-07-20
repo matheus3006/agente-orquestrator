@@ -12,8 +12,11 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Materializa a DIETA sempre-on da company no workspace como {@code <workDir>/<memoryFile>} (ADR-0018
@@ -122,18 +125,32 @@ public class CompanyMemoryMaterializer {
         out.append("> As Decisões que o dono ancorou NESTA Issue — inclui o motivo de um REJECT no\n");
         out.append("> review. Endereçadas por #N no Log de Decisões. Este re-run precisa ENDEREÇAR\n");
         out.append("> este feedback antes de submeter de novo.\n\n");
+        // As SUPERSEDIDAS por outra Decisão desta mesma issue (conferência dos PRs #51/#52, 🔵).
+        // O filtro existia só na projeção da carta (CompanyMemoryConsolidator) — aqui TODAS eram
+        // renderizadas iguais, então o `[APPROVE REVIEW] #N` que uma reabertura desfez seguia na
+        // dieta do re-run sem qualificação, dizendo ao agente que a entrega tinha sido aceita.
+        // É exatamente o leitor que a ADR-0049 §3 cita como MOTIVO de fabricar a Decisão.
+        //
+        // Marcar, não esconder: o rastro é a metade da D-ORG-2 que paga pela outra, e o executor
+        // precisa ver o par (o que foi decidido E o que o desfez) para endereçar o feedback.
+        // Escopo: supersessão dentro desta issue — que é a linhagem que a reabertura produz.
+        Set<UUID> supersedidas = ancoradas.stream()
+                .map(Decision::getSupersedesId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
         out.append("## Decisões desta Issue\n");
         for (Decision decisao : ancoradas) {
-            out.append(linha(decisao));
+            out.append(linha(decisao, supersedidas.contains(decisao.getId())));
         }
         return java.util.Optional.of(out.toString());
     }
 
     /** O {@code #N} na frente é o ENDEREÇO (C4); o racional é o feedback que o executor precisa aplicar. */
-    private static String linha(Decision decisao) {
+    private static String linha(Decision decisao, boolean supersedida) {
         return "- #" + decisao.getSeq()
                 + " [" + DATA.format(decisao.getDecidedAt()) + "] "
                 + "(" + decisao.getArea() + ") "
+                + (supersedida ? "~SUPERSEDIDA~ " : "")
                 + decisao.getOQueMudou()
                 + " — racional: " + decisao.getRacional()
                 + "\n";

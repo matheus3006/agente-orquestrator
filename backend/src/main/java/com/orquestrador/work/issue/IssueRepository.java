@@ -220,6 +220,19 @@ public interface IssueRepository extends JpaRepository<Issue, UUID> {
      *
      * <p>rows==0 → a Issue não estava DONE (409). Não mexe em {@code execution_lock_run_id}: quem
      * chega a DONE pelo review gate já teve o lock liberado no {@code trySubmitForReview}.
+     *
+     * <p><b>"APROVADA" aqui é DONE, e o escopo é MAIOR que "um APPROVE de review"</b> (conferência
+     * dos PRs #51/#52, 🔵 — o nome, a mensagem de 409 e a ADR-0049 descreviam só "desfazer um
+     * APPROVE"). O guard é {@code status='DONE'} e nada mais, então isto também reabre a issue de
+     * risco BAIXO que chegou a DONE por {@code tryComplete} e <b>nunca teve review</b> —
+     * {@code review_id} é nullable e o caminho funciona.
+     *
+     * <p><b>Isso é deliberado, não descuido.</b> No vocabulário da casa {@code DONE} É a entrega
+     * ACEITA: pelo revisor quando o risco ≥ limiar, ou pela própria política de risco quando está
+     * abaixo dele (ADR-0012 — "risco baixo dispensa review" é uma decisão de aceite, não ausência
+     * de uma). Reabrir vale sobre entrega aceita, e as duas formas de aceitar contam. Estreitar o
+     * guard para "só quem teve ciclo APPROVED" tiraria do dono a válvula sobre metade das
+     * entregas, sem ganho de segurança nenhum.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """

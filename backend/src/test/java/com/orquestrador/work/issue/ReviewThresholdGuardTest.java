@@ -14,22 +14,22 @@ class ReviewThresholdGuardTest {
 
     @Test
     void limiarAcimaDaEscalaDerrubaOBoot() {
-        assertThatThrownBy(() -> new IssueService(null, null, null, null, null, null, null, null, null, null, null, 6))
+        assertThatThrownBy(() -> new IssueService(null, null, null, null, null, null, null, null, null, null, null, null, 6))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("risk-threshold");
     }
 
     @Test
     void limiarAbaixoDaEscalaDerrubaOBoot() {
-        assertThatThrownBy(() -> new IssueService(null, null, null, null, null, null, null, null, null, null, null, 0))
+        assertThatThrownBy(() -> new IssueService(null, null, null, null, null, null, null, null, null, null, null, null, 0))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void limiaresDaEscalaConstroem() {
         assertThatCode(() -> {
-            new IssueService(null, null, null, null, null, null, null, null, null, null, null, 1);
-            new IssueService(null, null, null, null, null, null, null, null, null, null, null, 5);
+            new IssueService(null, null, null, null, null, null, null, null, null, null, null, null, 1);
+            new IssueService(null, null, null, null, null, null, null, null, null, null, null, null, 5);
         }).doesNotThrowAnyException();
     }
 }

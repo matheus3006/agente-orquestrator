@@ -4,8 +4,14 @@
 `HANDOFF-grill-org-design.md` (**D-ORG-1**, **D-ORG-2**, **D-ORG-9**) · migração **V38**
 (`V38__review_parecer_do_gestor.sql`) · constrói sobre a **ADR-0045** (árvore-organograma) e a
 **ADR-0046** (`gestor_status`) · replica o modelo de segurança da **ADR-0047** · **EMENDA a
-ADR-0012 e a ADR-0019** (ver §Emendas) · consome `DecisionOrigem.AGENTE`, reservado desde a
-ADR-0019 sem writer.
+ADR-0012 e a ADR-0019** (ver §Emendas) · consome `DecisionOrigem.AGENTE` — o **primeiro writer
+pela porta do GATE** (ver §Emendas).
+
+> ⚠️ **Corrigido no fecho do parecer (2026-07-20).** A forma anterior dizia que esta fatia consumia
+> `DecisionOrigem.AGENTE` *"reservado desde a ADR-0019 **sem writer**"*. **Era falso quando
+> escrito:** já existiam DOIS writers — `AbsorcaoDeIssueRouter` e `CorrecaoDeEntregaRouter`. A
+> alegação verdadeira é mais estreita, e continua interessante: é o primeiro writer **pela porta do
+> gate** (`GateDecisionFactory`, D5 da ADR-0019). Detalhes no §Emendas.
 
 ## Contexto
 
@@ -74,10 +80,18 @@ exige motivo, transição guardada por `PENDING_REVIEW` (0 linhas → 409), fáb
 **segundo** caminho de autorização não-humana da casa, e o primeiro que não passa pelos
 `requireBoard` de `IssueController`/`ReviewController`:
 
-- `exigirGestorTitularComAlvoNoBraco` roda como **PRIMEIRA linha** das duas entradas públicas,
-  **antes de qualquer efeito e antes do dedupe** — o service REVALIDA sozinho, sem confiar no
-  chamador (lição do hardening item 2 do PR #49: guard só no gate é seguro por CONVENÇÃO, não por
-  construção). Cinco cercas, todas `IllegalStateException` fail-closed.
+- `exigirGestorTitularComAlvoNoBraco` roda **antes de qualquer EFEITO e antes do dedupe** nas duas
+  entradas públicas — o service REVALIDA sozinho, sem confiar no chamador (lição do hardening item
+  2 do PR #49: guard só no gate é seguro por CONVENÇÃO, não por construção). Cinco cercas, todas
+  `IllegalStateException` fail-closed.
+
+  > ⚠️ **Precisão corrigida no fecho do parecer (2026-07-20).** Dizia "roda como **PRIMEIRA
+  > linha**". Deixou de ser literalmente verdade no PR #52: roda em SEGUNDO nas duas, depois de
+  > `cicloAbertoAncorado`, porque a cerca de auto-review passou a mirar em quem ENTREGOU e o
+  > entregador só se resolve a partir do ciclo. O que precede é leitura pura + `throw`, efeito
+  > ZERO — **a propriedade de segurança (nenhum efeito antes da autorização) continua valendo**, e
+  > é ela que este item afirma. A mesma frase vivia no javadoc do `ParecerService` e na ADR-0012;
+  > as **três** foram corrigidas juntas, que é o ponto inteiro de uma fatia ter o assunto todo.
 - `ActorType.AGENT` é **literal fixo** no único call site do decide, **nunca parâmetro**. Um
   `decidirReviewComo(ActorType, ...)` parametrizável seria bypass PERMANENTE do `requireBoard`
   para QUALQUER ator — **proibido como consequência silenciosa desta fatia**; generalizar exige
@@ -108,6 +122,15 @@ de parecer novo: a cardinalidade certa é por ciclo, não por issue.
 > de pé; o "**sai de graça**" não. Os dois ramos eram apresentados como igualmente estruturais, e
 > **não eram**: o PROMOVIDO tinha CAS de banco real, o ESTÁGIO era read-then-write puro (lost
 > update sob concorrência). Hoje os dois têm CAS de banco.
+
+> ⚠️ **Emendado DE NOVO na fatia fecho-do-parecer (2026-07-20) — ver §Fecho, item A1.** A última
+> frase acima ("Hoje os dois têm CAS de banco") era verdadeira só na LETRA: os dois passaram a ter
+> CAS, mas guardavam **coisas diferentes** — o PROMOVIDO guardava o CICLO DE VIDA
+> (`where status='PENDING_REVIEW'`), o ESTÁGIO só a DUPLICATA (`where parecer is null`).
+> Apresentá-los como simétricos era **a mesma forma de over-claim do "sai de graça", um nível
+> abaixo** — e a assimetria era explorável: com o dono decidindo dentro da janela do guard de
+> braço, o parecer consultivo entrava num ciclo já APPROVED. O UPDATE do estágio ganhou
+> `and status = 'PENDING'`; só agora a simetria afirmada existe de fato.
 
 ### 5. O parecer é campo, e não carrega voto legível por máquina
 
@@ -146,8 +169,33 @@ mais precisa de rastro.
   exceção é estreita por desenho — só dentro da subárvore, nunca sobre a própria entrega, só pelo
   método atrás do guard do §3, e o `unblock` do dono continua soberano. A escada de autoridade
   ganha o segundo degrau real entre operador e CEO (o primeiro foi o `DIRECT_ISSUE`, ADR-0047).
-- **ADR-0019/D4 (proveniência da Decisão):** `DecisionOrigem.AGENTE` existia desde a ADR-0019
-  marcado como "fatia futura — nenhum writer no v1". Esta fatia é esse writer.
+
+  > ⚠️ **Corrigido no fecho do parecer (2026-07-20) — deslize CONCEITUAL, não factual.** A escada é
+  > de **ATORES** — operador > gestor promovido > CEO (mediado) > arquiteto > executor. O gestor
+  > promovido é **UM** degrau, aberto pela ADR-0047, que agora tem **DOIS PODERES**: *dirigir o
+  > próprio braço sem gate* (ADR-0047) **e** *decidir o review do próprio braço* (ADR-0048).
+  > **Nenhum nível novo foi criado** entre operador e CEO — falar em "segundo degrau" sugere uma
+  > hierarquia mais funda do que a fatia produziu, que é justamente o tipo de inflação que um
+  > contrato durável não pode carregar. A formulação correta já tinha sido escrita na ADR-0012
+  > (§"Nota de precisão sobre a escada de autoridade") e nunca voltou para cá — órfã da proibição
+  > cruzada entre as faixas do PR #51/#52.
+- **ADR-0019/D4 (proveniência da Decisão):** esta fatia é o **primeiro writer de
+  `DecisionOrigem.AGENTE` pela porta do GATE** (`GateDecisionFactory` — o chokepoint da D5 da
+  ADR-0019), e é isso que a torna interessante: a proveniência `AGENTE` passa a nascer de uma
+  Decisão **tomada num gate de governança**, não de um roteador de trabalho.
+
+  > ⚠️ **Corrigido no fecho do parecer (2026-07-20) — afirmação falsa + citação MISATRIBUÍDA.** A
+  > forma anterior dizia: *"`DecisionOrigem.AGENTE` existia desde a ADR-0019 marcado como 'fatia
+  > futura — nenhum writer no v1'. Esta fatia é esse writer."* Dois erros:
+  > 1. **Já havia dois writers** — `AbsorcaoDeIssueRouter` e `CorrecaoDeEntregaRouter`. "Esta fatia
+  >    é esse writer" era falso; o correto é o recorte estreito acima (primeiro pela porta do gate).
+  > 2. **A frase citada nunca esteve na ADR-0019.** Ela era javadoc de
+  >    `memory/DecisionOrigem.java` — atribuir a um contrato durável um texto que vive no código faz
+  >    o leitor procurar (e "corrigir") o documento errado.
+  >
+  > O Java (`DecisionOrigem.java`, `IssueService`) e a ADR-0019 já tinham sido corrigidos no PR #51;
+  > **só esta ADR seguia com as duas versões falsas**, porque a faixa que podia consertá-la estava
+  > proibida de editar `docs/adr/*.md` e a que estava autorizada não sabia delas.
 
 ## Consequências
 
@@ -250,6 +298,23 @@ consultivo; `id` como desempate. Fail-safe: na dúvida o humano fica no laço, q
 errar. A query ganhou `OrderById`, o que também estabiliza o `DirigirGate` (que segue com
 `findFirst`; lá a consequência é sob qual braço a issue nasce, não se um humano está no laço).
 
+> ⚠️ **Emendado na fatia fecho-do-parecer (2026-07-20) — ver §Fecho, item A2.** A ressalva entre
+> parênteses acima **é FALSA**, e a regra do menos-privilegiado foi aplicada ao `DirigirGate`
+> também. Duas correções:
+>
+> 1. **`OrderById` não torna o `findFirst` fail-safe.** Ele troca "ordem arbitrária das linhas" por
+>    "ordem de UUID **aleatório**": vira repetível, continua sorteio. Estabilidade ≠ fail-safe.
+> 2. **A consequência no dirigir é exatamente "se um humano está no laço".** Se o braço de menor
+>    UUID for o PROMOVIDO, a issue nasce **born-APPROVED e o dono nunca a vê**; se for o ESTÁGIO, o
+>    cartão para PENDING no gate e o dono decide. Medido no teste
+>    `gestorComDoisBracosAplicaveisNoDirigir_oMENOSPrivilegiadoVence_eOHumanoFicaNoLaco`, cujos dois
+>    arranjos espelhados davam respostas OPOSTAS antes do conserto.
+>
+> **Procedência do erro, registrada de propósito:** esta caracterização não nasceu na fatia que
+> escreveu a ADR — ela veio do kickoff da sessão de controle e foi transcrita de boa-fé. O mesmo
+> texto estava em `TeamRepository`, e os dois foram corrigidos juntos. O **atenuante** continua
+> valendo e não vira desculpa: o estado de 2 braços é hoje inalcançável pelas portas de serviço.
+
 **Alcance honesto:** pela porta de serviço o estado de 2 braços é hoje **INALCANÇÁVEL** —
 `Agent.teamId` é único, `setGestor` exige que o gestor seja MEMBRO do time, e `assignAgent` revoga
 o posto no time que o agente deixa. A cerca é defesa em profundidade (e o teste monta o estado
@@ -266,3 +331,72 @@ entrega **passava**.
 A cerca passou a mirar em `Review.runId`; a do assignee **fica de pé ao lado**, como cinto. A
 subárvore também passou a ser medida pelo time de quem entregou. E esta era **a única das 5 cercas
 sem teste de chamador direto ao service** — agora tem.
+
+## Fecho do parecer (2026-07-20, fatia fecho-do-parecer)
+
+A conferência dos PRs #51/#52 achou 3 🟠 novos, 1 🟡 e 7 🔵 — e, mais importante, que a **divisão da
+rodada anterior em "faixa de código" × "faixa de documentação" produziu ÓRFÃOS**: três afirmações
+falsas nesta ADR ficaram sem dono, porque quem podia consertá-las estava proibido de editar
+`docs/adr/*.md` e quem estava autorizado não sabia delas. Esta fatia teve o assunto INTEIRO.
+**Reserva ADR-0050 DEVOLVIDA** — tudo aqui é emenda à 0048/0049, nenhuma decisão nova.
+
+### A1. O guard do ESTÁGIO guardava o CAMPO, não o CICLO
+
+`ReviewRepository.tryRegistrarParecer` era `where id + company_id + parecer is null`. Faltava
+`and status = 'PENDING'`. A janela entre `cicloAbertoAncorado` e o UPDATE contém
+`exigirGestorTitularComAlvoNoBraco`, que faz **4 round-trips ao banco** — não é janela de
+nanossegundo. Com o dono decidindo o ciclo aí dentro, `parecer is null` seguia verdadeiro e o
+UPDATE **gravava parecer consultivo num ciclo já APPROVED/REJECTED**, devolvia `true`, emitia
+`REVIEW_PARECER_REGISTRADO` e deixava `parecer_em > decided_at` **sem aviso nenhum**.
+
+**Medido, não teorizado:** o teste
+`donoDecideNoMeioDaJanela_parecerConsultivoNaoEntraEmCicloFechado` falha contra o código antigo com
+`expected: 0 but was: 1` — o parecer entrou mesmo. E a ADR **repetia o over-claim que a própria
+rodada veio corrigir** (§4, "hoje os dois ramos têm CAS de banco"): ver a emenda lá em cima.
+
+### A2. A regra fail-safe não tinha ido ao `DirigirGate`
+
+`DirigirGate` seguia com `.findFirst()`. Com o `OrderById` da query virou determinístico **por
+comparação de UUID aleatório — repetível, mas não fail-safe**. Aplicada a mesma regra do
+`ParecerGate` (`min(comparing(gestorPromovido).thenComparing(getId))` ⇒ ESTÁGIO vence). A
+justificativa registrada no §Hardening item 5 era **falsa** e foi corrigida lá — ver a emenda, que
+registra também a **procedência do erro** (veio do kickoff da sessão de controle, transcrito de
+boa-fé), porque errar em artefato durável é diferente de errar em conversa.
+
+### A3. `DONE` reabrível × os reapers → **FALHAR ALTO** (D-FP-1)
+
+A ADR-0049 mudou o invariante "DONE é terminal" e não varreu quem vive dele. Decisão do dono:
+o endpoint de reabrir **RECUSA com 409** se o workspace já foi coletado. Detalhes e racional na
+**ADR-0049 §Emendas** (emendada por esta fatia), incluindo por que a fonte é o evento durável e não
+o mundo do alvo.
+
+### A4. O invariante que a própria classe declarava ficou literalmente falso
+
+`ParecerService` afirmava que o guard roda "como **PRIMEIRA linha** das duas entradas públicas".
+Desde o PR #52 roda em **segundo** nas duas, porque passou a precisar do ciclo para resolver o
+entregador. Sem consequência de privilégio — o que precede é leitura pura + `throw`, efeito ZERO —
+mas esta é a classe cujo argumento de segurança inteiro é "molde da ADR-0047 replicado elemento por
+elemento", e **o elemento que uma fatia futura vai grepar deixou de descrever o código**. Reescrito
+para dizer a ordem real e o porquê. A ADR-0012 carregava a MESMA frase e foi corrigida junto.
+
+### Os 🔵, todos fechados
+
+- **`semDerrubarOSettle` ganhou teste** (era zero `GATE_DE_SAIDA_FALHOU` em `src/test`) — o cinto
+  descrito como "o que mantém a afirmação verdadeira se um gate regredir amanhã" era exatamente o
+  que regredia sem ninguém ver.
+- **A recuperação do cinto era desprotegida:** o `recordStep` do catch desce em
+  `findById().orElseThrow()`; se levantasse, escapava e **pulava o settle — o dano exato que o
+  cinto existe para evitar**. Um cinto cuja falha reproduz o dano que ele previne não é cinto.
+  Fechado no `AdapterRunExecutor` e na forma irmã do `finally` do `ParecerGate`.
+- **A "SUPERSEDIDA" agora chega ao leitor que a ADR-0049 §3 cita como motivo:**
+  `CompanyMemoryMaterializer.feedbackDaIssue` renderizava TODAS as Decisões ancoradas sem marca (o
+  filtro existia só na projeção da carta), então o `[APPROVE REVIEW] #N` desfeito por uma reabertura
+  seguia na dieta do re-run dizendo que a entrega valia. Marca, não esconde — o rastro é a metade da
+  D-ORG-2 que paga pela outra.
+- **`V38__review_parecer_do_gestor.sql`** ainda carregava a alegação REFUTADA do "sai de graça";
+  ADR e Java já tinham sido emendados, só a migração não. Comentário corrigido (o DDL, não).
+- **`ISSUE_REABERTA` ganhou case** em `frontend/src/lib/feed.ts` — caía no `default` e aparecia como
+  token cru para o operador.
+- **Ramo morto removido** em `IssueService` (os 2 lados do ternário produziam o mesmo `Anchor`).
+- **`tryReabrirAprovada` tem escopo maior que o nome** — e fica assim de propósito, agora escrito:
+  ver ADR-0049 §Consequências.

@@ -2,7 +2,9 @@
 
 **Status:** Aceito (2026-07-02, sessão grilling `docs/handoff-grilling-approval-fechado.md`) ·
 **EMENDADA 2026-07-20 (ADR-0048): "revisor = board" ganha a sua primeira exceção deliberada — o
-gestor PROMOVIDO decide o ciclo de uma entrega do próprio braço (ver Revisão abaixo)**
+gestor PROMOVIDO decide o ciclo de uma entrega do próprio braço (ver Revisão abaixo)** ·
+**EMENDADA 2026-07-20 (ADR-0049): `DONE` deixa de ser sink — a entrega aprovada é REABRÍVEL pelo
+dono, o que fecha a contradição com a D-ORG-2 que a emenda da 0048 tinha deixado em aberto**
 
 ## Contexto
 Autonomia 24/7 exige que trabalho de alto risco não vire `DONE` sem um humano conferir, e que isso seja
@@ -85,31 +87,57 @@ exatamente o que este gate existe para impedir · só pelo método atrás do gua
 service**, nunca confiando no chamador · `ActorType.AGENT` como **literal fixo**, jamais parâmetro
 (um `decidirReviewComo(ActorType, …)` seria bypass permanente do `requireBoard` para qualquer ator).
 
-⚠️ **A quinta cerca — "o `unblock` do dono continua soberano" — vale só de um lado, e isso está em
-aberto.** A ADR-0048 (`:63-64`) e o `ParecerService` afirmam que *"nada aqui é irreversível"*; a
-conferência do PR #50 (achado 🔴 1) mediu o contrário e **esta emenda não propaga a afirmação**:
+✅ **A quinta cerca — "o `unblock` do dono continua soberano" — valia só de um lado, e a ADR-0049
+fechou o outro.** A ADR-0048 (`:63-64`) e o `ParecerService` afirmavam que *"nada aqui é
+irreversível"*; a conferência do PR #50 (achado 🔴 1) **mediu o contrário**, e o furo era real:
 
 - **REJECT** → `tryBlock` → `BLOCKED` → o `unblock {REOPEN|CANCEL}` do §7 pega. **Reversível** ✅
-- **APPROVE** → `tryApprove` → **`DONE`**, e `tryReopen`/`tryCancel` são ambos
-  `where status = 'BLOCKED'` (`IssueRepository:206`, `:219`). `DONE` **nunca aparece como origem**
-  de transição guardada, só como alvo: é **sink**. O `unblock` lança `ConflictException`.
+  (sempre foi).
+- **APPROVE** → `tryApprove` → **`DONE`**. Enquanto `tryReopen` e `tryCancel` eram os únicos
+  UPDATEs guardados de recovery — ambos `where status = 'BLOCKED'` —, `DONE` **não aparecia como
+  estado-ORIGEM** de transição guardada nenhuma, só como alvo: era **sink**, e o `unblock` lançava
+  `ConflictException`. **Hoje aparece:** `IssueRepository.tryReabrirAprovada` é
+  `where status = 'DONE'` → `BLOCKED`, e dali o `unblock` de sempre. **Reversível** ✅
 
-Ou seja: **a direção irreversível é justamente a perigosa** — um gestor promovido carimba entrega
-ruim e fecha a issue sem nenhum humano tê-la visto como PENDING. Isso **contradiz a D-ORG-2**
-(*"gestor decide sozinho… e qualquer entrega reabrível pelo dono"*), que é decisão do DONO — e a
-reabertura era a válvula que justificava dar autoridade de decisão a um agente. O recurso que existe
-hoje é issue corretiva (`CorrecaoDeEntregaRouter`), que é **trabalho novo, não reabertura**.
-**PENDENTE DE DECISÃO DO DONO** — registrado aqui para que o contrato durável não herde a afirmação
-não-medida; esta passagem documental não resolve (nem tem mandato para resolver) a contradição.
+> 📌 **Por que este parágrafo cita MÉTODO e não linha.** A forma anterior ancorava em
+> `IssueRepository:206` e `:219`. O `:206` sobreviveu por sorte; o `:219` **apodreceu em ~33
+> minutos**, quando o merge da ADR-0049 inseriu `tryReabrirAprovada` entre `tryReopen` e
+> `tryCancel` e passou a apontar para prosa de javadoc. A âncora foi reescrita **de novo** no fecho
+> do parecer, ao acrescentar javadoc ao mesmo método. Duas podridões no mesmo par de números em um
+> dia: âncora de linha para código vivo é dívida, não precisão. **Nome de método, sempre.**
+
+Ou seja: **a direção irreversível ERA justamente a perigosa** — um gestor promovido carimbava
+entrega ruim e fechava a issue sem nenhum humano tê-la visto como PENDING. Isso **contradizia a
+D-ORG-2** (*"gestor decide sozinho… e qualquer entrega reabrível pelo dono"*), que é decisão do
+DONO — e a reabertura era a válvula que justificava dar autoridade de decisão a um agente. Enquanto
+o furo esteve aberto, o único recurso era issue corretiva (`CorrecaoDeEntregaRouter`), que é
+**trabalho novo, não reabertura**; **hoje ela deixou de ser o único** — a reabertura de verdade
+existe, e as duas convivem (corrigir por cima × desfazer o aceite).
+
+✅ **DECIDIDO PELO DONO (2026-07-20) — ADR-0049**, não mais pendente. A entrega aprovada volta para
+`BLOCKED` (o estado que o §7 da ADR-0011 já sabia destravar), o ciclo de review **continua
+`APPROVED` com o carimbo do gestor intacto** (o rastro é a metade da D-ORG-2 que paga pela outra) e
+a reabertura fabrica uma Decisão que **SUPERSEDE** a do carimbo desfeito. Uma ressalva ficou:
+passada a retenção do `WorkspaceReaper`, reabrir é **RECUSADO com 409** em vez de devolver uma
+Issue viva apontando para artefato coletado (D-FP-1; ADR-0049 §Emendas).
 
 **O `:16` fica incompleto, não errado.** *"O board decide via endpoint board-only"* segue valendo
 para o caminho humano, mas deixou de ser o **único**: `ParecerService.decidirReviewComoGestor`
 chama o **MESMO** `IssueService.review(...)` que o board chama, **sem passar pelo `requireBoard` do
 `ReviewController`** (`:55`). É o segundo caminho de autorização não-humana da casa (o primeiro foi
 o `DIRECT_ISSUE` da ADR-0047) e o **primeiro que não passa por um `requireBoard`**. A garantia
-migra do **controller** para o **guard do service** — revalidado como primeira linha das duas
-entradas públicas, antes de qualquer efeito e antes do dedupe (lição do hardening do PR #49: guard
-só no gate é seguro por **convenção**, não por **construção**).
+migra do **controller** para o **guard do service** — revalidado **antes de qualquer EFEITO** e
+antes do dedupe nas duas entradas públicas (lição do hardening do PR #49: guard só no gate é seguro
+por **convenção**, não por **construção**).
+
+> ⚠️ **Precisão corrigida no fecho do parecer (2026-07-20).** Este parágrafo dizia "revalidado como
+> **primeira linha** das duas entradas públicas". Deixou de ser literalmente verdade no PR #52: o
+> guard passou a rodar em SEGUNDO nas duas, depois de `cicloAbertoAncorado`, porque a cerca de
+> auto-review passou a mirar em **quem ENTREGOU** e o entregador só se resolve a partir do ciclo. O
+> que precede é leitura pura + `throw`, de efeito ZERO — **a propriedade de segurança continua
+> valendo**, e é ela que este parágrafo queria afirmar. Corrigido junto com o javadoc do
+> `ParecerService`, que carregava a mesma frase: era o par exato de afirmação-que-parou-de-descrever-
+> o-código que esta rodada veio limpar, e deixá-lo só no Java teria criado mais um órfão.
 
 **A entidade `review` do `:29-30` ganhou 3 colunas (V38)**, todas do ramo consultivo: `parecer` (o
 texto composto deterministicamente pelo service, `"APROVARIA — <porquê>"`), `parecer_por_agent_id`

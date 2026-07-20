@@ -57,6 +57,15 @@ describe("buildFeedEntry (feed do shape REAL do activity_log)", () => {
     expect(text(entry)).toBe("board reabriu #7 Deploy do servico de billing");
   });
 
+  // ADR-0049: reabrir uma entrega APROVADA é outro fato que ISSUE_REOPENED (o unblock) — quem
+  // desfaz um APPROVE do gestor promovido é o dono, e o feed é onde isso aparece. Sem case, caía
+  // no default e o operador via o token cru "ISSUE_REABERTA".
+  it("ISSUE_REABERTA: desfazer entrega aprovada não vira token cru", () => {
+    const entry = buildFeedEntry(event({ action: "ISSUE_REABERTA" }), LOOKUPS);
+    expect(entry.icon).toBe("reopened");
+    expect(text(entry)).toBe("board reabriu a entrega aprovada de #7 Deploy do servico de billing");
+  });
+
   it("ISSUE_SUBMITTED_FOR_REVIEW: risco resolvido vira o mono do protótipo", () => {
     const entry = buildFeedEntry(
       event({

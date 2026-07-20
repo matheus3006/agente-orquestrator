@@ -93,6 +93,15 @@ export function buildFeedEntry(event: ActivityEvent, lookups: FeedLookups): Feed
     }
     case "ISSUE_REOPENED":
       return build("info", "reopened", [strong(actor), text(" reabriu "), ...issueSegments(event.entityId)]);
+    // ADR-0049: NÃO é o mesmo fato que ISSUE_REOPENED (aquele é o unblock do §7). Este desfaz um
+    // APPROVE — possivelmente o de um gestor promovido, que fechou a issue sem humano nenhum ver.
+    // É a válvula que a D-ORG-2 exige em troca de delegar a decisão; o feed é onde ela aparece.
+    case "ISSUE_REABERTA":
+      return build("info", "reopened", [
+        strong(actor),
+        text(" reabriu a entrega aprovada de "),
+        ...issueSegments(event.entityId),
+      ]);
     case "ISSUE_CANCELLED":
       return build("info", "cancelled", [strong(actor), text(" cancelou "), ...issueSegments(event.entityId)]);
     case "ISSUE_SUBMITTED_FOR_REVIEW": {

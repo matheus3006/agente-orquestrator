@@ -18,6 +18,7 @@ import com.orquestrador.work.issue.IssueRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
@@ -60,6 +61,8 @@ class DirigirGateTest {
     private HeartbeatRunRepository runs;
     @Autowired
     private HeartbeatRunEventRepository runEvents;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     /**
      * A árvore do cenário-padrão (o exemplo do grill): Marketing (Ana gestora) ⊃ Social Media
@@ -162,6 +165,57 @@ class DirigirGateTest {
         assertThat(cartao.getStatus()).isEqualTo(ApprovalStatus.PENDING);
         assertThat(cartao.getDecidedByActorType()).isNull();
         assertThat(issuesDa(c.companyId())).as("estágio NÃO cria issue sem o dono").isEmpty();
+    }
+
+    /**
+     * Gestor com DOIS braços aplicáveis no DIRIGIR (conferência dos PRs #51/#52, 🟠 2). O irmão
+     * {@code ParecerGate} ganhou a regra do MENOS PRIVILEGIADO no hardening do PR #50; aqui ficou
+     * o {@code .findFirst()}, e com o {@code OrderById} da query o empate passou a ser resolvido
+     * por <b>comparação de UUID aleatório — que é determinístico, mas não é fail-safe</b>.
+     *
+     * <p>A ADR-0048 §Hardening item 5 justificava a assimetria dizendo que aqui "a consequência é
+     * sob qual braço a issue nasce, não se um humano está no laço". <b>É falso, e é exatamente o
+     * que este teste mede:</b> se vence o braço PROMOVIDO, a issue nasce born-APPROVED e o dono
+     * nunca a vê; se vence o ESTÁGIO, o cartão para PENDING no gate. A diferença entre os dois
+     * arranjos é literalmente "um humano no laço ou não", sorteada por UUID.
+     *
+     * <p>Os DOIS arranjos espelhados rodam e exigem a MESMA resposta — é isso que prova a REGRA
+     * em vez da ordem das linhas (o molde que a conferência aprovou no teste irmão). O estado de
+     * 2 braços é montado direto no banco DE PROPÓSITO: pela porta de serviço ele é hoje
+     * INALCANÇÁVEL ({@code Agent.teamId} único, {@code setGestor} exige membro, {@code assignAgent}
+     * revoga o posto) — defesa em profundidade, não cerca sobre caminho vivo.
+     */
+    @Test
+    void gestorComDoisBracosAplicaveisNoDirigir_oMENOSPrivilegiadoVence_eOHumanoFicaNoLaco() {
+        // Arranjo A: o braço PAI é o PROMOVIDO; o descendente fica em ESTÁGIO.
+        Cenario a = cenario();
+        jdbc.update("update team set gestor_agent_id = ? where id = ?",
+                a.ana().getId(), a.social().getId());
+        promoveAna(a);
+
+        gate.handle(a.companyId(), a.ana().getId(), a.runId(),
+                blocoDirigir("Bruno", "Calendário de posts"));
+
+        assertThat(approvalsDa(a.companyId()).stream().findFirst().orElseThrow().getStatus())
+                .as("ESTÁGIO em QUALQUER braço aplicável ⇒ o dono vê o cartão no gate")
+                .isEqualTo(ApprovalStatus.PENDING);
+        assertThat(issuesDa(a.companyId()))
+                .as("nada nasce sem o dono quando algum braço está em estágio").isEmpty();
+
+        // Arranjo B: espelhado — o DESCENDENTE é o promovido e o pai fica em ESTÁGIO. Mesma
+        // resposta exigida; é o par que impede a sorte do UUID de passar por regra.
+        Cenario b = cenario();
+        jdbc.update("update team set gestor_agent_id = ? where id = ?",
+                b.ana().getId(), b.social().getId());
+        teamService.promoverGestor(b.companyId(), b.social().getId(), ActorType.BOARD,
+                UUID.randomUUID());
+
+        gate.handle(b.companyId(), b.ana().getId(), b.runId(),
+                blocoDirigir("Bruno", "Calendário de posts"));
+
+        assertThat(approvalsDa(b.companyId()).stream().findFirst().orElseThrow().getStatus())
+                .isEqualTo(ApprovalStatus.PENDING);
+        assertThat(issuesDa(b.companyId())).isEmpty();
     }
 
     /**

@@ -8,6 +8,7 @@ import com.orquestrador.common.error.ForbiddenException;
 import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.runtime.ColetaDeWorkspace;
 import com.orquestrador.governance.approval.RacionalPolicy;
 import com.orquestrador.identity.company.CompanyRepository;
 import com.orquestrador.execution.RunOutcome;
@@ -51,13 +52,14 @@ public class IssueService {
     private final GateDecisionFactory gateDecisions;
     private final DecisionLog decisionLog;
     private final DecisionRepository decisions;
+    private final ColetaDeWorkspace coletaDeWorkspace;
     private final int reviewRiskThreshold;
 
     public IssueService(IssueRepository issues, CompanyRepository companies, ReviewRepository reviews,
                         HeartbeatRunRepository heartbeatRuns, ActivityLogService activityLog,
                         AgentRepository agents, TeamRepository teams, RacionalPolicy racionalPolicy,
                         GateDecisionFactory gateDecisions, DecisionLog decisionLog,
-                        DecisionRepository decisions,
+                        DecisionRepository decisions, ColetaDeWorkspace coletaDeWorkspace,
                         @Value("${orquestrador.review.risk-threshold:5}") int reviewRiskThreshold) {
         // Fora da escala 1-5 o gate desligaria SILENCIOSAMENTE (limiar 6 nunca é atingível) —
         // fail-open de mecanismo de segurança. Melhor derrubar o boot com mensagem clara.
@@ -77,6 +79,7 @@ public class IssueService {
         this.gateDecisions = gateDecisions;
         this.decisionLog = decisionLog;
         this.decisions = decisions;
+        this.coletaDeWorkspace = coletaDeWorkspace;
         this.reviewRiskThreshold = reviewRiskThreshold;
     }
 
@@ -424,6 +427,23 @@ public class IssueService {
             throw new ConflictException("Issue nao esta DONE (reabertura so vale para entrega"
                     + " aprovada): " + issueId);
         }
+        // FALHAR ALTO se o artefato já não existe (D-FP-1, decisão do dono de 2026-07-20). A
+        // ADR-0049 tornou DONE reabrível e não varreu quem vivia do invariante "DONE é terminal":
+        // o WorkspaceReaper coleta terminal vencida com retenção default de 7 DIAS e, ao
+        // contrário do RowRetentionReaper, SEM exceção de pin de review. Sem esta cerca, reabrir
+        // uma entrega mais velha que isso devolvia a issue ao jogo com o workspace já deletado e
+        // o assignee re-executava contra o vazio, em SILÊNCIO. Recusa explícita > perda silenciosa:
+        // o dono decide sabendo do custo em vez de descobrir depois que o agente refez do zero.
+        //
+        // Depois do UPDATE guardado de propósito: assim "não está DONE" continua sendo a resposta
+        // de quem tenta reabrir o que nunca foi entregue, e esta mensagem fica reservada para o
+        // caso real. O rollback do @Transactional desfaz o DONE→BLOCKED — a recusa é total.
+        coletaDeWorkspace.coletadoEm(companyId, issueId).ifPresent(quando -> {
+            throw new ConflictException("workspace da entrega foi coletado pelo GC em "
+                    + ColetaDeWorkspace.formatado(quando) + " — reabrir nao recupera o artefato,"
+                    + " o agente refaria do zero. Se e isso mesmo que voce quer, abra uma issue"
+                    + " nova descrevendo o que falta: " + issueId);
+        });
         activityLog.record(companyId, actorType, actorId, ActivityAction.ISSUE_REABERTA,
                 "issue", issueId, Map.of());
         fabricaDecisaoDaReabertura(issue, motivo);
@@ -453,8 +473,11 @@ public class IssueService {
         gateDecisions.fabricate(new GatePassage(companyId, area, DecisionOrigem.DONO_NO_GATE,
                 "[REABERTURA] #" + issue.getSeq() + " " + issue.getTitle(), motivo,
                 racionalPolicy.deriveTipo(area), false, supersedesId, DecisionGrau.DECISAO, null,
-                cicloAprovado == null ? new Anchor.NaReview(null, issue.getId())
-                        : new Anchor.NaReview(cicloAprovado, issue.getId())));
+                // Ramo morto removido (conferência dos PRs #51/#52, 🔵): o ternário tinha os dois
+                // lados IDÊNTICOS — com `cicloAprovado` nulo, `new Anchor.NaReview(null, …)` é o
+                // que a outra perna já produzia. A âncora aceita ciclo nulo de propósito (APPROVE
+                // em silêncio não fabrica Decisão — C14), então não há caso especial a expressar.
+                new Anchor.NaReview(cicloAprovado, issue.getId())));
     }
 
     @Transactional(readOnly = true)
