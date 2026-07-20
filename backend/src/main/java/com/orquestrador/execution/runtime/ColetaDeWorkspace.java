@@ -25,11 +25,32 @@ import java.util.UUID;
  * modo de falha: ele só existe se a remoção REALMENTE aconteceu (o
  * {@link WorkspaceReaper} audita depois do {@code REMOVED}, nunca antes).
  *
- * <p><b>Limite conhecido, escrito de propósito:</b> workspace apagado FORA do reaper (um
- * {@code docker volume rm} na mão) não produz evento e portanto não é visto por esta régua. É o
- * preço da escolha acima, e é o lado barato de errar: deixa passar uma reabertura que vai
- * encontrar workspace vazio (o estado de hoje, sem cerca nenhuma), em vez de bloquear reaberturas
- * legítimas sempre que o daemon tossir.
+ * <p><b>Limites conhecidos — são DOIS, não um.</b> Nos dois o efeito é o mesmo: workspace
+ * REMOVIDO e evento inexistente ⇒ esta régua devolve vazio ⇒ a cerca deixa passar uma reabertura
+ * que vai encontrar workspace vazio, que é a perda silenciosa que a D-FP-1 veio matar.
+ *
+ * <ol>
+ *   <li><b>Remoção FORA do reaper</b> (um {@code docker volume rm} na mão) não produz evento. É o
+ *       preço da escolha acima e é o lado barato de errar: deixa passar uma reabertura contra
+ *       workspace vazio (o estado de hoje, sem cerca nenhuma), em vez de bloquear reaberturas
+ *       legítimas sempre que o daemon tossir.</li>
+ *   <li><b>Falha de auditoria DENTRO de casa</b> (achado da conferência do PR #53, por dois
+ *       verificadores independentes; não estava listado aqui). O
+ *       {@code WorkspaceReaper.recordCollected} envolve o {@code activityLog.record} num
+ *       {@code try/catch} que ENGOLE a exceção DE PROPÓSITO — *"falha aqui não desfaz a remoção"* —
+ *       e segue, registrando o problema só em {@code log.error}. A escolha é defensável para o GC
+ *       (a remoção já aconteceu; derrubar o sweep dos demais seria pior), mas ela nasceu quando o
+ *       evento era só rastro. <b>Desde a D-FP-1 o evento é LOAD-BEARING</b>: é a fonte desta régua,
+ *       e portanto das duas portas guardadas por ela. Nesse caminho o workspace some e a cerca fica
+ *       cega, sem nada avisar.</li>
+ * </ol>
+ *
+ * <p><b>Por que o segundo limite está DOCUMENTADO aqui e não CONSERTADO</b>: o conserto mora no
+ * PRODUTOR ({@code WorkspaceReaper}), que nesta rodada pertence à fatia irmã do motor — a fronteira
+ * mandava PARAR e avisar em vez de cruzar. O que falta, e está escrito no handoff desta fatia para
+ * quem pegar o produtor: uma nota no {@code recordCollected} dizendo que aquele {@code catch} virou
+ * load-bearing para duas portas, porque hoje NADA lá avisa isso — quem ler o método vê um GC
+ * defensivo e não tem como saber que está engolindo a fonte de uma cerca.
  */
 @Component
 public class ColetaDeWorkspace {

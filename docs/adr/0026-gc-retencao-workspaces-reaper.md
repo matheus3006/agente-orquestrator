@@ -2,6 +2,9 @@
 
 **Status:** Aceito (2026-07-05, execução F.12 — `docs/handoff-grilling-gc-retencao-workspaces.md`)
 
+**EMENDADA 2026-07-20 (ADR-0049): a premissa "terminal = nunca mais volta" DEIXOU de valer, e o
+evento `WORKSPACE_COLLECTED` virou LOAD-BEARING** (ver §Revisão no fim)
+
 ## Contexto
 Hoje **nenhum** workspace é removido, jamais: zero `docker volume rm` no código, zero
 `@DeleteMapping` na API, FKs todas RESTRICT. Cada Issue cria um workspace durável (volume DOCKER
@@ -129,3 +132,39 @@ já tinha um envelope de resultado (o caminho de erro existente que o próprio B
 reusar), e o front consome o `error` legível dele sem tratamento novo de status. A promessa
 de substância (start em Issue coletada falha LEGÍVEL, nunca silêncio) é honrada. Evidência:
 `PreviewServerController.java:49-53,140`. Corpo original intocado.
+
+## Revisão 2026-07-20 (reabertura de entrega aprovada, ADR-0049 — e o 2º falso-negativo da cerca)
+
+> Emenda recíproca do PR da rodada 2 do parecer. A ADR-0049 §Emendas declarava emendar esta ADR
+> desde 2026-07-20 e **nunca a tinha tocado** — órfão apontado pela conferência do PR #53 (🟠 3).
+> Aqui ele é fechado pelo lado de cá.
+
+**O que mudou para este reaper: a PREMISSA, não o comportamento.** O gate B2 (`collectible`) segue
+byte-idêntico — `isTerminal(status) && updated_at < now - retention`, com `isTerminal` =
+`{DONE, CANCELLED}`. O que a ADR-0049 mudou foi o significado de `DONE`: ele **deixou de ser sink**.
+`IssueRepository.tryReabrirAprovada` (`where status = 'DONE'` → `BLOCKED`) devolve ao jogo uma issue
+cujo workspace este reaper pode ter coletado 7 dias atrás. A varredura de "quem depende do
+invariante que eu mudei" é parte do conserto, não follow-up — e é por isso que esta seção existe.
+
+**A compensação NÃO mora aqui, e isso é deliberado.** Quem barra é o endpoint de reabertura, que
+consulta o evento durável `WORKSPACE_COLLECTED` pela régua `ColetaDeWorkspace` e **RECUSA com 409**
+dizendo a data da coleta (D-FP-1, decisão do dono). Fixar o workspace por causa de uma reabertura
+que talvez nunca venha faria o disco crescer sem teto — exatamente o que esta ADR existe para
+evitar. O reaper continua coletando; quem sabe do custo é quem reabre.
+
+**Consequência que o produtor do evento ainda não sabe.** O `WORKSPACE_COLLECTED` gravado pelo B5
+nasceu como RASTRO. Desde a D-FP-1 ele é a **fonte de uma cerca**, e portanto load-bearing para
+duas portas. O `WorkspaceReaper.recordCollected` engole exceção da auditoria de propósito ("falha
+aqui não desfaz a remoção"): nesse caminho o workspace some, o evento não existe e a cerca fica
+**cega** — 2º falso-negativo, e este DENTRO de casa (o 1º, `docker volume rm` na mão, já estava
+documentado). Está registrado como limite conhecido em `ColetaDeWorkspace`; a nota no próprio
+`recordCollected` ficou de fora por FRONTEIRA de fatia (o produtor pertencia à fatia irmã do motor
+nesta rodada), não por decisão de desenho.
+
+**A ordem entre as duas retenções é o que hoje protege as ROWS — e ela é CONFIGURÁVEL.** O 409 do
+workspace dispara a partir de `orquestrador.workspace.gc.retention-days` (default **7**), antes de
+`orquestrador.rows.gc.retention-days` (default **30**, ADR-0028) ter coletado qualquer coisa. Ou
+seja: com os defaults, ninguém chega a reabrir uma issue com rows já colhidas, porque a cerca do
+workspace barrou 23 dias antes. **Isso vale enquanto `workspace ≤ rows`** — inverter as duas
+propriedades é permitido e desfaz a proteção sem nenhum aviso. Não é invariante do código; é
+coincidência de default, e está escrito aqui para não ser lida como garantia.
