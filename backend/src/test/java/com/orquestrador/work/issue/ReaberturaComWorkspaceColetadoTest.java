@@ -1,7 +1,12 @@
 package com.orquestrador.work.issue;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.orquestrador.activitylog.ActivityLogService;
 import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.security.ActorType;
+import com.orquestrador.execution.runtime.DatabaseClock;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTargets;
 import com.orquestrador.execution.runtime.WorkspaceReaper;
@@ -11,8 +16,10 @@ import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.io.IOException;
@@ -25,6 +32,9 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * A ADR-0049 tornou {@code DONE} reabrível e <b>não varreu quem vivia do invariante "DONE é
@@ -61,6 +71,10 @@ class ReaberturaComWorkspaceColetadoTest {
     private CompanyService companies;
     @Autowired
     private AgentRepository agents;
+    @Autowired
+    private IssueRepository issueRepository;
+    @Autowired
+    private DatabaseClock clock;
 
     private UUID companyId;
 
@@ -125,6 +139,65 @@ class ReaberturaComWorkspaceColetadoTest {
         assertThat(issues.get(companyId, issueId).getStatus())
                 .as("a recusa reverte o UPDATE guardado — nada de DONE→BLOCKED pela metade")
                 .isEqualTo(IssueStatus.DONE);
+    }
+
+    /**
+     * <b>O 2º falso-negativo — o de DENTRO de casa</b> (achado da conferência do PR #53 por dois
+     * verificadores; o follow-up órfão entre os PRs #54/#55). O
+     * {@code WorkspaceReaper.recordCollected} engole a exceção da auditoria de propósito — a
+     * remoção já aconteceu e derrubar o sweep dos demais seria pior. A escolha nasceu quando o
+     * evento era só rastro; <b>desde a D-FP-1 ele é a FONTE desta cerca</b>. Neste caminho o
+     * workspace some e a cerca fica CEGA: a reabertura passa contra workspace vazio, que é
+     * exatamente a perda silenciosa que a D-FP-1 veio matar.
+     *
+     * <p>Este teste PINA as duas metades da verdade: a cegueira é real (não é hipótese de
+     * corredor) e, por isso, o operador TEM de ser avisado com o nome da consequência. O remédio
+     * não é fazer a cerca enxergar — a auditoria falhou justamente porque a gravação não foi —
+     * é não deixar o silêncio de pé.
+     */
+    @Test
+    void auditoriaQueFALHA_deixaACercaCEGA_masOAvisoNOMEIAAConsequencia() {
+        Entrega entrega = entregaConcluidaComWorkspace();
+
+        ListAppender<ILoggingEvent> erros = new ListAppender<>();
+        erros.start();
+        ch.qos.logback.classic.Logger reaperLogger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(WorkspaceReaper.class);
+        reaperLogger.addAppender(erros);
+        try {
+            reaperComAuditoriaQuebrada().sweepOnce();
+        } finally {
+            reaperLogger.detachAppender(erros);
+        }
+
+        assertThat(Files.exists(entrega.workspace()))
+                .as("a remoção acontece de qualquer jeito — falha de auditoria NÃO a desfaz")
+                .isFalse();
+        // A cegueira, medida e não suposta: sem o evento durável, a cerca deixa passar.
+        assertThatCode(() -> issues.reabrirEntregaAprovada(companyId, entrega.issueId(),
+                "reabrindo com o artefato já deletado", ActorType.BOARD, UUID.randomUUID()))
+                .as("sem o evento a régua devolve vazio e a cerca não tem o que recusar")
+                .doesNotThrowAnyException();
+
+        assertThat(erros.list)
+                .filteredOn(evento -> evento.getLevel() == Level.ERROR)
+                .as("quem lê o log tem de saber que engoliu a FONTE de uma cerca, não só um rastro")
+                .anySatisfy(evento -> assertThat(evento.getFormattedMessage())
+                        .contains("LOAD-BEARING")
+                        .contains("reabertura")
+                        .contains(entrega.issueId().toString()));
+    }
+
+    /**
+     * O reaper de verdade, com a ÚNICA peça trocada sendo a que precisa falhar. Construído à mão
+     * (e não com spy no bean) para que o caminho exercitado seja o mesmo {@code sweepOnce} agendado.
+     */
+    private WorkspaceReaper reaperComAuditoriaQuebrada() {
+        ActivityLogService auditoriaQuebrada = mock(ActivityLogService.class);
+        when(auditoriaQuebrada.record(any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new DataIntegrityViolationException("activity_log fora do ar"));
+        return new WorkspaceReaper(issueRepository, targets, workspaces, auditoriaQuebrada, clock,
+                true, 0L);
     }
 
     /**

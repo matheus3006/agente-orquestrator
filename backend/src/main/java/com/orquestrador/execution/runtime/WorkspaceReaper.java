@@ -157,16 +157,37 @@ public class WorkspaceReaper {
         return isTerminal(issue.getStatus()) && issue.getUpdatedAt().isBefore(cutoff);
     }
 
+    /**
+     * <b>Este evento NÃO é só rastro — é LOAD-BEARING.</b> (Transplante do follow-up órfão dos PRs
+     * #54/#55; a metade do consumidor já estava escrita no javadoc da {@link ColetaDeWorkspace}.)
+     *
+     * <p>O {@code catch} abaixo engole a falha DE PROPÓSITO, e a escolha segue defensável para um
+     * GC: a remoção já aconteceu, e derrubar o sweep dos demais por causa da auditoria seria pior.
+     * Mas ela nasceu quando {@code WORKSPACE_COLLECTED} era só auditoria. <b>Desde a D-FP-1 este
+     * evento é a FONTE da {@link ColetaDeWorkspace}</b>, a régua única de duas portas — entre elas
+     * a cerca de REABERTURA de entrega aprovada. Engolir aqui não perde uma linha de log: deixa a
+     * cerca CEGA nesta Issue, e uma reabertura passa contra workspace vazio — a perda silenciosa
+     * que a D-FP-1 veio matar. Quem ler este método vendo só um GC defensivo não teria como saber.
+     *
+     * <p><b>Por que não "consertar" fazendo a cerca enxergar:</b> não há o que enxergar — a
+     * auditoria falhou justamente porque a gravação não aconteceu, e um 2º evento de compensação
+     * iria para a MESMA tabela que acabou de recusar. O que dá para garantir é que a falha não
+     * fique silenciosa: o ERROR abaixo NOMEIA a consequência (não só o sintoma), porque quem lê o
+     * log é quem vai decidir tratar aquela Issue como não-reabrível.
+     */
     private void recordCollected(Issue issue, ExecutionTarget.Type type, String ref) {
-        // Auditoria APÓS a remoção REAL (só REMOVED audita). Falha aqui não desfaz a remoção —
-        // registra em ERROR (raro) para investigação, sem derrubar o sweep dos demais.
+        // Auditoria APÓS a remoção REAL (só REMOVED audita). Falha aqui não desfaz a remoção.
         try {
             activityLog.record(issue.getCompanyId(), ActorType.SYSTEM, null,
                     ActivityAction.WORKSPACE_COLLECTED, "issue", issue.getId(),
                     Map.of("target", type.name(), "workspaceRef", ref));
         } catch (RuntimeException exception) {
-            log.error("workspace {} removido mas a auditoria WORKSPACE_COLLECTED falhou (Issue {}): {}",
-                    ref, issue.getId(), exception.getMessage());
+            log.error("workspace {} REMOVIDO mas a auditoria WORKSPACE_COLLECTED falhou (Issue {}): {}."
+                            + " Este evento é LOAD-BEARING desde a D-FP-1: sem ele a cerca de"
+                            + " reabertura fica CEGA nesta Issue e uma reabertura vai passar contra"
+                            + " workspace vazio. Trate a Issue {} como nao-reabrivel ate gravar o"
+                            + " evento a mao.",
+                    ref, issue.getId(), exception.getMessage(), issue.getId());
         }
     }
 

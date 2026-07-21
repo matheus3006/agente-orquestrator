@@ -46,6 +46,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Executor real (slice 3): resolve o Workspace, faz o checkout da Issue com o runId, invoca o
@@ -191,6 +192,168 @@ public class AdapterRunExecutor implements RunExecutor {
                         gate, runContext.runId(), aoRegistrar.toString(), e.toString());
             }
         }
+    }
+
+    /**
+     * O PONTO ÚNICO por onde a saída do run de Issue chega aos 4 gates de fim-de-run — e onde a
+     * POSSE do run é pré-condição de todos eles (achado do PR #49, aberto desde então).
+     *
+     * <p><b>A "thread tardia".</b> O nó A roda o run R sobre a issue I; A trava (pausa de GC,
+     * partição), o lease expira, o reaper devolve R para a fila e o nó B executa e LIQUIDA. Aí A
+     * acorda, o {@code adapter.execute()} dele finalmente retorna, e A dispara os 4 gates <b>em nome
+     * de um run já liquidado por outro</b> — criando Approval, issue dirigida e parecer REAIS, que
+     * um humano depois tem de desfazer. O settle de A cai no vazio porque o
+     * {@code execution_lock_run_id} o guarda; os gates não tinham guard nenhum. O
+     * {@code semDerrubarOSettle} do PR #53 endereçou EXCEÇÃO, não posse — são coisas diferentes.
+     *
+     * <p><b>A régua é a mesma do banco, de propósito:</b> {@code IssueService.runAindaDetemAIssue} é
+     * o predicado do {@code where} de {@code tryBlock}/{@code tryComplete}. Reusar em vez de
+     * inventar é o que impede as duas cercas de divergirem amanhã.
+     *
+     * <p><b>Fail-CLOSED, e o lado barato de errar é este.</b> Se a posse não puder ser confirmada,
+     * os gates não rodam. Um pedido de skill perdido o agente refaz no próximo run; uma issue
+     * dirigida ou um parecer criados por um run fantasma ninguém desfaz sozinho. E o descarte NUNCA
+     * é mudo — vira step visível, o mesmo espírito anti-silêncio dos avisos dos próprios gates.
+     *
+     * <p><b>Limite conhecido, escrito para não virar alegação de completude:</b> a régua é a posse
+     * da ISSUE. Se o nó B ainda estiver EXECUTANDO R (o re-checkout usa o mesmo runId, então a trava
+     * volta a valer R), A passa. Fecha o caso em que alguém já liquidou — o que cria artefato
+     * duplicado — não a sobreposição de dois executores do mesmo runId, que exigiria posse por DONO
+     * ({@code nodeId}, hoje privado do dispatcher) e é desenho de outro tamanho.
+     *
+     * <p>Visibilidade de PACOTE de propósito (mesmo recurso do {@link #semDerrubarOSettle} e do
+     * {@code WorkspaceReaper.sweepTarget}): a decisão que este método toma — agir ou descartar —
+     * não se prova por fora sem um adapter inteiro em cena.
+     */
+    void entregarSaidaAosGates(RunContext runContext, Agent agent, String reply, boolean noop) {
+        if (!posseConfirmada(runContext)) {
+            return;
+        }
+        semDerrubarOSettle(runContext, "skillRequestGate", () ->
+                skillRequestGate.handle(runContext.companyId(), runContext.agentId(),
+                        runContext.issueId(), runContext.runId(), reply));
+        // ADR-0047 (D-DSG-1): o bloco ```dirigir``` do GESTOR sai pelo MESMO canal de saída
+        // (molde F-AT1) — zero canal vivo novo. O gate roteia pelo gestor_status do braço
+        // (guard de subárvore no momento do ato); quem não é gestor tem os blocos descartados
+        // com aviso visível.
+        semDerrubarOSettle(runContext, "dirigirGate", () ->
+                dirigirGate.handle(runContext.companyId(), runContext.agentId(),
+                        runContext.runId(), reply));
+        // ADR-0048 (F-ORG-C): o bloco ```parecer``` do GESTOR sobre um ciclo de review ABERTO
+        // no braço dele, pelo mesmo canal de saída. Roteia pelo gestor_status: ESTÁGIO grava
+        // parecer consultivo ao lado do card do dono, PROMOVIDO decide o ciclo. Quem não é
+        // gestor (ou mira fora da subárvore) tem os blocos descartados com aviso visível.
+        semDerrubarOSettle(runContext, "parecerGate", () ->
+                parecerGate.handle(runContext.companyId(), runContext.agentId(),
+                        runContext.runId(), reply));
+        // Uso B / B-ii (ADR-0044): o MESMO texto do plano vai ao validador local — 2º consumidor
+        // do reply, como o gate de skill. O no-op é pulado AQUI porque o guard de no-op do
+        // executor só vem mais abaixo, depois do settle-de-falha: sem este guard o validador
+        // conferiria o texto vazio do run relâmpago do bug #1. O portão é assíncrono e
+        // best-effort — o que acontecer lá dentro não volta para este caminho, que é o do
+        // settle da Issue (§3.6).
+        if (!noop) {
+            List<RoleTemplateService.Check> checks = resolveChecks(agent);
+            semDerrubarOSettle(runContext, "planValidationGate", () ->
+                    planValidationGate.handle(
+                            new PlanValidationStore.Scope(runContext.companyId(),
+                                    runContext.runId(), runContext.agentId(),
+                                    runContext.issueId()),
+                            reply, checks));
+        }
+    }
+
+    /**
+     * Os blocos de saída que os 4 gates leem, pelo NOME da cerca. Deliberadamente GROSSO: só
+     * pergunta "existe cerca deste tipo?", nunca parseia o conteúdo — a gramática de dentro é de
+     * cada scanner, e replicá-la aqui criaria duas versões para divergir. O que estes três
+     * compartilham verbatim é o token da cerca, e é só disso que um aviso precisa.
+     */
+    private static final Map<String, Pattern> BLOCOS_DE_SAIDA = Map.of(
+            "dirigir", cerca("dirigir"),
+            "parecer", cerca("parecer"),
+            "pedido-skill", cerca("pedido-skill"));
+
+    private static Pattern cerca(String token) {
+        // Coluna 0, como nos scanners: um exemplo indentado dentro do prompt não vira aviso fantasma.
+        return Pattern.compile("(?m)^```" + Pattern.quote(token) + "[ \\t]*$");
+    }
+
+    /**
+     * <b>Quebra o silêncio do bloco órfão</b> (B2 do endurecimento; memória
+     * {@code gate-de-saida-so-dispara-com-issueid}).
+     *
+     * <p>Um run de wakeup SEM issue não é turno de conversa nem run de Issue: cai fora dos dois
+     * ramos, os 4 gates são pulados, e um {@code ```dirigir```}/{@code ```parecer```}/
+     * {@code ```pedido-skill```} emitido nele é descartado sem erro, sem aviso, sem rastro. O agente
+     * exerce uma autoridade que de fato tem, e o ato evapora — o modo de falha mais caro de
+     * diagnosticar, porque nada indica que houve perda.
+     *
+     * <p><b>Anti-silêncio, não roteamento</b> (ADR-0037 D1). Para onde mandar o bloco órfão é
+     * pergunta de desenho — sob que autoridade, ancorado em qual issue, com qual precedente (a issue
+     * órfã do board é absorvida pro arquiteto; um {@code parecer} não tem análogo) — e isso é grill,
+     * não conserto de borda. Aqui fecha-se o pior: a perda deixa de ser muda.
+     *
+     * <p><b>Escopo deliberado:</b> só o run sem issue E sem turno. O turno do CEO também descarta
+     * estes blocos, mas ali o canal de saída é outro (reply estruturado, com {@code proposta}
+     * própria) e avisar em todo turno seria ruído — é caso distinto, não esquecimento.
+     */
+    private void avisarBlocosSemDestino(RunContext runContext, String reply) {
+        if (reply == null || reply.isBlank()) {
+            return;
+        }
+        List<String> encontrados = BLOCOS_DE_SAIDA.entrySet().stream()
+                .filter(bloco -> bloco.getValue().matcher(reply).find())
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+        if (encontrados.isEmpty()) {
+            return;
+        }
+        try {
+            store.recordStep(runContext.runId(), "BLOCO_DE_SAIDA_SEM_DESTINO",
+                    "bloco(s) " + String.join(", ", encontrados) + " emitido(s) por um run de wakeup"
+                            + " SEM issue — os gates de fim-de-run não rodam neste caminho e o(s)"
+                            + " bloco(s) foram DESCARTADOS. Para que valham, acorde o agente sobre"
+                            + " uma issue.");
+        } catch (RuntimeException aoRegistrar) {
+            log.error("run {} emitiu bloco(s) {} sem destino e o registro do aviso TAMBEM falhou ({})",
+                    runContext.runId(), encontrados, aoRegistrar.toString());
+        }
+    }
+
+    /**
+     * A posse, consultada UMA vez para os 4 gates, com o descarte visível quando falta.
+     *
+     * <p>Toda a leitura é fail-soft pela mesma razão que o {@link #semDerrubarOSettle} existe: isto
+     * roda ANTES do {@code settleAfterRun}, e uma exceção daqui pularia o settle e deixaria a Issue
+     * impegável para sempre. Banco fora ⇒ sem posse confirmada ⇒ não age (e o run vai falhar no
+     * settle logo adiante de qualquer jeito, agora por um caminho que não trava issue).
+     */
+    private boolean posseConfirmada(RunContext runContext) {
+        boolean detem;
+        try {
+            detem = issues.runAindaDetemAIssue(runContext.companyId(), runContext.issueId(),
+                    runContext.runId());
+        } catch (RuntimeException aoConsultar) {
+            log.warn("posse da issue {} nao pôde ser confirmada para o run {} ({}) — os gates de saída"
+                            + " NÃO rodam: agir sem posse cria artefato que ninguém desfaz",
+                    runContext.issueId(), runContext.runId(), aoConsultar.toString());
+            return false;
+        }
+        if (detem) {
+            return true;
+        }
+        try {
+            store.recordStep(runContext.runId(), "GATE_DE_SAIDA_SEM_POSSE",
+                    "os 4 gates de fim-de-run foram DESCARTADOS: este run não detém mais a issue "
+                            + runContext.issueId() + " (liquidada ou repegada por outro run enquanto"
+                            + " o adapter terminava). A saída do agente está no StepTrace deste run.");
+        } catch (RuntimeException aoRegistrar) {
+            log.error("run {} perdeu a posse da issue {} e o registro do descarte TAMBEM falhou ({})",
+                    runContext.runId(), runContext.issueId(), aoRegistrar.toString());
+        }
+        return false;
     }
 
     /**
@@ -450,42 +613,14 @@ public class AdapterRunExecutor implements RunExecutor {
         // F-AT1 (grill agente-como-tool, D6): o EXECUTOR de uma Issue (turno==null) pede skill fora
         // do set pelo canal de SAÍDA — mesmo espírito do ```proposta``` do CEO, só que sobre o texto
         // cru (sem outputSchema neste caminho). Só em SUCESSO (espelha entregarPropostasAoGate).
+        // O reply é colhido UMA vez: `replyCollector` é reatribuído no retry acima, então não serve
+        // dentro de lambda — e os 4 consumidores liam exatamente o mesmo texto.
         if (pontaDoExecutor && result.succeeded()) {
-            // O reply, colhido UMA vez: `replyCollector` é reatribuído no retry (:364), então não
-            // serve dentro de lambda — e os 4 consumidores abaixo liam exatamente o mesmo texto.
-            String reply = replyCollector.text();
-            semDerrubarOSettle(runContext, "skillRequestGate", () ->
-                    skillRequestGate.handle(runContext.companyId(), runContext.agentId(),
-                            runContext.issueId(), runContext.runId(), reply));
-            // ADR-0047 (D-DSG-1): o bloco ```dirigir``` do GESTOR sai pelo MESMO canal de saída
-            // (molde F-AT1) — zero canal vivo novo. O gate roteia pelo gestor_status do braço
-            // (guard de subárvore no momento do ato); quem não é gestor tem os blocos descartados
-            // com aviso visível.
-            semDerrubarOSettle(runContext, "dirigirGate", () ->
-                    dirigirGate.handle(runContext.companyId(), runContext.agentId(),
-                            runContext.runId(), reply));
-            // ADR-0048 (F-ORG-C): o bloco ```parecer``` do GESTOR sobre um ciclo de review ABERTO
-            // no braço dele, pelo mesmo canal de saída. Roteia pelo gestor_status: ESTÁGIO grava
-            // parecer consultivo ao lado do card do dono, PROMOVIDO decide o ciclo. Quem não é
-            // gestor (ou mira fora da subárvore) tem os blocos descartados com aviso visível.
-            semDerrubarOSettle(runContext, "parecerGate", () ->
-                    parecerGate.handle(runContext.companyId(), runContext.agentId(),
-                            runContext.runId(), reply));
-            // Uso B / B-ii (ADR-0044): o MESMO texto do plano vai ao validador local — 2º consumidor
-            // do reply, como o gate de skill. O no-op é pulado AQUI porque o guard de no-op do
-            // executor só vem mais abaixo, depois do settle-de-falha: sem este guard o validador
-            // conferiria o texto vazio do run relâmpago do bug #1. O portão é assíncrono e
-            // best-effort — o que acontecer lá dentro não volta para este caminho, que é o do
-            // settle da Issue (§3.6).
-            if (!result.noop()) {
-                List<RoleTemplateService.Check> checks = resolveChecks(agent);
-                semDerrubarOSettle(runContext, "planValidationGate", () ->
-                        planValidationGate.handle(
-                                new PlanValidationStore.Scope(runContext.companyId(),
-                                        runContext.runId(), runContext.agentId(),
-                                        runContext.issueId()),
-                                reply, checks));
-            }
+            entregarSaidaAosGates(runContext, agent, replyCollector.text(), result.noop());
+        } else if (turno == null && runContext.issueId() == null && result.succeeded()) {
+            // O run que não é NENHUM dos dois: wakeup sem issue. Os gates não rodam — e até aqui um
+            // bloco de autoridade emitido nele sumia sem deixar rastro.
+            avisarBlocosSemDestino(runContext, replyCollector.text());
         }
 
         if (!result.succeeded()) {

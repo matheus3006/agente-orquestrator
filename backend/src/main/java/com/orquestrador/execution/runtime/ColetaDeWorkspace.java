@@ -38,19 +38,21 @@ import java.util.UUID;
  *       verificadores independentes; não estava listado aqui). O
  *       {@code WorkspaceReaper.recordCollected} envolve o {@code activityLog.record} num
  *       {@code try/catch} que ENGOLE a exceção DE PROPÓSITO — *"falha aqui não desfaz a remoção"* —
- *       e segue, registrando o problema só em {@code log.error}. A escolha é defensável para o GC
+ *       e segue, registrando o problema em {@code log.error}. A escolha é defensável para o GC
  *       (a remoção já aconteceu; derrubar o sweep dos demais seria pior), mas ela nasceu quando o
  *       evento era só rastro. <b>Desde a D-FP-1 o evento é LOAD-BEARING</b>: é a fonte desta régua,
  *       e portanto das duas portas guardadas por ela. Nesse caminho o workspace some e a cerca fica
- *       cega, sem nada avisar.</li>
+ *       cega — <b>a cegueira continua</b> (não há como enxergar um evento que não foi gravado), mas
+ *       desde o endurecimento dos resíduos dos PRs #52–#55 ela <b>não é mais silenciosa</b>.</li>
  * </ol>
  *
- * <p><b>Por que o segundo limite está DOCUMENTADO aqui e não CONSERTADO</b>: o conserto mora no
- * PRODUTOR ({@code WorkspaceReaper}), que nesta rodada pertence à fatia irmã do motor — a fronteira
- * mandava PARAR e avisar em vez de cruzar. O que falta, e está escrito no handoff desta fatia para
- * quem pegar o produtor: uma nota no {@code recordCollected} dizendo que aquele {@code catch} virou
- * load-bearing para duas portas, porque hoje NADA lá avisa isso — quem ler o método vê um GC
- * defensivo e não tem como saber que está engolindo a fonte de uma cerca.
+ * <p><b>O segundo limite está documentado aqui E sinalizado no PRODUTOR.</b> A metade que faltava —
+ * a nota no {@code WorkspaceReaper.recordCollected} de que aquele {@code catch} virou load-bearing
+ * para duas portas — <b>foi escrita</b>: o javadoc do método diz que o evento é a fonte desta régua
+ * e o ERROR nomeia a consequência (cerca de reabertura cega naquela Issue), em vez de relatar só o
+ * sintoma. Quem lê o produtor não vê mais um GC defensivo sem saber o que está engolindo. O que
+ * NÃO mudou, de propósito: a remoção segue idempotente — falha de auditoria não a desfaz.
+ * Comportamento pinado em {@code ReaberturaComWorkspaceColetadoTest.auditoriaQueFALHA_*}.
  */
 @Component
 public class ColetaDeWorkspace {

@@ -172,6 +172,27 @@ public class IssueService {
     }
 
     /**
+     * <b>"Este run AINDA detém esta Issue?"</b> — o mesmo predicado de posse que o {@code where} de
+     * {@link IssueRepository#tryBlock}/{@link IssueRepository#tryComplete} usa para arbitrar a
+     * corrida, exposto como PERGUNTA para quem precisa decidir <b>antes</b> de agir em nome do run.
+     *
+     * <p>Existe porque o guard do settle protege só o settle. Quem dispara side-effect antes dele —
+     * os 4 gates de fim-de-run — agia incondicionalmente, e uma "thread tardia" (nó que perdeu o
+     * lease, foi liquidado por outro e só então acordou) criava Approval/issue/parecer em nome de um
+     * run que já não detinha nada. Reusar o predicado, e não inventar um invariante novo, é o que
+     * mantém as duas cercas impossíveis de divergir.
+     *
+     * <p>Fail-CLOSED por construção: Issue inexistente (apagada, company removida) ⇒ {@code false}.
+     * Sem Issue não há posse a invocar.
+     */
+    @Transactional(readOnly = true)
+    public boolean runAindaDetemAIssue(UUID companyId, UUID issueId, UUID runId) {
+        return issues.findByIdAndCompanyId(issueId, companyId)
+                .map(issue -> runId != null && runId.equals(issue.getExecutionLockRunId()))
+                .orElse(false);
+    }
+
+    /**
      * Conclusão pelo caminho agent-facing (endpoint /complete): roteia pelo MESMO funil do
      * {@link #settleAfterRun} — alto risco estaciona em PENDING_REVIEW em vez de DONE. Um único
      * caminho para DONE fecha o bypass "o agente pulou a revisão" (ADR-0006/0012; achado ALTA

@@ -5,7 +5,9 @@
 (`V38__review_parecer_do_gestor.sql`) · constrói sobre a **ADR-0045** (árvore-organograma) e a
 **ADR-0046** (`gestor_status`) · replica o modelo de segurança da **ADR-0047** · **EMENDA a
 ADR-0012 e a ADR-0019** (ver §Emendas) · consome `DecisionOrigem.AGENTE` — o **primeiro writer
-pela porta do GATE** (ver §Emendas).
+pela porta do GATE** (ver §Emendas) · **contrato dos 4 gates de fim-de-run ampliado em 2026-07-21**
+(posse do run como pré-condição + bloco sem destino deixa rastro — ver §Endurecimento do executor;
+**ADR-0051 devolvida**, emenda bastou).
 
 > ⚠️ **Corrigido no fecho do parecer (2026-07-20).** A forma anterior dizia que esta fatia consumia
 > `DecisionOrigem.AGENTE` *"reservado desde a ADR-0019 **sem writer**"*. **Era falso quando
@@ -400,3 +402,61 @@ para dizer a ordem real e o porquê. A ADR-0012 carregava a MESMA frase e foi co
 - **Ramo morto removido** em `IssueService` (os 2 lados do ternário produziam o mesmo `Anchor`).
 - **`tryReabrirAprovada` tem escopo maior que o nome** — e fica assim de propósito, agora escrito:
   ver ADR-0049 §Consequências.
+
+## Endurecimento do executor (2026-07-21, fatia endurecimento-executor)
+
+> **Emenda a esta própria ADR**, na seção que definiu o porteamento dos 4 gates de fim-de-run
+> (§Hardening pós-conferência, item 4). **Nenhuma ADR nova:** a reserva **ADR-0051 foi DEVOLVIDA** —
+> não há decisão de registro nova aqui, há a *conclusão* de uma que já estava tomada. O kickoff
+> previa emenda à 0047 ou à 0050; o dono do contrato dos 4 gates é **esta** ADR (é aqui que
+> `semDerrubarOSettle` e a lista dos quatro estão escritos), então a emenda mora aqui.
+
+### O cinto do PR #53 endereçava EXCEÇÃO, não POSSE — e são coisas diferentes
+
+O item 4 acima fechou "um gate que EXPLODE não pode pular o settle". Ficou aberto o achado do PR #49:
+os 4 gates disparavam side-effect **incondicionalmente**, sem reconferir se o run ainda era dono de
+alguma coisa.
+
+**A "thread tardia", passo a passo.** O nó A roda o run R sobre a issue I. A trava — pausa de GC,
+partição de rede — e o lease expira; o reaper devolve R para a fila; o nó B pega R, executa e
+LIQUIDA. O `settleAfterRun` de B casa o guard `execution_lock_run_id = R` e **libera a trava**. Só
+então A acorda, o `adapter.execute()` dele retorna, e A dispara os 4 gates **em nome de um run já
+liquidado por outro** — criando Approval, issue dirigida e parecer REAIS, que um humano depois tem
+de desfazer. O settle de A cai no vazio, porque a issue é guardada; os gates não tinham guard nenhum.
+
+**A régua é a do banco, de propósito.** `IssueService.runAindaDetemAIssue` expõe como PERGUNTA o
+mesmo predicado que o `where` de `tryBlock`/`tryComplete` usa para arbitrar a corrida. Reusar em vez
+de inventar um invariante de ciclo de vida é o que impede as duas cercas de divergirem amanhã — e é
+por isso que a válvula de escape do kickoff ("se exigir invariante novo, PARE") **não foi puxada**.
+O ponto é ÚNICO: `AdapterRunExecutor.entregarSaidaAosGates` consulta a posse uma vez e os quatro
+gates ficam atrás dela.
+
+**Fail-CLOSED, e o lado barato de errar é este.** Posse não confirmada ⇒ os gates não rodam. Um
+pedido de skill perdido o agente refaz no próximo run; uma issue dirigida ou um parecer criados por
+um run fantasma ninguém desfaz sozinho. O descarte **nunca é mudo**: vira step
+`GATE_DE_SAIDA_SEM_POSSE`, no mesmo espírito anti-silêncio do `GATE_DE_SAIDA_FALHOU` irmão.
+
+**Limite conhecido, escrito para não virar a próxima alegação de completude.** A régua é a posse da
+ISSUE. Se o nó B ainda estiver EXECUTANDO R — o re-checkout usa o mesmo runId, então a trava volta a
+valer R — A passa. Fecha o caso em que alguém **já liquidou**, que é o que cria artefato duplicado;
+não fecha a sobreposição de dois executores do mesmo runId, que exigiria posse por DONO (`nodeId`,
+hoje privado do `HeartbeatDispatcher`) e é desenho de outro tamanho.
+
+### O bloco de saída sem destino deixou de sumir calado
+
+`pontaDoExecutor = turno == null && issueId != null`. Um run de **wakeup sem issue** não é turno de
+conversa nem run de Issue: cai fora dos dois ramos, os 4 gates são pulados, e um ` ```dirigir` /
+` ```parecer` / ` ```pedido-skill` emitido nele era descartado **sem erro, sem aviso, sem StepTrace**.
+O gestor exercia autoridade que de fato tem, e o ato evaporava.
+
+**Anti-silêncio, não roteamento** (ADR-0037 D1). Para ONDE mandar o bloco órfão — sob que autoridade,
+ancorado em qual issue, com qual precedente (a issue órfã do board é absorvida pro arquiteto; um
+`parecer` não tem análogo) — é pergunta de desenho e **fica registrada aqui como candidata a grill**,
+não resolvida de passagem. O que esta fatia fecha é o pior: a perda deixou de ser muda, via step
+`BLOCO_DE_SAIDA_SEM_DESTINO`.
+
+**Escopo deliberado:** só o run sem issue E sem turno. O turno do CEO também descarta esses blocos,
+mas ali o canal de saída é outro (reply estruturado, com `proposta` própria) e avisar em todo turno
+seria ruído — é caso distinto, não esquecimento. O detector é **grosso de propósito**: pergunta só
+"existe cerca deste tipo?", em coluna 0 como os scanners, e nunca parseia o conteúdo — replicar a
+gramática de dentro criaria duas versões para divergir.

@@ -1,11 +1,16 @@
 package com.orquestrador.execution;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
@@ -118,6 +123,52 @@ class DispatchWorkerTest {
         }
 
         assertThat(passadas.get()).isEqualTo(2);
+    }
+
+    /**
+     * O {@code catch} bonito valia so para {@code RuntimeException}: um {@code Error} escapava dele e
+     * ia direto ao handler default da thread. Nao travava (o {@code finally} libera a porta e o pool
+     * respawna) — o que se perdia era a LINHA DE DIAGNOSTICO, que e o unico rastro de que a passada
+     * caiu. Endurecimento dos residuos do PR #54.
+     */
+    @Test
+    void errorNaPassadaTambemDeixaALinhaDeDiagnostico() throws Exception {
+        AtomicInteger passadas = new AtomicInteger();
+        HeartbeatDispatcher explosivo = mock(HeartbeatDispatcher.class);
+        when(explosivo.dispatchOnce()).thenAnswer(invocacao -> {
+            passadas.incrementAndGet();
+            throw new StackOverflowError("pilha estourada dentro do dispatch");
+        });
+
+        ListAppender<ILoggingEvent> avisos = new ListAppender<>();
+        avisos.start();
+        ch.qos.logback.classic.Logger workerLogger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(DispatchWorker.class);
+        workerLogger.addAppender(avisos);
+        // O Error SOBE depois de logado (nao e "falha de passada", e a JVM em apuros) — o handler
+        // default so imprimiria a pilha no stderr e sujaria a saida da suite.
+        Thread.UncaughtExceptionHandler anterior = Thread.getDefaultUncaughtExceptionHandler();
+        AtomicReference<Throwable> subiu = new AtomicReference<>();
+        Thread.setDefaultUncaughtExceptionHandler((thread, erro) -> subiu.set(erro));
+        try (DispatchWorker worker = new DispatchWorker(explosivo)) {
+            worker.dispatchAsync();
+            esperarPassadas(passadas, 1);
+            // A porta tem de voltar mesmo sob Error, senao a parada silenciosa volta por outro caminho.
+            tickAteAceitar(worker);
+            esperarPassadas(passadas, 2);
+        } finally {
+            Thread.setDefaultUncaughtExceptionHandler(anterior);
+            workerLogger.detachAppender(avisos);
+        }
+
+        assertThat(avisos.list)
+                .filteredOn(evento -> evento.getLevel() == Level.WARN)
+                .as("o Error tem de deixar a MESMA linha de diagnostico que a RuntimeException deixa")
+                .anySatisfy(evento -> assertThat(evento.getFormattedMessage())
+                        .contains("pilha estourada dentro do dispatch"));
+        assertThat(subiu.get())
+                .as("logar nao e engolir: um Error segue subindo depois da linha de diagnostico")
+                .isInstanceOf(StackOverflowError.class);
     }
 
     private static void esperarPassadas(AtomicInteger passadas, int alvo) throws InterruptedException {

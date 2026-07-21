@@ -152,14 +152,22 @@ dizendo a data da coleta (D-FP-1, decisão do dono). Fixar o workspace por causa
 que talvez nunca venha faria o disco crescer sem teto — exatamente o que esta ADR existe para
 evitar. O reaper continua coletando; quem sabe do custo é quem reabre.
 
-**Consequência que o produtor do evento ainda não sabe.** O `WORKSPACE_COLLECTED` gravado pelo B5
-nasceu como RASTRO. Desde a D-FP-1 ele é a **fonte de uma cerca**, e portanto load-bearing para
-duas portas. O `WorkspaceReaper.recordCollected` engole exceção da auditoria de propósito ("falha
-aqui não desfaz a remoção"): nesse caminho o workspace some, o evento não existe e a cerca fica
-**cega** — 2º falso-negativo, e este DENTRO de casa (o 1º, `docker volume rm` na mão, já estava
-documentado). Está registrado como limite conhecido em `ColetaDeWorkspace`; a nota no próprio
-`recordCollected` ficou de fora por FRONTEIRA de fatia (o produtor pertencia à fatia irmã do motor
-nesta rodada), não por decisão de desenho.
+**Consequência que o produtor do evento agora SABE** (fechado no endurecimento dos resíduos dos
+PRs #52–#55). O `WORKSPACE_COLLECTED` gravado pelo B5 nasceu como RASTRO. Desde a D-FP-1 ele é a
+**fonte de uma cerca**, e portanto load-bearing para duas portas. O `WorkspaceReaper.recordCollected`
+engole exceção da auditoria de propósito ("falha aqui não desfaz a remoção"): nesse caminho o
+workspace some, o evento não existe e a cerca fica **cega** — 2º falso-negativo, e este DENTRO de
+casa (o 1º, `docker volume rm` na mão, já estava documentado). A nota que faltava no produtor —
+adiada por FRONTEIRA de fatia, não por decisão de desenho — **foi escrita**: o javadoc de
+`recordCollected` diz que o evento é a fonte da régua, e o `log.error` **nomeia a consequência**
+(cerca de reabertura cega naquela Issue, trate-a como não-reabrível) em vez de relatar só o sintoma.
+
+**O que NÃO mudou, e por quê.** A remoção segue idempotente: falha de auditoria não a desfaz. E a
+cegueira **continua existindo** — não há como fazer a régua enxergar um evento que não foi gravado,
+e um 2º evento de compensação iria para a MESMA tabela que acabou de recusar a escrita. O que o
+conserto garante é que a cegueira deixou de ser **silenciosa**. Comportamento pinado em
+`ReaberturaComWorkspaceColetadoTest.auditoriaQueFALHA_deixaACercaCEGA_masOAvisoNOMEIAAConsequencia`,
+que mede as duas metades: a reabertura passa (cegueira real, não hipótese) e o ERROR nomeia o porquê.
 
 **A ordem entre as duas retenções é o que hoje protege as ROWS — e ela é CONFIGURÁVEL.** O 409 do
 workspace dispara a partir de `orquestrador.workspace.gc.retention-days` (default **7**), antes de
