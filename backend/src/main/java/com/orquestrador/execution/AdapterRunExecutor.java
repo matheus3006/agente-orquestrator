@@ -45,6 +45,7 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -264,15 +265,28 @@ public class AdapterRunExecutor implements RunExecutor {
     }
 
     /**
-     * Os blocos de saída que os 4 gates leem, pelo NOME da cerca. Deliberadamente GROSSO: só
+     * Os blocos de AUTORIDADE que a casa reconhece, pelo NOME da cerca. Deliberadamente GROSSO: só
      * pergunta "existe cerca deste tipo?", nunca parseia o conteúdo — a gramática de dentro é de
-     * cada scanner, e replicá-la aqui criaria duas versões para divergir. O que estes três
-     * compartilham verbatim é o token da cerca, e é só disso que um aviso precisa.
+     * cada scanner, e replicá-la aqui criaria duas versões para divergir. O que todos compartilham
+     * verbatim é o token da cerca, e é só disso que um aviso precisa.
+     *
+     * <p>Os três primeiros são lidos pelos 4 gates de fim-de-run; a {@code proposta} é o canal de
+     * saída do CEO (ADR-0018/0036, {@code ProposalScanner} → gate T3), lido só no settle de um
+     * TURNO. Canais diferentes, mesmo destino aqui: nenhum dos dois roda num wakeup sem issue, e
+     * até agora só os três primeiros deixavam rastro ao serem descartados.
      */
     private static final Map<String, Pattern> BLOCOS_DE_SAIDA = Map.of(
             "dirigir", cerca("dirigir"),
             "parecer", cerca("parecer"),
-            "pedido-skill", cerca("pedido-skill"));
+            "pedido-skill", cerca("pedido-skill"),
+            "proposta", cerca("proposta"));
+
+    /**
+     * Quais desses TÊM um caminho que os faz valer — o run de Issue. É a fronteira que separa o
+     * conselho acionável ("acorde sobre uma issue") do que seria mentira para a {@code proposta}:
+     * ela não é lida por run de agente nenhum, em caminho nenhum.
+     */
+    private static final Set<String> LIDOS_PELOS_GATES = Set.of("dirigir", "parecer", "pedido-skill");
 
     private static Pattern cerca(String token) {
         // Coluna 0, como nos scanners: um exemplo indentado dentro do prompt não vira aviso fantasma.
@@ -285,18 +299,27 @@ public class AdapterRunExecutor implements RunExecutor {
      *
      * <p>Um run de wakeup SEM issue não é turno de conversa nem run de Issue: cai fora dos dois
      * ramos, os 4 gates são pulados, e um {@code ```dirigir```}/{@code ```parecer```}/
-     * {@code ```pedido-skill```} emitido nele é descartado sem erro, sem aviso, sem rastro. O agente
-     * exerce uma autoridade que de fato tem, e o ato evapora — o modo de falha mais caro de
-     * diagnosticar, porque nada indica que houve perda.
+     * {@code ```pedido-skill```}/{@code ```proposta```} emitido nele é descartado sem erro, sem
+     * aviso, sem rastro. O agente exerce uma autoridade que de fato tem, e o ato evapora — o modo de
+     * falha mais caro de diagnosticar, porque nada indica que houve perda.
      *
      * <p><b>Anti-silêncio, não roteamento</b> (ADR-0037 D1). Para onde mandar o bloco órfão é
      * pergunta de desenho — sob que autoridade, ancorado em qual issue, com qual precedente (a issue
      * órfã do board é absorvida pro arquiteto; um {@code parecer} não tem análogo) — e isso é grill,
      * não conserto de borda. Aqui fecha-se o pior: a perda deixa de ser muda.
      *
-     * <p><b>Escopo deliberado:</b> só o run sem issue E sem turno. O turno do CEO também descarta
-     * estes blocos, mas ali o canal de saída é outro (reply estruturado, com {@code proposta}
-     * própria) e avisar em todo turno seria ruído — é caso distinto, não esquecimento.
+     * <p><b>Escopo deliberado:</b> só o run sem issue E sem turno. No TURNO o canal de saída existe
+     * e funciona (o {@code ProposalScanner} lê a {@code proposta}, o {@code PersonaHandoffScanner} lê
+     * o bastão), então avisar lá seria ruído — é caso distinto, não esquecimento.
+     *
+     * <p><b>Limite conhecido, nomeado para não virar alegação de completude:</b> cobre 4 das 9
+     * gramáticas cercadas da casa. Faltam as 5 do bastão de persona —
+     * {@code handoff}, {@code needs-grilling}, {@code correcao}, {@code absorcao}, {@code retrabalho}
+     * ({@code PersonaHandoffScanner} → {@code PersonaBatonRouter}). Elas ficaram de fora por JUÍZO,
+     * não por esquecimento: não são atos de autoridade, e sim roteamento interno entre personas do
+     * CEO; e {@code handoff}/{@code correcao}/{@code retrabalho} são palavras comuns o bastante para
+     * um agente cercar como conteúdo, o que faria o aviso virar exatamente o ruído que o par
+     * negativo desta rede existe para impedir. Somá-las é decisão de quem quiser pagar esse custo.
      */
     private void avisarBlocosSemDestino(RunContext runContext, String reply) {
         if (reply == null || reply.isBlank()) {
@@ -310,12 +333,20 @@ public class AdapterRunExecutor implements RunExecutor {
         if (encontrados.isEmpty()) {
             return;
         }
+        StringBuilder aviso = new StringBuilder("bloco(s) ").append(String.join(", ", encontrados))
+                .append(" emitido(s) por um run de wakeup SEM issue e SEM turno — DESCARTADO(S).");
+        if (encontrados.stream().anyMatch(LIDOS_PELOS_GATES::contains)) {
+            aviso.append(" Os gates de fim-de-run não rodam neste caminho; para que valham, acorde o"
+                    + " agente sobre uma issue.");
+        }
+        if (encontrados.contains("proposta")) {
+            // Dizer "acorde sobre uma issue" para a proposta seria mandar o leitor a um caminho que
+            // também não a lê — conselho errado é pior que conselho nenhum num aviso de perda.
+            aviso.append(" A 'proposta' é o canal de saída do CEO e só é lida no settle de um TURNO"
+                    + " de conversa: nenhum run de agente a lê, em caminho nenhum.");
+        }
         try {
-            store.recordStep(runContext.runId(), "BLOCO_DE_SAIDA_SEM_DESTINO",
-                    "bloco(s) " + String.join(", ", encontrados) + " emitido(s) por um run de wakeup"
-                            + " SEM issue — os gates de fim-de-run não rodam neste caminho e o(s)"
-                            + " bloco(s) foram DESCARTADOS. Para que valham, acorde o agente sobre"
-                            + " uma issue.");
+            store.recordStep(runContext.runId(), "BLOCO_DE_SAIDA_SEM_DESTINO", aviso.toString());
         } catch (RuntimeException aoRegistrar) {
             log.error("run {} emitiu bloco(s) {} sem destino e o registro do aviso TAMBEM falhou ({})",
                     runContext.runId(), encontrados, aoRegistrar.toString());

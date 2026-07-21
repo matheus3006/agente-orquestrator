@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -35,6 +36,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class DispatchWorker implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(DispatchWorker.class);
+
+    /**
+     * O prazo que o encerramento espera pela passada em voo — ver {@link #close()}. Curto e
+     * explícito de propósito: quem espera aqui é o shutdown da aplicação, e um teto generoso viraria
+     * uma parada que parece travamento. Cinco segundos cobrem com folga a derrubada real de um
+     * container ({@code docker rm -f}) sem chegar perto do teto patológico de 30s do comando curto —
+     * abaixo dele porque este é o orçamento do SHUTDOWN, não o do comando.
+     */
+    private static final long PRAZO_DE_ENCERRAMENTO_SEGUNDOS = 5;
 
     private final HeartbeatDispatcher dispatcher;
     private final ExecutorService passadas;
@@ -97,9 +107,33 @@ public class DispatchWorker implements AutoCloseable {
         }
     }
 
+    /**
+     * <b>Esperar é parte do encerramento.</b> {@code shutdownNow} INTERROMPE a passada em voo; ele
+     * não a conclui — e o que a interrupção
+     * DISPARA é justamente trabalho de encerramento que leva tempo: a passada desce por
+     * {@code ProcessoComPrazo.aguardar}, que escala a derrubada do container do agente
+     * ({@code docker rm -f}) antes de propagar. E a thread do dispatch é DAEMON — sem esperar aqui,
+     * {@code close()} volta, a JVM sai por cima da derrubada em curso e o container fica órfão. É o
+     * MESMO desfecho que a ordem do interrupt causava dentro do {@code ProcessoComPrazo}, alcançado
+     * por outro caminho; fechar só um dos dois deixaria a garantia meia-verdadeira.
+     *
+     * <p>Esperar é best-effort, e o teto é o que impede a garantia de virar travamento: passado o
+     * prazo o encerramento segue mesmo assim, com WARN — perder a derrubada de um container é ruim,
+     * pendurar o shutdown da aplicação para sempre é pior. A interrupção que chegar a ESTA thread
+     * não é engolida.
+     */
     @Override
     @PreDestroy
     public void close() {
         passadas.shutdownNow();
+        try {
+            if (!passadas.awaitTermination(PRAZO_DE_ENCERRAMENTO_SEGUNDOS, TimeUnit.SECONDS)) {
+                log.warn("a passada de dispatch não encerrou em {}s depois do shutdownNow — seguindo"
+                                + " com a parada; trabalho de derrubada em curso pode não completar",
+                        PRAZO_DE_ENCERRAMENTO_SEGUNDOS);
+            }
+        } catch (InterruptedException interrompidoNoEncerramento) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

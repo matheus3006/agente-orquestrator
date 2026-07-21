@@ -83,6 +83,28 @@ class BlocoDeSaidaSemIssueNaoSomeEmSilencioTest {
     }
 
     /**
+     * A rede nasceu cobrindo 3 gramáticas e o bloco de AUTORIDADE mais forte da casa ficou de fora:
+     * {@code ```proposta``` } — o canal de saída do CEO (ADR-0018/0036), o que vira Approval. Ele é
+     * lido só no settle de um TURNO de conversa; num wakeup sem issue não há turno nem gate, e ele
+     * seguia sumindo <b>calado</b> pelo mesmo caminho que os outros três deixaram de sumir.
+     */
+    @Test
+    void wakeupSEMIssueComPROPOSTANaSaida_tambemDeixaStepTrace() {
+        UUID companyId = novaCompany();
+        UUID agentId = novoAgente(companyId, "emite-proposta");
+
+        UUID runId = wakeups.enqueue(companyId, agentId, null, "acorda e propõe").runId();
+        assertThat(dispatcher.dispatchOnce()).isEqualTo(1);
+
+        assertThat(runEvents.findByRunIdOrderByCreatedAtAsc(runId))
+                .as("o bloco de autoridade do CEO descartado tem de aparecer no rastro do run")
+                .anySatisfy(evento -> {
+                    assertThat(evento.getType()).isEqualTo("BLOCO_DE_SAIDA_SEM_DESTINO");
+                    assertThat(evento.getDetail()).contains("proposta");
+                });
+    }
+
+    /**
      * O par negativo que impede o aviso de virar ruído: um wakeup sem issue cuja saída não carrega
      * bloco nenhum é o caso comum, e não pode ganhar um step de descarte a cada run.
      */
@@ -110,6 +132,11 @@ class BlocoDeSaidaSemIssueNaoSomeEmSilencioTest {
         AdapterSemBloco adapterSemBloco() {
             return new AdapterSemBloco();
         }
+
+        @Bean
+        AdapterQueEmiteProposta adapterQueEmiteProposta() {
+            return new AdapterQueEmiteProposta();
+        }
     }
 
     /** Emite pelo STDOUT um bloco ```dirigir``` bem-formado — o que um gestor de verdade emitiria. */
@@ -131,6 +158,29 @@ class BlocoDeSaidaSemIssueNaoSomeEmSilencioTest {
             steps.emit("STDOUT", "{\"agente\": \"Nix\", \"titulo\": \"refazer o cálculo\"}");
             steps.emit("STDOUT", "```");
             return Result.ok("sess-emite-bloco", List.of());
+        }
+    }
+
+    /** Emite pelo STDOUT um bloco ```proposta``` bem-formado — o canal de saída do CEO. */
+    static class AdapterQueEmiteProposta implements AgentAdapter {
+        @Override
+        public String type() {
+            return "emite-proposta";
+        }
+
+        @Override
+        public EngineContainer engineContainer() {
+            return EngineContainer.plainShell();
+        }
+
+        @Override
+        public Result execute(Context context, StepSink steps) {
+            steps.emit("STDOUT", "decidi contratar:");
+            steps.emit("STDOUT", "```proposta");
+            steps.emit("STDOUT", "{\"acao\": \"HIRE_AGENT\", \"alvo\": {\"nome\": \"Nix\"},"
+                    + " \"resumo\": \"contratar Nix\", \"area\": \"eng\"}");
+            steps.emit("STDOUT", "```");
+            return Result.ok("sess-emite-proposta", List.of());
         }
     }
 
