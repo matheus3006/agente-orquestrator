@@ -2,6 +2,9 @@ package com.orquestrador.governance.budget;
 
 import com.orquestrador.common.error.NotFoundException;
 import com.orquestrador.execution.AgentWakeupRequestRepository;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunEvent;
+import com.orquestrador.execution.HeartbeatRunEventRepository;
 import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.RunStatus;
 import com.orquestrador.execution.WakeupStatus;
@@ -16,7 +19,7 @@ import java.util.UUID;
  * 1) PREFLIGHT — {@link #invocationBlocked} consultado pelo dispatcher antes de iniciar um Run.
  * 2) REATIVO — {@link #recordCost}/{@link #recordOrchestration} recomputam o gasto do ledger a
  *    cada lancamento; cruzou o hard limit → abre incidente e DRENA o escopo ate o checkpoint
- *    (T.4, §A.6-#3): cancela o que ainda nao comecou (fila + wakeups) e deixa o EM-VOO terminar
+ *    (T.4, §A.6-#3): cancela o que esta em QUEUED (fila + wakeups) e deixa o EM-VOO terminar
  *    o passo e liquidar (settle/report) — matar RUNNING no banco nunca matou o processo, so
  *    jogava o resultado fora. Nada novo nasce: o preflight barra o follow-up.
  */
@@ -32,15 +35,17 @@ public class BudgetService {
     private final BudgetIncidentRepository incidents;
     private final HeartbeatRunRepository runs;
     private final AgentWakeupRequestRepository wakeups;
+    private final HeartbeatRunEventRepository events;
 
     public BudgetService(CostEventRepository costs, BudgetPolicyRepository policies,
                          BudgetIncidentRepository incidents, HeartbeatRunRepository runs,
-                         AgentWakeupRequestRepository wakeups) {
+                         AgentWakeupRequestRepository wakeups, HeartbeatRunEventRepository events) {
         this.costs = costs;
         this.policies = policies;
         this.incidents = incidents;
         this.runs = runs;
         this.wakeups = wakeups;
+        this.events = events;
     }
 
     /** PREFLIGHT: bloqueado se ha incidente OPEN na company ou no agente. */
@@ -137,17 +142,55 @@ public class BudgetService {
     }
 
     /**
-     * Drena o escopo até o checkpoint (T.4): mata só o que NÃO começou (QUEUED + wakeups); o
-     * RUNNING termina o passo e liquida no settle — o resultado do que já foi pago não é jogado
-     * fora. O preflight ({@link #invocationBlocked}) garante que nenhum sucessor nasce.
+     * Drena o escopo até o checkpoint (T.4): mata o que está em {@code QUEUED} (+ os wakeups); o
+     * {@code RUNNING} termina o passo e liquida no settle — o resultado do que já foi pago não é
+     * jogado fora. O preflight ({@link #invocationBlocked}) garante que nenhum sucessor nasce.
+     *
+     * <p><b>{@code QUEUED} NÃO é sinônimo de "não começou"</b>, e esta frase — que estava aqui e no
+     * javadoc da classe — era falsa. O {@code requeueExpired} do {@code LeaseReaper} devolve a
+     * {@code QUEUED} runs que <b>já rodaram</b>, com o {@code execution_lock_run_id} da Issue
+     * <b>já carimbado</b> e {@code attempt > 1} — fato que o próprio {@code HeartbeatRunStore.claim}
+     * reconhece (ele checa {@code attempt == 1} justamente para não cobrar {@code RUN_OPEN} duas
+     * vezes). Cancelar aqui, portanto, <b>pode deixar Issues carimbadas com um run que nunca mais
+     * roda</b>: este é o produtor <b>em lote</b> de lock órfão, e é o mais provável de disparar, já
+     * que o run caro é justamente o que trava e perde o lease.
+     *
+     * <p><b>Rastro, sim; liquidação por-run, NÃO — e a razão é TRANSACIONAL.</b> O caminho em lote
+     * grava {@code RUN_CANCELLED} para cada alvo (sem isso, o cancelamento em massa não deixava
+     * <b>uma linha</b> de evidência: o {@code recordEvent} mora no {@code HeartbeatRunStore}, que
+     * este caminho não usa). Mas <b>não</b> liquida as Issues aqui, e o motivo não é estilo: este
+     * método roda dentro do {@code @Transactional} de {@code HeartbeatRunStore.claim} — via
+     * {@code recordOrchestration} → {@code enforce} → {@link #openIncidentOnce} — de modo que um
+     * settle por-run aninharia N liquidações de Issue (cada uma com sua gravação de activity log)
+     * <b>dentro da transação de claim de OUTRO run</b>, e um throw derrubaria esse claim. Quem
+     * liquida estas Issues é o {@code LockOrfaoReaper}, fora de qualquer transação alheia. (O ciclo
+     * de bean {@code HeartbeatRunStore} → {@code BudgetService} também existe, mas é contornável —
+     * {@code @Lazy}, um terceiro bean, ou injetar o repositório como aqui; a razão transacional não
+     * tem contorno.)
      */
     private void drainScopeWorkToCheckpoint(UUID companyId, ScopeType scope, UUID scopeId) {
+        List<HeartbeatRun> alvos = scope == ScopeType.COMPANY
+                ? runs.findByCompanyIdAndStatusIn(companyId, CANCELLABLE_RUNS)
+                : runs.findByAgentAndStatuses(scopeId, CANCELLABLE_RUNS);
+        List<UUID> alvoIds = alvos.stream().map(HeartbeatRun::getId).toList();
+
         if (scope == ScopeType.COMPANY) {
             runs.cancelByCompany(companyId, CANCELLABLE_RUNS, RunStatus.CANCELLED);
             wakeups.cancelByCompany(companyId, CANCELLABLE_WAKEUPS, WakeupStatus.CANCELLED);
         } else {
             runs.cancelByAgent(scopeId, CANCELLABLE_RUNS, RunStatus.CANCELLED);
             wakeups.cancelByAgent(scopeId, CANCELLABLE_WAKEUPS, WakeupStatus.CANCELLED);
+        }
+
+        // Só grava para quem REALMENTE virou CANCELLED: entre o select e o UPDATE em massa, outro
+        // nó pode ter reivindicado um alvo (QUEUED -> RUNNING), e esse escapou do cancel. Registrar
+        // o evento para ele seria escrever no rastro um fato que não aconteceu.
+        String motivo = "budget hard-stop: drain do escopo " + scope + " " + scopeId;
+        for (HeartbeatRun alvo : runs.findAllById(alvoIds)) {
+            if (alvo.getStatus() == RunStatus.CANCELLED) {
+                events.save(new HeartbeatRunEvent(UUID.randomUUID(), alvo.getId(), alvo.getCompanyId(),
+                        "RUN_CANCELLED", motivo));
+            }
         }
     }
 

@@ -21,9 +21,14 @@ Issue: **sucesso → `DONE`**, **falha → `BLOCKED`** — **sempre liberando o 
 `status = BLOCKED`): `REOPEN → OPEN` mantendo o `assignee_agent_id` (o próximo wakeup re-executa a mesma Issue
 com o mesmo agente, pelo caminho normal); `CANCEL → CANCELLED`.
 
-- **Segurança grátis do guard:** o executor chama `settleAfterRun` **incondicionalmente** na saída terminal; se
+- **Segurança grátis do guard:** o executor chama `settleAfterRun` ~~**incondicionalmente**~~ na saída terminal; se
   o run não detinha a Issue (falhou **antes** do checkout, ou perdeu a corrida de checkout) casa **0 linhas →
   no-op** — uma Issue-vítima **nunca** é bloqueada por um run que não a possuía.
+  > 🔴 **EMENDADO 2026-07-21 (Fatia I do lock órfão): o "incondicionalmente" é FALSO.** Existem saídas
+  > terminais de Run que **nunca chegam ao executor** — os preflights do `HeartbeatDispatcher` e o drain
+  > em lote do `BudgetService` cancelam o Run direto — e existe o caso do executor **chamar e a chamada
+  > falhar**. O que é verdadeiro é o resto do bullet: o **guard** faz o que promete. Ver
+  > §Emenda 2026-07-21 abaixo.
 - **Sem auto-retry no v1:** o sinal para distinguir transiente × determinístico é o **erro tipado do ADR-0004**
   (`transient_upstream`+`retryNotBefore` vs `model_refusal`), que **não está cabeado** (o adapter hoje devolve
   só `String`). Auto-retry cego de falha determinística queima budget num loop (contra o hard-stop do ADR-0006).
@@ -41,7 +46,12 @@ com o mesmo agente, pelo caminho normal); `CANCEL → CANCELLED`.
   algo varie através dele").
 
 ## Consequências
-- "Issue travada para sempre por um Run que falhou" deixa de ser um modo de falha.
+- ~~"Issue travada para sempre por um Run que falhou" deixa de ser um modo de falha.~~
+  > 🔴 **EMENDADO 2026-07-21 (Fatia I do lock órfão).** Esta consequência era **maior do que a decisão
+  > entregava**: ela vale para o Run que falha **passando pelo executor**, que é o caso que a §Decisão
+  > cobre. Para as saídas terminais que não passam por lá — e para o settle que **lança** — a Issue
+  > seguia `IN_PROGRESS` carimbada com um Run morto, impegável. A frase só passa a valer **depois da
+  > Fatia I**, e mesmo assim com o resíduo nomeado na §Emenda 2026-07-21 (o Run `INTERRUPTED`).
 - `BLOCKED` é **observável** (evento + fora do conjunto pegável `status in ('OPEN','IN_PROGRESS')` → não
   re-executa sozinha) — só o board destrava.
 - Reserva `RECOVERING` (Run) para o auto-retry futuro; sem `failure_count` no v1.
@@ -143,3 +153,60 @@ erro do run.
 - **Interações:** o run vai a `FAILED` com erro legível (a trilha de runs não finge); o
   circuit-breaker da ADR-0018 (teto c) conta essas falhas e para o par agente×issue reincidente —
   comportamento desejado para agente mal-configurado; o wakeup manual destrava, como lá.
+
+## Emenda 2026-07-21 (Fatia I — o lock órfão fecha na FONTE e na REDE)
+
+> Emenda de **CORREÇÃO**, não aditiva: duas frases do corpo desta ADR são desmentidas pelo código, e
+> estão marcadas **na §Decisão e na §Consequências** onde vivem. Origem: grill "posse do run"
+> (D-POSSE-3), 2 rodadas + conferência adversarial.
+
+**A §Contexto NÃO é emendada — ela é CITADA, porque estava certa.** Ela já diz: *"O reaper só
+re-enfileira Runs `RUNNING` com lease expirado — um Run `FAILED` (terminal) nunca era tocado."* O
+diagnóstico do mecanismo estava correto; **o que faltou foi o conjunto completo de status terminais**
+(e o conjunto completo de caminhos que chegam a eles). A ADR não errou o mecanismo, errou a
+enumeração.
+
+### O dano, na forma em que ele existe
+
+Uma Issue fica **`IN_PROGRESS` com `execution_lock_run_id` apontando para um Run que não roda mais**.
+O `tryCheckout` exige essa coluna null-ou-igual, então nenhum Run novo a pega; o `unblock` do §7 só
+aceita `BLOCKED`, então o board não a destrava. **Impegável, permanente e silenciosa** — o sintoma
+visível é apenas `"checkout da issue falhou (ja em execucao por outro run)"` em runs subsequentes, um
+diagnóstico que aponta para o lugar errado.
+
+**O "sempre liberando o lock" do corpo NÃO é emendado, de propósito:** ele é qualificado pelo guard
+`execution_lock_run_id = runId` na frase seguinte, e é verdadeiro sobre o que o settle faz. O defeito
+nunca foi o settle liberar de menos — foi **o settle não ser chamado**.
+
+### O que a Fatia I entrega
+
+1. **FONTE — os 4 preflights de `HeartbeatDispatcher.dispatchOnce`** passam a cancelar **e liquidar**
+   (`cancelarELiquidar`), com guard `issueId == null` e **só quando o CAS do cancel vence** (perder o
+   CAS significa que outro nó reivindicou o Run e o está executando — liquidar ali arrancaria a Issue
+   de um Run vivo).
+2. **FONTE — o corpo do `AdapterRunExecutor.execute`** ganha o mesmo cinto do `semDerrubarOSettle`:
+   exceção entre o `issues.checkout` e o settle não pula mais o settle.
+3. **REDE — `LockOrfaoReaper`**, na cadência do `LeaseReaper` (5s): colhe Issues `IN_PROGRESS` cujo
+   lock aponta para Run `CANCELLED`/`FAILED`/`SUCCEEDED` e as liquida em `BLOCKED`. Cobre o drain em
+   lote (que não tem `runId` individual na mão), o settle que lançou, **o passivo já acumulado** e
+   qualquer produtor futuro.
+4. **RASTRO — `BudgetService.drainScopeWorkToCheckpoint`** grava `RUN_CANCELLED` por alvo. O
+   cancelamento em massa não deixava **uma linha** de evidência.
+
+**Por que colher é seguro, sem supor nada sobre quem está vivo.** O argumento **não** é "estes três
+status implicam processo morto" — não implicam: o `requeueExpired` devolve um Run a `QUEUED` com o
+lock já carimbado e o processo **vivo**. O argumento é que **o banco arbitra as duas ordens**, pelo
+`where` de `tryBlock` (`execution_lock_run_id = :runId and status = 'IN_PROGRESS'`): reaper primeiro
+⇒ o settle tardio casa 0 linhas; zumbi primeiro ⇒ o `tryBlock` do reaper casa 0 linhas.
+
+### O que a Fatia I NÃO fecha (resíduo nomeado)
+
+- **`INTERRUPTED` fica fora do reaper**, porque o kill do interrupt é best-effort e o processo pode
+  estar vivo. Logo o produtor **"crash do nó entre o CAS `RUNNING → INTERRUPTED` e o settle"** segue
+  **sem cura automática**; até o grill do contrato do settle sob autoridade revogada fechar, o
+  destrave é manual (ver `docs/ficha-seguranca-complete.md`).
+- **O reaper pode estacionar em `BLOCKED` uma Issue cujo processo ainda está vivo e ia entregar.**
+  Custo do desenho, não bug: troca um dano permanente e mudo por um `REOPEN` do board sobre uma Issue
+  visível.
+- **`BudgetIncident` não se correlaciona por `runId`** — só por timestamp e escopo. A Fatia I resolve
+  a morte da Issue, não a cegueira do diagnóstico.

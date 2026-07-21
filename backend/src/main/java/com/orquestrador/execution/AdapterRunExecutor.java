@@ -135,16 +135,7 @@ public class AdapterRunExecutor implements RunExecutor {
 
     @Override
     public RunOutcome execute(RunContext runContext) {
-        RunOutcome outcome = runToOutcome(runContext);
-        // F.9 (ADR-0021): captura do preview APOS o sucesso e ANTES do settle, FORA de transação —
-        // quando a review nascer (dentro do settle), o artefato já existe. Best-effort: o capturador
-        // garante que nenhuma falha de captura vira exceção (o settle abaixo é obrigatório).
-        if (outcome.succeeded()) {
-            previews.captureIfPublished(runContext);
-            // F.10 (ADR-0023): a DECLARACAO de servidor e registrada no mesmo ponto — quando a
-            // review nascer, o card ja sabe que o run sob revisao declarou (run_id == run_id).
-            serverManifests.registerIfDeclared(runContext);
-        }
+        RunOutcome outcome = corpoDoRunSemDerrubarOSettle(runContext);
         // §7 (ADR-0011): TODA saída terminal liquida a Issue — sucesso→DONE, falha→BLOCKED — sempre
         // liberando o lock. O guard (execution_lock_run_id=runId) torna no-op as falhas ANTES do checkout
         // e os checkout-conflicts (a Issue-vítima do outro run fica intacta).
@@ -155,14 +146,69 @@ public class AdapterRunExecutor implements RunExecutor {
     }
 
     /**
+     * O MESMO cinto do {@link #semDerrubarOSettle}, estendido ao <b>corpo inteiro do run</b>
+     * (Fatia I, peça 4).
+     *
+     * <p><b>O que estava aberto.</b> O {@link #execute} chamava {@code runToOutcome} <b>sem
+     * try/catch</b>, e o {@code runToOutcome} não tem cinto abrangente depois do
+     * {@code issues.checkout}. Qualquer exceção que escapasse dali subia até o
+     * {@code HeartbeatDispatcher.dispatchOnce}, virava {@code RunOutcome.failure} e o Run terminava
+     * <b>{@code FAILED} com o lock carimbado e o settle NUNCA TENTADO</b> — o lock órfão, pela porta
+     * mais larga que existe. Sítios reais entre o checkout e o settle: {@code store.recordStep}
+     * ({@code findById(...).orElseThrow()}), {@code contextIntelligence.inspect},
+     * {@code recordCosts}, {@code agentSessions.record}, e as duas chamadas abaixo, que rodam já
+     * dentro do {@code execute} e ANTES do settle.
+     *
+     * <p><b>Cinto na FONTE, mesmo havendo REDE.</b> O {@code LockOrfaoReaper} colhe estas Issues no
+     * tick seguinte. Sem este cinto, porém, a garantia inteira passaria a depender de o reaper
+     * rodar — e ele roda na {@code scheduling-1}, a thread única que a ADR-0050 mostrou que também
+     * morre na flag durante shutdown. A rede não substitui a fonte.
+     *
+     * <p><b>{@code RuntimeException}, e não {@code Throwable}, de propósito.</b> É o que pode
+     * escapar de {@code runToOutcome} (método privado, sem checked). Um {@code Error} atravessa
+     * também o {@code catch (Exception)} do {@code dispatchOnce}: o Run <b>não</b> vira terminal,
+     * fica {@code RUNNING} e o {@code LeaseReaper} o recupera pelo lease vencido — outro caminho,
+     * já coberto, que este cinto tornaria pior se o interceptasse aqui.
+     *
+     * <p>O incidente vira step VISÍVEL no StepTrace pelo mesmo caminho protegido do
+     * {@link #semDerrubarOSettle} (registro que falha cai no log e o settle segue) — anti-silêncio:
+     * o Run vai terminar {@code FAILED} de qualquer jeito, e o operador precisa saber POR QUÊ.
+     */
+    private RunOutcome corpoDoRunSemDerrubarOSettle(RunContext runContext) {
+        try {
+            RunOutcome outcome = runToOutcome(runContext);
+            // F.9 (ADR-0021): captura do preview APOS o sucesso e ANTES do settle, FORA de transação —
+            // quando a review nascer (dentro do settle), o artefato já existe. Best-effort: o capturador
+            // garante que nenhuma falha de captura vira exceção (o settle abaixo é obrigatório).
+            if (outcome.succeeded()) {
+                previews.captureIfPublished(runContext);
+                // F.10 (ADR-0023): a DECLARACAO de servidor e registrada no mesmo ponto — quando a
+                // review nascer, o card ja sabe que o run sob revisao declarou (run_id == run_id).
+                serverManifests.registerIfDeclared(runContext);
+            }
+            return outcome;
+        } catch (RuntimeException e) {
+            registrarIncidenteSemDerrubar(runContext, "corpoDoRun", e);
+            return RunOutcome.failure("corpo do run falhou antes do settle: " + e);
+        }
+    }
+
+    /**
      * O cinto de ÚLTIMA INSTÂNCIA dos gates de fim-de-run (hardening do PR #50, achado 🟠 do TOCTOU
      * — a exposição HERDADA, fechada para os 4 de uma vez).
      *
      * <p>Estes gates rodam dentro do {@code runToOutcome}, que o {@link #execute} chama <b>antes</b>
      * do {@code issues.settleAfterRun}. Uma exceção que suba daqui não é "um gate que falhou": ela
      * PULA o settle e deixa a Issue em {@code IN_PROGRESS} com {@code execution_lock_run_id}
-     * apontando um run morto. O {@code tryCheckout} exige essa coluna null-ou-igual e <b>não existe
-     * reaper para ela</b> — a Issue fica impegável para sempre, e o dano é permanente e silencioso.
+     * apontando um run morto, e o {@code tryCheckout} exige essa coluna null-ou-igual.
+     *
+     * <p><b>Emendado pela Fatia I:</b> esta frase dizia que <b>não existia reaper</b> para essa
+     * coluna e que a Issue ficava impegável <b>para sempre</b>. O {@link LockOrfaoReaper} agora
+     * colhe issues carimbadas por Run em status terminal, e o
+     * {@code corpoDoRunSemDerrubarOSettle} garante que o settle seja TENTADO mesmo quando o corpo do
+     * run explode. O dano deixou de ser permanente; virou <b>uma Issue estacionada em BLOCKED com
+     * até um tick de atraso</b>. O cinto continua sendo a defesa certa: ele é a FONTE (liquida com
+     * o motivo, na hora), o reaper é a REDE.
      *
      * <p>Cada gate já é fail-soft por dentro; isto é o que mantém a afirmação verdadeira se um
      * deles regredir amanhã. Não silencia: o incidente vira step VISÍVEL no StepTrace, no mesmo
@@ -184,14 +230,24 @@ public class AdapterRunExecutor implements RunExecutor {
         try {
             ato.run();
         } catch (RuntimeException e) {
-            try {
-                store.recordStep(runContext.runId(), "GATE_DE_SAIDA_FALHOU", gate + ": " + e);
-            } catch (RuntimeException aoRegistrar) {
-                log.error("gate {} falhou no run {} e o registro do incidente TAMBEM falhou"
-                                + " ({}); seguindo para o settle mesmo assim — issue travada"
-                                + " seria pior que step perdido. Falha original: {}",
-                        gate, runContext.runId(), aoRegistrar.toString(), e.toString());
-            }
+            registrarIncidenteSemDerrubar(runContext, gate, e);
+        }
+    }
+
+    /**
+     * A metade do cinto que <b>registra sem derrubar</b> — compartilhada pelos DOIS cintos (o dos 4
+     * gates e o do corpo do run), de propósito: a disciplina do try aninhado é o que impede o
+     * próprio registro do incidente de reproduzir o dano que o cinto previne, e duplicá-la em dois
+     * lugares é como uma das cópias já embarcou furada antes (🔵 da conferência dos PRs #51/#52).
+     */
+    private void registrarIncidenteSemDerrubar(RunContext runContext, String gate, RuntimeException e) {
+        try {
+            store.recordStep(runContext.runId(), "GATE_DE_SAIDA_FALHOU", gate + ": " + e);
+        } catch (RuntimeException aoRegistrar) {
+            log.error("gate {} falhou no run {} e o registro do incidente TAMBEM falhou"
+                            + " ({}); seguindo para o settle mesmo assim — issue travada"
+                            + " seria pior que step perdido. Falha original: {}",
+                    gate, runContext.runId(), aoRegistrar.toString(), e.toString());
         }
     }
 

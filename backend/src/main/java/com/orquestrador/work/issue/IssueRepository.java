@@ -61,6 +61,33 @@ public interface IssueRepository extends JpaRepository<Issue, UUID> {
     List<Issue> findByCompanyIdAndStatus(UUID companyId, IssueStatus status);
 
     /**
+     * <b>As Issues com LOCK ÓRFÃO</b> — {@code IN_PROGRESS} carimbadas com um Run que não roda mais
+     * (Fatia I, peça 2). A base da varredura do {@code LockOrfaoReaper}; o caller passa quais status
+     * de Run contam como "não roda mais", porque essa escolha é decisão de desenho, não da query
+     * ({@code INTERRUPTED} fica de fora — ver o javadoc do reaper).
+     *
+     * <p>Varredura de SISTEMA, sem {@code company_id} — o órfão não sabe de quem é, e {@code issue} é
+     * a tabela pequena da casa (o que explode são as rows-filhas; mesmo recorte do
+     * {@code findByAssigneeAgentIdIsNotNull} do {@code WorkspaceReaper}).
+     *
+     * <p><b>Não pede índice em {@code execution_lock_run_id}, e isso foi medido, não presumido:</b>
+     * a coluna aqui é a ORIGEM do join, nunca o critério de busca — quem afunila é
+     * {@code i.status = IN_PROGRESS}, e o {@code exists} casa por {@code r.id}, que é a CHAVE
+     * PRIMÁRIA de {@code heartbeat_run}. Uma busca <i>por</i> {@code execution_lock_run_id} é que
+     * pediria índice, e não existe nenhuma — nem aqui nem no resto do repositório.
+     */
+    @Query("""
+            select i from Issue i
+             where i.status = :emProgresso
+               and i.executionLockRunId is not null
+               and exists (select 1 from HeartbeatRun r
+                            where r.id = i.executionLockRunId and r.status in :runsQueNaoRodamMais)
+            """)
+    List<Issue> findComLockDeRunTerminal(
+            @Param("emProgresso") IssueStatus emProgresso,
+            @Param("runsQueNaoRodamMais") Collection<com.orquestrador.execution.RunStatus> runsQueNaoRodamMais);
+
+    /**
      * Checkout ATOMICO: o banco (nao a aplicacao) arbitra a corrida. Um unico UPDATE guardado.
      * Linhas afetadas == 1 -> o run pegou a Issue; == 0 -> 409 (outro agente/run ja a tem,
      * ou ela nao esta mais em estado pegavel). NUNCA fazer retry de um 0.

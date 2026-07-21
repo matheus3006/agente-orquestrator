@@ -18,17 +18,20 @@ public class HeartbeatScheduler {
 
     private final DispatchWorker dispatchWorker;
     private final LeaseReaper reaper;
+    private final LockOrfaoReaper lockOrfaoReaper;
     private final PreviewServerSupervisor previewServers;
     private final WorkspaceReaper workspaceReaper;
     private final RowRetentionReaper rowRetentionReaper;
     private final PreviewThumbnailCapturer thumbnailCapturer;
 
     public HeartbeatScheduler(DispatchWorker dispatchWorker, LeaseReaper reaper,
+                              LockOrfaoReaper lockOrfaoReaper,
                               PreviewServerSupervisor previewServers, WorkspaceReaper workspaceReaper,
                               RowRetentionReaper rowRetentionReaper,
                               PreviewThumbnailCapturer thumbnailCapturer) {
         this.dispatchWorker = dispatchWorker;
         this.reaper = reaper;
+        this.lockOrfaoReaper = lockOrfaoReaper;
         this.previewServers = previewServers;
         this.workspaceReaper = workspaceReaper;
         this.rowRetentionReaper = rowRetentionReaper;
@@ -46,9 +49,27 @@ public class HeartbeatScheduler {
         dispatchWorker.dispatchAsync();
     }
 
+    /**
+     * Os DOIS reapers de órfão, na mesma cadência e nesta ordem. O {@link LeaseReaper} recupera o
+     * <b>Run</b> órfão (worker morto ⇒ volta para a fila); o {@link LockOrfaoReaper} recupera a
+     * <b>Issue</b> órfã (carimbada com um Run que não roda mais ⇒ volta ao board em BLOCKED).
+     *
+     * <p>Nesta ordem de propósito: a recuperação que devolve trabalho à fila vem antes da que o
+     * estaciona para humano. E o lock órfão vem <b>depois</b> porque o {@code requeueExpired} do
+     * lease reaper pode acabar de devolver a {@code QUEUED} um Run cujo lock está carimbado — esse
+     * Run não está em status terminal, então a varredura de baixo corretamente não o toca.
+     *
+     * <p><b>Custo de THREAD não é zero, e "reaper novo não é @Scheduled novo" não muda isso.</b>
+     * Esta thread é a {@code scheduling-1}, única e compartilhada pelos 6 {@code @Scheduled} — a
+     * mesma partilha que é a razão de existir a ADR-0050. A varredura nova soma, a cada tick de 5s,
+     * uma query de sistema e até N liquidações de Issue (cada uma com sua gravação de activity log)
+     * ao orçamento dessa thread, dividido com o {@link LeaseReaper}, o GC de preview e o GC de rows.
+     * "Zero custo de thread" só valeria para thread NOVA.
+     */
     @Scheduled(fixedDelayString = "${orquestrador.heartbeat.reap-ms:5000}")
     public void reap() {
         reaper.reapOnce();
+        lockOrfaoReaper.reapOnce();
     }
 
     /** F.10 (ADR-0023 §3): ceifa preview servers sem heartbeat do board ha mais de um TTL. */
