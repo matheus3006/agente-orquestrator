@@ -15,6 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * O preflight que CANCELA um run também LIQUIDA a Issue que esse run detinha (Fatia I, peça 1).
@@ -75,5 +76,30 @@ class PreflightCanceladoLiquidaAIssueTest {
         assertThat(runs.findById(runId).orElseThrow().getStatus()).isEqualTo(RunStatus.CANCELLED);
         assertThat(issues.get(companyId, issueId).getStatus()).isEqualTo(IssueStatus.BLOCKED);
         assertThat(issues.get(companyId, issueId).getExecutionLockRunId()).isNull();
+    }
+
+    /**
+     * <b>O CINTO que faltava</b> (Fatia I-bis, item 5) — achado por 2 verificadores independentes.
+     *
+     * <p>O {@code LockOrfaoReaper.reapOnce} declara a doutrina por escrito: <i>"uma Issue que
+     * exploda não pode levar as demais junto"</i>. A MESMA doutrina não estava aplicada 30 linhas
+     * ao lado: o {@code cancelarELiquidar} chamava {@code settleAfterRun} <b>sem cinto</b>, dentro
+     * do {@code for} de até 50 runs do {@code dispatchOnce}. Um throw ali não estragava uma Issue —
+     * <b>descartava o resto da passada</b>, e os runs seguintes da fila não eram nem olhados.
+     *
+     * <p>O ato que explode é o recurso da casa para provar cinto ({@code semDerrubarOSettle}), pelo
+     * mesmo motivo: o settle real não explode sob demanda, e a casa não mocka bean. A FIAÇÃO — que
+     * o caminho normal de fato passa pelo cinto — é o teste acima que prova: sem o cinto no
+     * caminho, a Issue não teria sido liquidada.
+     */
+    @Test
+    void liquidacaoQueEXPLODE_naoDerrubaOrestoDaPassada() {
+        HeartbeatRun run = new HeartbeatRun(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), RunStatus.CANCELLED);
+
+        assertThatCode(() -> dispatcher.semDerrubarAPassada(run, () -> {
+            throw new IllegalStateException("regressão de amanhã");
+        })).as("se isto sobe, o dispatchOnce descarta os runs seguintes da MESMA passada")
+                .doesNotThrowAnyException();
     }
 }

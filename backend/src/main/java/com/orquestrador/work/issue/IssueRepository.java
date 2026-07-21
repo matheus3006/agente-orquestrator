@@ -1,5 +1,6 @@
 package com.orquestrador.work.issue;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -61,31 +62,66 @@ public interface IssueRepository extends JpaRepository<Issue, UUID> {
     List<Issue> findByCompanyIdAndStatus(UUID companyId, IssueStatus status);
 
     /**
-     * <b>As Issues com LOCK ÓRFÃO</b> — {@code IN_PROGRESS} carimbadas com um Run que não roda mais
-     * (Fatia I, peça 2). A base da varredura do {@code LockOrfaoReaper}; o caller passa quais status
-     * de Run contam como "não roda mais", porque essa escolha é decisão de desenho, não da query
-     * ({@code INTERRUPTED} fica de fora — ver o javadoc do reaper).
+     * <b>As Issues com LOCK ÓRFÃO</b> — {@code IN_PROGRESS} carimbadas com um lock que <b>nenhum Run
+     * com futuro segura</b> (Fatia I, peça 2; corrigida na Fatia I-bis). A base da varredura do
+     * {@code LockOrfaoReaper}; o caller passa quais status de Run contam como "não roda mais",
+     * porque essa escolha é decisão de desenho, não da query — ver o critério único no javadoc do
+     * reaper.
      *
-     * <p>Varredura de SISTEMA, sem {@code company_id} — o órfão não sabe de quem é, e {@code issue} é
-     * a tabela pequena da casa (o que explode são as rows-filhas; mesmo recorte do
+     * <p><b>A pergunta é NEGATIVA de propósito, e é aí que mora a correção da Fatia I-bis.</b> A
+     * forma original era {@code exists(run em status terminal)}, que exige uma LINHA para condenar:
+     * lock apontando para Run <b>sem linha</b> em {@code heartbeat_run} nunca entrava na lista —
+     * fail-CLOSED no pior caso, porque nenhum status resgata quem não tem status. Hoje a query
+     * pergunta se existe algum Run <b>com futuro</b> segurando o lock; a ausência de linha responde
+     * "não" naturalmente, sem caso especial. Como {@code r.id} é chave primária, o sub-select casa
+     * no máximo uma linha, então as duas formas só divergem exatamente no caso que faltava.
+     *
+     * <p><b>A cerca {@code r.companyId = i.companyId} não é sobre escrita</b> — a escrita já era
+     * sólida ({@code tryBlock} tem {@code company_id}, e nunca houve escrita cross-tenant). Ela
+     * fecha um canal de <b>estado/timing</b>: sem a cerca, o ciclo de vida de um Run da company X
+     * decidia se a Issue da company Y era colhida e QUANDO. Com ela, um lock que não nomeia Run
+     * <i>desta</i> company é órfão na hora.
+     *
+     * <p>Varredura de SISTEMA, sem {@code company_id} no filtro externo — o órfão não sabe de quem é,
+     * e {@code issue} é a tabela pequena da casa (o que explode são as rows-filhas; mesmo recorte do
      * {@code findByAssigneeAgentIdIsNotNull} do {@code WorkspaceReaper}).
      *
-     * <p><b>Não pede índice em {@code execution_lock_run_id}, e isso foi medido, não presumido:</b>
-     * a coluna aqui é a ORIGEM do join, nunca o critério de busca — quem afunila é
-     * {@code i.status = IN_PROGRESS}, e o {@code exists} casa por {@code r.id}, que é a CHAVE
-     * PRIMÁRIA de {@code heartbeat_run}. Uma busca <i>por</i> {@code execution_lock_run_id} é que
-     * pediria índice, e não existe nenhuma — nem aqui nem no resto do repositório.
+     * <p><b>Não pede índice — e desta vez o plano foi MEDIDO, não deduzido.</b> A régua da Fatia I
+     * media um proxy ("a coluna é origem do join"): verdade, mas responde a pergunta errada, porque
+     * quem afunila é {@code status = IN_PROGRESS} e o único índice que o cobre é composto liderado
+     * por {@code company_id} — que esta varredura omite de propósito. {@code EXPLAIN ANALYZE} no
+     * Postgres real, com 20.000 issues e 20.000 runs: <b>4,4 ms</b>, {@code Nested Loop Anti Join} +
+     * {@code top-N heapsort} (o {@code order by} + teto NÃO faz sort completo). O
+     * {@code r.companyId} entra como filtro de junção sobre um conjunto já minúsculo — <b>a cerca
+     * cross-tenant é de graça</b>. Nenhuma migração consumida (V39 segue livre).
+     *
+     * <p><b>O gatilho que mudaria isso, nomeado:</b> o plano varre {@code issue} inteira. Hoje ela é
+     * a tabela pequena da casa e 4,4 ms cabem folgados num tick de 5s. Se {@code issue} crescer a
+     * ponto de a varredura pesar, o remédio é índice PARCIAL —
+     * {@code (updated_at) where status='IN_PROGRESS' and execution_lock_run_id is not null} — e não
+     * índice em {@code execution_lock_run_id}, que continua sendo a origem do join e não o critério.
+     *
+     * <p><b>Com TETO por passada</b> ({@code Pageable}), na disciplina do
+     * {@code findTop50ByStatusOrderByCreatedAtAsc} do dispatcher: a varredura roda na
+     * {@code scheduling-1}, a thread ÚNICA compartilhada pelos 6 {@code @Scheduled} (ADR-0050), e a
+     * classe declara cobrir "o passivo já acumulado" — o maior N possível. A ordem
+     * {@code updated_at asc} drena o passivo mais VELHO primeiro, sem inanição; o excedente fica
+     * para a passada seguinte.
      */
     @Query("""
             select i from Issue i
              where i.status = :emProgresso
                and i.executionLockRunId is not null
-               and exists (select 1 from HeartbeatRun r
-                            where r.id = i.executionLockRunId and r.status in :runsQueNaoRodamMais)
+               and not exists (select 1 from HeartbeatRun r
+                                where r.id = i.executionLockRunId
+                                  and r.companyId = i.companyId
+                                  and r.status not in :runsQueNaoRodamMais)
+             order by i.updatedAt asc
             """)
     List<Issue> findComLockDeRunTerminal(
             @Param("emProgresso") IssueStatus emProgresso,
-            @Param("runsQueNaoRodamMais") Collection<com.orquestrador.execution.RunStatus> runsQueNaoRodamMais);
+            @Param("runsQueNaoRodamMais") Collection<com.orquestrador.execution.RunStatus> runsQueNaoRodamMais,
+            Pageable teto);
 
     /**
      * Checkout ATOMICO: o banco (nao a aplicacao) arbitra a corrida. Um unico UPDATE guardado.

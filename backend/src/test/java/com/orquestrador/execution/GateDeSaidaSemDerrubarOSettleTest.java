@@ -21,10 +21,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * <p><b>Por que importa mais do que parece.</b> Os gates rodam dentro do {@code runToOutcome}, que
  * o {@code execute} chama ANTES do {@code settleAfterRun}. Uma exceção que suba dali não é "um gate
  * falhou": ela PULA o settle e deixa a Issue {@code IN_PROGRESS} com {@code execution_lock_run_id}
- * de um run morto. O {@code tryCheckout} exige essa coluna null-ou-igual e <b>não existe reaper
- * para ela</b> — a Issue fica impegável PARA SEMPRE. O cinto é o que mantém a afirmação "os gates
- * são fail-soft" verdadeira se um deles regredir amanhã; sem teste, ele era exatamente a peça que
- * regride sem ninguém ver.
+ * de um run morto, e o {@code tryCheckout} exige essa coluna null-ou-igual. <b>Emendado pela Fatia
+ * I-bis:</b> este parágrafo dizia que <i>não existe reaper para ela</i> e que a Issue ficava
+ * impegável PARA SEMPRE — o {@code LockOrfaoReaper} existe desde a Fatia I e, com o ponto cego
+ * fechado, alcança também o run sem linha. O dano deixou de ser permanente; virou uma Issue
+ * estacionada em {@code BLOCKED} pela varredura. O cinto segue sendo a defesa certa: ele é a FONTE
+ * (liquida na hora, com o motivo real), o reaper é a REDE (só sabe que ninguém mais roda). Sem
+ * teste, ele era exatamente a peça que regride sem ninguém ver.
  *
  * <p>Os gates reais são fail-soft por dentro e não explodem sob demanda — por isso o cinto se prova
  * com um {@code ato} que explode, chamando o método de visibilidade de PACOTE (mesmo recurso do
@@ -90,7 +93,7 @@ class GateDeSaidaSemDerrubarOSettleTest {
 
         assertThatCode(() -> executor.semDerrubarOSettle(runFantasma, "gateFicticio", () -> {
             throw new IllegalStateException("regressão de amanhã");
-        })).as("perder a linha do StepTrace é ruim; deixar a Issue impegável para sempre é pior")
+        })).as("perder a linha do StepTrace é ruim; pular o settle e jogar a Issue na rede é pior")
                 .doesNotThrowAnyException();
     }
 }

@@ -6,6 +6,9 @@
 > 🔴 **TRAVA DE ORDEM, decisão do dono.** O furo abaixo **não podia ser fechado** antes de a Fatia I
 > (lock órfão) estar em `main`: até lá ele era a **única cura existente** para uma Issue travada, e
 > fechá-lo primeiro transformaria dano contornável em dano permanente de verdade.
+>
+> ✅ **TRAVA LIBERADA** (Fatia I em `main` desde `454d8eb`; Fatia I-bis fecha o ponto cego da rede).
+> Ver §Gatilho do conserto no fim desta ficha.
 
 ---
 
@@ -67,6 +70,18 @@ porque a Issue órfã **é** `IN_PROGRESS` — e a Issue pousa em **`PENDING_REV
    vira Decisão ancorada na review **e** na issue (entregue ao agente no re-run, ADR-0011 §Emenda
    R19-A).
 
+> 🔴 **O Ramo B NÃO FUNCIONA se o `runId` do lock for SINTÉTICO** (sem linha em `heartbeat_run`) —
+> descoberto na Fatia I-bis, e é exatamente a classe que o `/checkout` sem corpo fabrica sozinho.
+> O passo 3 casa o `trySubmitForReview` (a Issue **é** `IN_PROGRESS`), mas em seguida a checagem
+> "toda review corresponde a um run REAL desta company" falha ⇒ `ConflictException` ⇒ **rollback
+> TOTAL**: o UPDATE guardado é desfeito e a Issue volta a `IN_PROGRESS` com o lock de pé. O
+> operador recebe 409 e **a Issue continua travada**.
+>
+> **Não há 4ª chamada que conserte isso** — o problema é o passo 3. Para essa classe, a saída é a
+> **REDE**: desde a Fatia I-bis o `LockOrfaoReaper` colhe lock que aponta para Run sem linha, então
+> **não faça nada e espere a varredura** (ver §Condição de expiração). Provado em
+> `DestraveManualDosDoisRamosTest.riscoALTOcomRunSINTETICO_aFichaNAOdestrava_masARedeCOLHE`.
+
 **Nos dois ramos o destino é `BLOCKED`**, de onde o `unblock {REOPEN|CANCEL}` do board decide entre
 refazer e encerrar.
 
@@ -74,23 +89,35 @@ refazer e encerrar.
 
 ## Condição de expiração — é um FATO, não uma data
 
-A seção **Procedimento manual** acima perde a maior parte da razão de existir **quando o
-`LockOrfaoReaper` estiver em `main`**: a partir daí a colheita é automática para Issues carimbadas
-por Run `CANCELLED`, `FAILED` ou `SUCCEEDED`, com no máximo um tick (5s) de atraso.
+**A condição está SATISFEITA** (Fatia I em `main` desde `454d8eb`; Fatia I-bis fecha o resto). O
+`LockOrfaoReaper` colhe automaticamente toda Issue `IN_PROGRESS` cujo lock **não é segurado por
+nenhum Run com futuro** — o que inclui:
 
-**O que a Fatia I NÃO cobre, e por isso o procedimento não é apagado inteiro:** o Run
-**`INTERRUPTED`** fica **fora** do reaper de propósito (o kill do interrupt é best-effort — o
-processo pode estar vivo e ainda vai escrever). Uma Issue carimbada por um Run `INTERRUPTED` cujo nó
-morreu antes do settle **continua sem cura automática**, e o destrave acima é a única saída, até o
-grill do contrato do settle sob autoridade revogada (**D-POSSE-6**) decidir se `INTERRUPTED` entra
-no reaper.
+- Run em `CANCELLED`, `FAILED`, `SUCCEEDED` (Fatia I);
+- Run em **`INTERRUPTED`** (Fatia I-bis, decisão do dono — o argumento da exclusão invocava
+  liveness, que a própria justificativa da colheita dispensa);
+- Run **sem linha nenhuma** em `heartbeat_run` (Fatia I-bis — o ponto cego, e a classe que o
+  `/checkout` sem corpo fabrica sozinho).
+
+Ficam de fora só `QUEUED`, `RUNNING` e `RECOVERING`: Runs que **ainda têm futuro**, e cuja Issue
+seria arrancada de trabalho que ia continuar.
+
+**Portanto o procedimento manual acima perdeu a razão de existir para a colheita**, e para a classe
+do `runId` sintético com risco alto ele nunca funcionou (ver o 🔴 no Ramo B). Ele permanece nesta
+ficha por dois motivos: descrever o **furo de segurança** que ainda não foi consertado, e servir de
+saída manual caso alguém precise liquidar **antes** do próximo tick da varredura.
+
+> ⏱️ **O atraso, dito com honestidade:** a varredura roda na cadência
+> `orquestrador.heartbeat.reap-ms` (default 5s) e tem **teto de 50 Issues por passada**, drenando o
+> `updated_at` mais antigo primeiro. Uma Issue isolada sai no tick seguinte; um passivo de N sai em
+> mais de um tick — isso é **conta, não medição**.
 
 ## Gatilho do conserto
 
-📌 **Com a Fatia I em `main`, a trava de ordem está satisfeita e o furo descrito no topo desta ficha
-está LIBERADO para conserto.** A liberação viaja com o trabalho que a satisfaz, não com a memória de
-alguém — nada no sistema avisa "o reaper entrou, pode fechar agora" (limite conhecido: a trava é
-auditável porque está escrita; a **liberação** depende de alguém ler isto).
+📌 **A trava de ordem está satisfeita e o furo descrito no topo desta ficha está LIBERADO para
+conserto** — sem condição pendente. A liberação viaja com o trabalho que a satisfaz, não com a
+memória de alguém: nada no sistema avisa "o reaper entrou, pode fechar agora" (limite conhecido: a
+trava é auditável porque está escrita; a **liberação** depende de alguém ler isto).
 
 Escopo sugerido do conserto, quando for puxado:
 

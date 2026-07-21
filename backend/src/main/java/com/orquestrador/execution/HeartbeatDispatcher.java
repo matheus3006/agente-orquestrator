@@ -162,8 +162,42 @@ public class HeartbeatDispatcher {
             return;
         }
         if (run.getIssueId() != null) {
-            issues.settleAfterRun(run.getCompanyId(), run.getIssueId(), run.getId(),
-                    RunOutcome.failure(motivo));
+            semDerrubarAPassada(run, () -> issues.settleAfterRun(run.getCompanyId(), run.getIssueId(),
+                    run.getId(), RunOutcome.failure(motivo)));
+        }
+    }
+
+    /**
+     * O CINTO da PASSADA (Fatia I-bis, item 5): a doutrina que o {@code LockOrfaoReaper.reapOnce}
+     * já declarava — <i>"uma Issue que exploda não pode levar as demais junto"</i> — aplicada 30
+     * linhas ao lado, onde ela faltava.
+     *
+     * <p>O {@code cancelarELiquidar} roda DENTRO do {@code for} de até 50 runs. Um throw do
+     * {@code settleAfterRun} subia por {@code dispatchOnce} e <b>descartava o resto daquela
+     * passada</b>: os runs seguintes da fila não eram sequer olhados. Uma Issue com problema
+     * derrubava o despacho de todas as outras.
+     *
+     * <p><b>Engolir aqui é seguro, e não é silêncio.</b> Neste ponto o {@code store.cancel} já
+     * VENCEU o CAS: o Run está {@code CANCELLED}, ou seja, num status <b>sem futuro</b>. Se a
+     * liquidação falhou, a Issue ficou carimbada por um Run sem futuro — que é exatamente a
+     * definição de órfã que a REDE colhe. O cinto não perde a Issue; ele a transfere da FONTE para
+     * a REDE, com o motivo no log.
+     *
+     * <p>Visibilidade de PACOTE de propósito, mesmo recurso do
+     * {@code AdapterRunExecutor.semDerrubarOSettle}: o cinto só se prova com um ato que explode, e
+     * o settle real não explode sob demanda — é belt para regressão FUTURA. A FIAÇÃO (que o
+     * caminho normal passa por aqui) é o que o
+     * {@code preflightDeBudgetCancelaORunEDevolveAIssueQueEleDetinha} prova: se o cinto não
+     * estivesse no caminho, a Issue não teria sido liquidada.
+     */
+    void semDerrubarAPassada(HeartbeatRun run, Runnable liquidacao) {
+        try {
+            liquidacao.run();
+        } catch (RuntimeException aoLiquidar) {
+            log.warn("run {} cancelado, mas a liquidacao da issue {} explodiu: {}."
+                            + " A issue fica carimbada por um run SEM FUTURO — e e essa a definicao"
+                            + " de orfa que o LockOrfaoReaper colhe. O resto da passada segue.",
+                    run.getId(), run.getIssueId(), aoLiquidar.toString());
         }
     }
 

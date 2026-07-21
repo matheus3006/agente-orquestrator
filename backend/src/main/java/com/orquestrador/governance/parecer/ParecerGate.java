@@ -79,9 +79,12 @@ public class ParecerGate {
         // O fail-SOFT declarado em :33-35 agora vale de VERDADE, e não só para o que se pré-checa
         // (hardening do PR #50). Exceção que escapasse daqui subiria até o AdapterRunExecutor, que
         // chama runToOutcome ANTES de settleAfterRun ⇒ PULARIA o settle, deixando a issue
-        // IN_PROGRESS travada num execution_lock_run_id morto — e não existe reaper para essa
-        // coluna: impegável para sempre. O finally garante que os avisos já acumulados cheguem ao
-        // StepTrace em vez de sumirem junto com a exceção.
+        // IN_PROGRESS travada num execution_lock_run_id morto. Desde a Fatia I/I-bis existe rede
+        // para essa coluna (LockOrfaoReaper), então o dano deixou de ser permanente — virou uma
+        // Issue estacionada em BLOCKED pela varredura, com o motivo do reaper em vez do motivo
+        // real. Continuar segurando aqui é o certo: a fonte sabe o porquê, a rede só sabe que
+        // ninguém mais roda. O finally garante que os avisos já acumulados cheguem ao StepTrace em
+        // vez de sumirem junto com a exceção.
         try {
             avaliarPareceres(companyId, agentId, runId, scan, avisos);
         } catch (RuntimeException e) {

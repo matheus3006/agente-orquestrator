@@ -51,7 +51,8 @@ com o mesmo agente, pelo caminho normal); `CANCEL → CANCELLED`.
   > entregava**: ela vale para o Run que falha **passando pelo executor**, que é o caso que a §Decisão
   > cobre. Para as saídas terminais que não passam por lá — e para o settle que **lança** — a Issue
   > seguia `IN_PROGRESS` carimbada com um Run morto, impegável. A frase só passa a valer **depois da
-  > Fatia I**, e mesmo assim com o resíduo nomeado na §Emenda 2026-07-21 (o Run `INTERRUPTED`).
+  > Fatia I** — e, para o lock que aponta para Run **sem linha**, só depois da **Fatia I-bis**, que
+  > fechou o ponto cego da rede. O resíduo que sobra está na §Emenda 2026-07-21.
 - `BLOCKED` é **observável** (evento + fora do conjunto pegável `status in ('OPEN','IN_PROGRESS')` → não
   re-executa sozinha) — só o board destrava.
 - Reserva `RECOVERING` (Run) para o auto-retry futuro; sem `failure_count` no v1.
@@ -190,6 +191,12 @@ nunca foi o settle liberar de menos — foi **o settle não ser chamado**.
    lock aponta para Run `CANCELLED`/`FAILED`/`SUCCEEDED` e as liquida em `BLOCKED`. Cobre o drain em
    lote (que não tem `runId` individual na mão), o settle que lançou, **o passivo já acumulado** e
    qualquer produtor futuro.
+   > 🔴 **ESTREITADO 2026-07-21 (Fatia I-bis).** *"Qualquer produtor futuro"* era **maior do que a
+   > peça entregava**, e do mesmo jeito que a §Consequências original era maior que a §Decisão. A
+   > query pedia `exists(run em status terminal)`: um lock apontando para Run **sem linha** em
+   > `heartbeat_run` **nunca entrava na lista** — e esse estado nasce de `/checkout` sem corpo, que
+   > fabrica `UUID.randomUUID()`. A rede era cega para a pior classe. A frase só passa a valer com
+   > a Fatia I-bis, e mesmo assim **com o resíduo abaixo**, que agora é outro.
 4. **RASTRO — `BudgetService.drainScopeWorkToCheckpoint`** grava `RUN_CANCELLED` por alvo. O
    cancelamento em massa não deixava **uma linha** de evidência.
 
@@ -201,12 +208,32 @@ lock já carimbado e o processo **vivo**. O argumento é que **o banco arbitra a
 
 ### O que a Fatia I NÃO fecha (resíduo nomeado)
 
-- **`INTERRUPTED` fica fora do reaper**, porque o kill do interrupt é best-effort e o processo pode
+- ~~**`INTERRUPTED` fica fora do reaper**, porque o kill do interrupt é best-effort e o processo pode
   estar vivo. Logo o produtor **"crash do nó entre o CAS `RUNNING → INTERRUPTED` e o settle"** segue
-  **sem cura automática**; até o grill do contrato do settle sob autoridade revogada fechar, o
-  destrave é manual (ver `docs/ficha-seguranca-complete.md`).
+  **sem cura automática**.~~
+  > 🔴 **REVERTIDO 2026-07-21 (Fatia I-bis, decisão do dono): `INTERRUPTED` ENTRA no reaper.** O
+  > argumento da exclusão **invocava liveness**, e o parágrafo vizinho (*"por que colher é seguro"*)
+  > estabelece que a segurança **não depende de liveness nenhuma** — os dois não podiam estar certos
+  > ao mesmo tempo. O recorte também não fechava: um container que **sobrevive** à escalação de morte
+  > pousa `FAILED`, processo vivo e mesmo perigo, e esse a rede já varria. Com ele dentro, o produtor
+  > "crash entre o CAS e o settle" deixa de ser o único sem cura automática.
 - **O reaper pode estacionar em `BLOCKED` uma Issue cujo processo ainda está vivo e ia entregar.**
   Custo do desenho, não bug: troca um dano permanente e mudo por um `REOPEN` do board sobre uma Issue
-  visível.
+  visível. Com `INTERRUPTED` dentro, este custo **cresceu**: o interrupt cujo kill não pegou agora
+  também é colhido.
 - **`BudgetIncident` não se correlaciona por `runId`** — só por timestamp e escopo. A Fatia I resolve
   a morte da Issue, não a cegueira do diagnóstico.
+
+### Resíduo depois da Fatia I-bis (o que a rede AINDA não alcança)
+
+- **Lock apontando para Run que tem futuro e nunca o exerce.** O critério da varredura é *"existe
+  algum Run com futuro (`QUEUED`/`RUNNING`/`RECOVERING`) segurando este lock?"*. Um Run que fica
+  `QUEUED` para sempre porque ninguém o despacha mantém a Issue travada, e a rede — por construção —
+  não o toca. É o preço de não arrancar Issue de trabalho que ia continuar. Não há produtor conhecido
+  hoje: o `dispatchOnce` drena a fila a cada 1s e o `LeaseReaper` devolve o `RUNNING` vencido.
+- **O atraso da colheita cresce com o passivo.** A varredura tem teto de 50 por passada, então um
+  passivo de N issues leva mais de um tick para drenar — *conta, não medição*. A ordem é
+  `updated_at asc`, então o mais velho sai primeiro.
+- **A corrida interrupt × varredura.** Com `INTERRUPTED` dentro, se o reaper chegar antes do settle
+  do próprio interrupt, a Issue pousa em `BLOCKED` com o motivo do **reaper** em vez do motivo real.
+  Os dois destinos são `BLOCKED`; o que se perde é a frase no log.
