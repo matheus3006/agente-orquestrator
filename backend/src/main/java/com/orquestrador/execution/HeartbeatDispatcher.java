@@ -4,6 +4,8 @@ import com.orquestrador.execution.lineage.SpawnLineageGuard;
 import com.orquestrador.governance.budget.BudgetService;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.team.TeamService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -16,6 +18,8 @@ import java.util.UUID;
  */
 @Service
 public class HeartbeatDispatcher {
+
+    private static final Logger log = LoggerFactory.getLogger(HeartbeatDispatcher.class);
 
     private final HeartbeatRunRepository runs;
     private final HeartbeatRunStore store;
@@ -50,6 +54,16 @@ public class HeartbeatDispatcher {
     public int dispatchOnce() {
         int dispatched = 0;
         for (HeartbeatRun run : runs.findTop50ByStatusOrderByCreatedAtAsc(RunStatus.QUEUED)) {
+            // O teto de 5s do `DispatchWorker.close()` é o orçamento de UMA derrubada; sem esta
+            // linha ele era dividido por até 50 iteracoes, porque o laco seguia reivindicando runs
+            // NOVOS depois do `shutdownNow` — cada um subindo container e escalando o proprio
+            // `docker rm -f`. `isInterrupted()`, nunca `Thread.interrupted()`: consumir a flag aqui
+            // mataria a escalacao la embaixo (ADR-0050 §A escalacao de morte tem de COMPLETAR).
+            if (Thread.currentThread().isInterrupted()) {
+                log.info("dispatch interrompido (shutdown em curso): {} run(s) despachado(s) nesta"
+                        + " passada, o resto da fila fica QUEUED para o proximo boot", dispatched);
+                break;
+            }
             UUID runId = run.getId();
 
             // PREFLIGHT de budget: escopo pausado -> cancela o Run em vez de executar.

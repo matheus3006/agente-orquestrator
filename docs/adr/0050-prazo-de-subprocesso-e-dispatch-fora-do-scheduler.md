@@ -3,9 +3,17 @@
 **Status:** Aceito (2026-07-20, execução da fatia motor-thread-única) · achado 🟠 2 da conferência do
 PR #53 (`docs/controle-paralelismo.md`) · kickoff `HANDOFF-motor-thread-unica-KICKOFF.md` · **zero
 migração** (nenhum estado novo — ver §4, que é a decisão central) · **EMENDA a ADR-0005** (lease) e a
-**ADR-0040** (interrupt), ver §Emendas · **§3 e §5 emendadas em 2026-07-21** (fatia
-a1-escalacao-morte): a escalação de morte tem de **completar**, não só ser chamada — ver §A escalação
-de morte tem de COMPLETAR. **ADR-0051 segue livre; V39 não consumida.**
+**ADR-0040** (interrupt), ver §Emendas · **§3 e §5 emendadas em 2026-07-21** (fatias
+a1-escalacao-morte e fecho-57): a escalação de morte tem de **completar**, não só ser chamada — as
+emendas estão **no corpo de `### 3.` e `### 5.`**, com a mecânica detalhada em §A escalação de morte
+tem de COMPLETAR. **ADR-0051 segue livre; V39 não consumida.**
+
+> ⚠️ **Registro de um defeito desta própria ADR, corrigido em 2026-07-21 (fatia fecho-57):** o
+> carimbo acima existia desde o PR #57 **sem que `### 3.` ou `### 5.` tivessem sido tocadas** — o
+> commit daquela fatia mexeu no cabeçalho e acrescentou uma seção nova, e a §3 seguia com o texto
+> pré-#56 ("*o estouro* roda uma escalação"). Quem abrisse a seção que **possui** a decisão lia a
+> versão estagnada. A conferência que aprovou aquilo mediu na granularidade **arquivo** ("está no
+> arquivo, não só declarada"); o defeito vivia na granularidade **seção**.
 
 ## Contexto
 
@@ -78,16 +86,33 @@ no javadoc, ao lado do código que o usa:
 | `screenshot` | 30s | Herdado do único prazo que já existia; agora vale para o gêmeo Docker também. Preserva o comportamento local ao byte. |
 | `run` | 2h | **Teto duro, não prazo de resposta.** Falso positivo aqui mata trabalho bom — falha pior que a original. |
 
-### 3. O estouro ESCALA a derrubada — matar o processo do host não basta
+### 3. A morte ESCALA a derrubada (pelos DOIS caminhos) — matar o processo do host não basta
 
 `destroyForcibly()` atinge o cliente `docker run`, que **não repassa sinal ao container** (o mesmo
 motivo pelo qual o interrupt da ADR-0040 endereça o container pelo NOME). No LOCAL, um SIGKILL
 só-no-pai deixa o filho da tool call vivo e órfão (sonda R6-B). Um prazo que devolve a thread e deixa
 o trabalho rodando trocaria uma **trava visível** por um **vazamento invisível** — pior negócio.
 
-Por isso o estouro roda uma escalação antes do golpe no cliente, e ela reusa o mecanismo que já
+Por isso a morte roda uma escalação antes do golpe no cliente, e ela reusa o mecanismo que já
 existe: `interrupt(runId)` nos dois alvos (`docker rm -f` pelo nome / descendentes-primeiro no
 LOCAL); na escrita de workspace, o tar do host do outro lado do pipe.
+
+**Emenda de 2026-07-21 (fatia a1-escalacao-morte, PR #57), aplicada aqui no corpo:** quem escala são
+os **DOIS** caminhos de morte — estouro de prazo **e interrupção** —, e nos dois a escalação tem de
+**COMPLETAR**, não só ser chamada. A redação original desta seção dizia que só *o estouro* escalava,
+o que já era falso desde o PR #56 e continuou impresso aqui. A mecânica inteira (por que a ordem
+`matar` → repor a flag é o conserto, e não estilo) está em
+[§A escalação de morte tem de COMPLETAR](#a-escalação-de-morte-tem-de-completar-2026-07-21-fatia-a1-escalacao-morte).
+
+**Emenda de 2026-07-21 (fatia fecho-57, PR desta fatia):** a escalação também não pode ser levada
+embora por um `Error`. `matar` cercava só `RuntimeException`, então um `Error` vindo dela pulava o
+`destroyForcibly` **e** a reposição da flag — regressão estrita criada pela troca de ordem, porque
+antes dela a flag já tinha sido reposta. Agora o golpe no cliente mora num `finally`, o `Error` é
+logado e **sobe** (mesmo argumento que alargou `DispatchWorker.passada` para `Throwable` no #56), e a
+reposição da flag também é `finally`. **A mesma forma de defeito — repor a flag antes da limpeza —
+foi fechada no `PreviewServerSupervisor.startFor`**, onde o poll da porta interrompido deixava o
+`docker logs` devolver `"null"` ao board e o `docker rm -f` do preview voltar `exit -1` com o
+container vivo; lá a limpeza roda com a flag consumida e a flag volta num `finally`.
 
 ### 4. O run morto por prazo **reentra no caminho de falha que já existe** — nenhum estado novo
 
@@ -128,6 +153,29 @@ thread; subir é decisão de capacidade, não de robustez.
 O `finally` que libera a porta é parte da decisão, não detalhe: sem ele, a primeira passada que
 explodisse deixaria o motor parado para sempre — **o mesmo modo de falha silenciosa, por outro
 caminho**.
+
+**Emenda de 2026-07-21 (fatia a1-escalacao-morte, PR #57), aplicada aqui no corpo:** `close()` não
+pode ser `shutdownNow()` e voltar. `shutdownNow` **interrompe** a passada, não a conclui, e o que a
+interrupção dispara é a escalação da §3, que leva tempo — com a thread do dispatch sendo daemon, a
+JVM saía por cima dela. `close()` passa a esperar com `awaitTermination` e teto explícito de 5s; o
+racional do número e o que acontece quando ele estoura estão em
+[§`close()` esperar é a outra metade da mesma garantia](#close-esperar-é-a-outra-metade-da-mesma-garantia).
+
+**Emenda de 2026-07-21 (fatia fecho-57, PR desta fatia):** o teto de 5s só é o orçamento de **uma**
+derrubada porque o laço de `dispatchOnce` agora **checa interrupção no topo**. Sem essa checagem ele
+seguia reivindicando runs `QUEUED` depois do `shutdownNow` — até 50 —, cada um subindo container e
+escalando o próprio `docker rm -f`, e os 5s eram divididos por todos: o limite escrito não era o
+limite real. A checagem usa `isInterrupted()` e nunca `Thread.interrupted()` — consumir a flag ali
+mataria a escalação da §3, que é o defeito que esta linhagem de fatias vem fechando. **Acoplamento
+nomeado e deliberadamente não derivado:** os 5s são `private static final` enquanto o `comando-curto`
+é property com setter público; um operador que o suba para 120s alarga o gap de 6× para 24× sem
+aviso. Derivar um do outro foi recusado — são grandezas diferentes (paciência com daemon lento ×
+quanto a parada pode pendurar) e a derivação deixaria uma tunagem de latência redefinir em silêncio a
+duração do shutdown. O desfecho do gap é o que já está declarado: WARN e a parada segue.
+
+**Emenda de 2026-07-21 (fatia fecho-57):** o `catch (InterruptedException)` do `close()` era **mudo**
+— repunha a flag e não logava nada, único caminho sem rastro da fatia, com a MESMA consequência do
+ramo vizinho (teto estourado) que já logava WARN. Agora loga.
 
 ### 6. `pool-size` fica em 1, agora EXPLÍCITO
 
@@ -195,6 +243,16 @@ passada; ele não a conclui — e o que a interrupção dispara é justamente a 
 tempo. Como a thread do dispatch é **daemon**, a JVM saía por cima da derrubada em curso: mesmo
 desfecho, outro caminho. Fechar só um dos dois deixaria a garantia meia-verdadeira.
 
+> **Correção de 2026-07-21 (fatia fecho-57) — o conserto está certo, o exemplo estava errado.** A
+> redação acima ilustrava "a JVM sai por cima e o container fica órfão" com o `docker rm -f`, e
+> **para o caminho Docker isso não vale ao pé da letra**: em Unix, um filho de
+> `ProcessBuilder.start()` não morre com a JVM — é reparentado ao init e termina sozinho. Ali a
+> espera protege a janela **antes do fork** (montar argv, spawnar), não o cliente já nascido. Onde a
+> espera é genuinamente indispensável é no alvo **LOCAL**: lá `RunProcessRegistry.interrupt` faz
+> `destroyForcibly()` nos descendentes e no processo raiz **de dentro da JVM**, então morrendo a JVM
+> antes disso o agente local e sua árvore ficam vivos — sem `--name`, sem label e sem reaper que os
+> re-adote. A decisão de esperar não muda; o exemplo, sim.
+
 `close()` passa a esperar com `awaitTermination` e **teto curto e explícito de 5s** — folgado para um
 `docker rm -f` real, bem abaixo do teto patológico de 30s do `comando-curto` porque este é o
 orçamento do *shutdown*, não o do comando. Passado o prazo, a parada segue com WARN: perder uma
@@ -206,6 +264,26 @@ A garantia é **"a escalação não é morta pela própria flag do chamador"**, 
 interrupção do `aguardar` e para a espera do `close()`. Ela **não** promete que todo container morre
 em todo desfecho: o limite dos três containers efêmeros `--rm` sem `--name` (§Consequências) segue
 aberto e intocado, e um `SIGKILL` na JVM continua não deixando ninguém escalar nada.
+
+**Emenda de 2026-07-21 (fatia fecho-57) — o alcance MEDIDO, e o que ele ainda não cobre.** A lista
+acima omitia o vizinho de mesma forma: `PreviewServerSupervisor` tinha o defeito idêntico e não
+aparecia em nenhuma das duas listas de limites nomeados. Varrido o `backend/src/main/java` inteiro,
+existem **exatamente três** lugares que capturam `InterruptedException`
+(`ProcessoComPrazo.aguardar`, `DispatchWorker.close`, `PreviewServerSupervisor.waitPortAlive`) e
+**um** que consome a flag com `Thread.interrupted()` (o `startFor`, deliberado e pareado com um
+`finally` que a devolve). Os três estão cobertos, cada um com teste que fica vermelho sem o conserto.
+*O escopo da varredura é esse e só esse:* sites que **capturam** a interrupção — quem a propaga com
+`throws` não foi auditado caso a caso.
+
+O que **continua aberto e é alcançável**, sem eufemismo:
+
+- **A limpeza do preview completa quando roda — mas nada garante que ela rode até o fim.** Quem a
+  executa é uma thread de requisição do Tomcat, e não existe para ela o equivalente do
+  `awaitTermination` do `close()`: se a JVM descer no meio, o container de preview fica órfão do
+  mesmo jeito. O `reapOnce` **mitiga** (ceifa no próximo boot, depois do TTL, e só se o backend
+  voltar) — mitigar não é fechar.
+- **O gap 5s × `comando-curto`** (§5): derrubada que passa dos 5s perde a espera, com WARN.
+- Os três efêmeros `--rm` sem `--name` e o `SIGKILL` na JVM, como já estava escrito acima.
 
 ## Emendas
 

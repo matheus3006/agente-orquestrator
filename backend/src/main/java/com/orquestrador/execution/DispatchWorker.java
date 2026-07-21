@@ -43,6 +43,20 @@ public class DispatchWorker implements AutoCloseable {
      * uma parada que parece travamento. Cinco segundos cobrem com folga a derrubada real de um
      * container ({@code docker rm -f}) sem chegar perto do teto patológico de 30s do comando curto —
      * abaixo dele porque este é o orçamento do SHUTDOWN, não o do comando.
+     *
+     * <p><b>"Uma derrubada" só virou verdade com a checagem de interrupção no laço de
+     * {@code HeartbeatDispatcher.dispatchOnce}.</b> Sem ela, o laço seguia reivindicando os próximos
+     * runs {@code QUEUED} depois do {@code shutdownNow} — até 50 —, e estes 5s eram divididos por
+     * todos eles: o limite escrito aqui não era o limite real.
+     *
+     * <p><b>Acoplamento nomeado, deliberadamente NÃO derivado.</b> Este número é
+     * {@code private static final} enquanto o {@code comando-curto} é property com setter público:
+     * um operador que o suba para 120s alarga o gap de 6× para 24× sem aviso, log ou teste. Derivar
+     * o teto do {@code close()} do {@code comando-curto} foi considerado e recusado — são grandezas
+     * diferentes (paciência com um daemon lento × quanto a parada da aplicação pode pendurar), e
+     * derivar deixaria uma tunagem de latência redefinir em silêncio a duração do shutdown. O que o
+     * gap produz é o desfecho já declarado na ADR-0050: estourado o teto, a parada segue com WARN e
+     * aquela derrubada pode não completar.
      */
     private static final long PRAZO_DE_ENCERRAMENTO_SEGUNDOS = 5;
 
@@ -109,13 +123,21 @@ public class DispatchWorker implements AutoCloseable {
 
     /**
      * <b>Esperar é parte do encerramento.</b> {@code shutdownNow} INTERROMPE a passada em voo; ele
-     * não a conclui — e o que a interrupção
-     * DISPARA é justamente trabalho de encerramento que leva tempo: a passada desce por
-     * {@code ProcessoComPrazo.aguardar}, que escala a derrubada do container do agente
-     * ({@code docker rm -f}) antes de propagar. E a thread do dispatch é DAEMON — sem esperar aqui,
-     * {@code close()} volta, a JVM sai por cima da derrubada em curso e o container fica órfão. É o
-     * MESMO desfecho que a ordem do interrupt causava dentro do {@code ProcessoComPrazo}, alcançado
-     * por outro caminho; fechar só um dos dois deixaria a garantia meia-verdadeira.
+     * não a conclui — e o que a interrupção DISPARA é justamente trabalho de encerramento que leva
+     * tempo: a passada desce por {@code ProcessoComPrazo.aguardar}, que escala a derrubada do
+     * trabalho do agente antes de propagar. E a thread do dispatch é DAEMON — sem esperar aqui,
+     * {@code close()} volta e a JVM sai por cima da derrubada em curso. É o MESMO desfecho que a
+     * ordem do interrupt causava dentro do {@code ProcessoComPrazo}, alcançado por outro caminho;
+     * fechar só um dos dois deixaria a garantia meia-verdadeira.
+     *
+     * <p><b>Onde a JVM que sai por cima realmente órfã trabalho: o alvo LOCAL.</b> Lá a derrubada é
+     * {@code RunProcessRegistry.interrupt} — {@code destroyForcibly()} nos descendentes e no processo
+     * raiz, tudo DE DENTRO da JVM. Morrendo a JVM antes disso, o agente local e sua árvore ficam
+     * vivos, sem {@code --name} e sem reaper que os re-adote (o processo local não tem label).
+     * <b>Para o caminho Docker o exemplo do {@code docker rm -f} não vale ao pé da letra</b>: um
+     * filho de {@code ProcessBuilder.start()} não morre com a JVM em Unix — é reparentado e termina
+     * sozinho —, então ali a espera protege a janela ANTES do fork (montar argv, spawnar), não a
+     * execução do cliente já nascido. A espera continua necessária; o exemplo é que overclaimava.
      *
      * <p>Esperar é best-effort, e o teto é o que impede a garantia de virar travamento: passado o
      * prazo o encerramento segue mesmo assim, com WARN — perder a derrubada de um container é ruim,
@@ -133,6 +155,11 @@ public class DispatchWorker implements AutoCloseable {
                         PRAZO_DE_ENCERRAMENTO_SEGUNDOS);
             }
         } catch (InterruptedException interrompidoNoEncerramento) {
+            // A consequência é a MESMA do teto estourado logo acima — a derrubada em curso pode não
+            // completar —, então o rastro tem de ser o mesmo. Este era o único caminho mudo da fatia.
+            log.warn("a espera pelo encerramento da passada foi interrompida antes dos {}s —"
+                            + " seguindo com a parada; trabalho de derrubada em curso pode não completar",
+                    PRAZO_DE_ENCERRAMENTO_SEGUNDOS);
             Thread.currentThread().interrupt();
         }
     }

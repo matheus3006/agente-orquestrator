@@ -102,8 +102,16 @@ final class ProcessoComPrazo {
             // com a flag limpa é o que faz a derrubada CONCLUIR; o ramo de estouro acima sempre
             // funcionou por não ter flag nenhuma para repor. Restaurar depois preserva o contrato
             // de nunca engolir a interrupção: quem recebe a exceção recebe a flag junto.
-            matar(operacao, processo, escalarMorte);
-            Thread.currentThread().interrupt();
+            //
+            // O `finally` é a outra metade da ordem: `matar` pode SUBIR (um `Error` da escalação não
+            // é engolido, ver o javadoc dele), e sem ele a flag ficaria perdida exatamente no caminho
+            // que a troca de ordem criou — regressão estrita contra `b32c337`, onde a flag já tinha
+            // sido reposta antes. Quem recebe a exceção — `interrompido` ou o `Error` — recebe a flag.
+            try {
+                matar(operacao, processo, escalarMorte);
+            } finally {
+                Thread.currentThread().interrupt();
+            }
             throw interrompido;
         } catch (java.util.concurrent.ExecutionException falhaDaColeta) {
             Throwable causa = falhaDaColeta.getCause();
@@ -117,17 +125,29 @@ final class ProcessoComPrazo {
     /**
      * A escalação primeiro (é ela que alcança container/descendentes), o golpe no cliente depois —
      * e o golpe acontece MESMO SE a escalação explodir, senão uma falha na derrubada do container
-     * deixaria a thread do chamador presa, que é o dano original.
+     * deixaria a thread do chamador presa, que é o dano original. Por isso ele mora num
+     * {@code finally}: com a escalação rodando ANTES (ver {@link #aguardar}), o que estivesse depois
+     * dela numa linha solta simplesmente não aconteceria sob {@code Error}.
+     *
+     * <p><b>{@code Throwable}, não {@code RuntimeException}</b> — mesmo argumento que o PR #56 usou
+     * para alargar {@code DispatchWorker.passada}: um {@code Error} escapando daqui não travava
+     * nada, mas apagava a linha de diagnóstico, único rastro de que a derrubada caiu. Ele é logado e
+     * <b>sobe</b>: {@code Error} não é "falha de escalação", é a JVM em apuros, e silenciá-lo
+     * esconderia a causa real.
      */
     private static void matar(String operacao, Process processo, Runnable escalarMorte) {
-        if (escalarMorte != null) {
-            try {
+        try {
+            if (escalarMorte != null) {
                 escalarMorte.run();
-            } catch (RuntimeException falhaAoEscalar) {
-                log.warn("escalação da derrubada de '{}' falhou ({}) — seguindo para o golpe no"
-                        + " processo do host", operacao, falhaAoEscalar.toString());
             }
+        } catch (Throwable falhaAoEscalar) {
+            log.warn("escalação da derrubada de '{}' falhou ({}) — seguindo para o golpe no"
+                    + " processo do host", operacao, falhaAoEscalar.toString());
+            if (falhaAoEscalar instanceof Error erroDaJvm) {
+                throw erroDaJvm;
+            }
+        } finally {
+            processo.destroyForcibly();
         }
-        processo.destroyForcibly();
     }
 }
