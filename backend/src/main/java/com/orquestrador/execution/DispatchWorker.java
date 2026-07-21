@@ -79,9 +79,19 @@ public class DispatchWorker implements AutoCloseable {
     private void passada() {
         try {
             dispatcher.dispatchOnce();
-        } catch (RuntimeException falha) {
+        } catch (Throwable falha) {
+            // {@code Throwable}, não {@code RuntimeException}: um {@code Error} escapava deste catch e
+            // ia só ao handler default da thread. Não travava — o {@code finally} abaixo libera a porta
+            // e o pool respawna — mas a linha de diagnóstico, único rastro de que a passada caiu,
+            // sumia junto. Perder o log de um {@code Error} é perder a pista da falha mais grave.
             log.warn("passada de dispatch falhou ({}) — a porta é liberada e o próximo tick tenta de novo",
                     falha.toString());
+            // Logar não é engolir. {@code Error} não é "falha de passada", é a JVM em apuros
+            // (OOM, pilha estourada): a linha fica, mas ele SOBE. Um OutOfMemoryError silenciado aqui
+            // esconderia a causa real e faria o motor parecer apenas lento.
+            if (falha instanceof Error erroDaJvm) {
+                throw erroDaJvm;
+            }
         } finally {
             emVoo.set(false);
         }

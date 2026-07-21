@@ -26,9 +26,11 @@ import java.util.concurrent.TimeoutException;
  *
  * <p><b>Matar o processo do host nem sempre mata o trabalho.</b> Em Docker, {@code destroyForcibly()}
  * atinge o CLIENTE {@code docker run}, que não repassa sinal ao container (o mesmo motivo pelo qual
- * o interrupt da ADR-0040 endereça o container pelo NOME). Por isso o estouro aceita uma
+ * o interrupt da ADR-0040 endereça o container pelo NOME). Por isso a morte aceita uma
  * {@code escalarMorte}: quem sabe alcançar o trabalho de verdade — {@code docker rm -f} pelo nome,
  * ou os descendentes no LOCAL — passa a própria derrubada, e ela roda ANTES do golpe no cliente.
+ * <b>Os DOIS caminhos de morte escalam</b> — estouro de prazo e interrupção. O de interrupção é o
+ * do shutdown da JVM, e era exatamente ali que a assimetria deixava container órfão.
  */
 final class ProcessoComPrazo {
 
@@ -83,9 +85,13 @@ final class ProcessoComPrazo {
             matar(operacao, processo, escalarMorte);
             return new Resultado<>(null, true, motivo);
         } catch (InterruptedException interrompido) {
-            // Nunca engolir: restaura a flag e derruba o processo antes de propagar.
+            // Nunca engolir: restaura a flag e derruba o processo antes de propagar. A derrubada é a
+            // MESMA do estouro — escalação inclusive. Este é o ramo do shutdown da JVM
+            // (`DispatchWorker.close` → `shutdownNow` → `interrupt`), e sem escalar aqui o golpe
+            // atingiria só o cliente `docker run`: a aplicação desceria deixando o container do
+            // agente órfão, vivo e invisível. Assimetria entre dois caminhos de morte é dívida.
             Thread.currentThread().interrupt();
-            matar(operacao, processo, null);
+            matar(operacao, processo, escalarMorte);
             throw interrompido;
         } catch (java.util.concurrent.ExecutionException falhaDaColeta) {
             Throwable causa = falhaDaColeta.getCause();
