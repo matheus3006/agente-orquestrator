@@ -182,12 +182,25 @@ public class HeartbeatRunStore {
         recordEvent(runId, type, detail);
     }
 
-    /** Cancela um Run ainda QUEUED (preflight de budget). */
+    /**
+     * Cancela um Run ainda QUEUED (preflights do dispatcher). <b>Devolve true só quando ESTE
+     * chamador venceu o CAS</b> {@code QUEUED → CANCELLED}.
+     *
+     * <p>O retorno nasce na Fatia I (lock órfão) porque o caller passou a encadear um efeito na
+     * <b>Issue</b> depois do cancel, e esse efeito não pode acontecer quando o CAS perde. 0 linhas
+     * significa que o run <b>saiu de {@code QUEUED} por outra mão</b> — tipicamente outro nó o
+     * reivindicou ({@code claim}: {@code QUEUED → RUNNING}) e está executando agora. Liquidar a
+     * Issue ali arrancaria o trabalho de um run <b>vivo</b>, exatamente o dano que a válvula humana
+     * sobre {@code IN_PROGRESS} foi recusada por criar (D-POSSE-3 §Racional 4). O mesmo UPDATE
+     * guardado que termina o run é o que autoriza mexer na Issue dele.
+     */
     @Transactional
-    public void cancel(UUID runId, String reason) {
+    public boolean cancel(UUID runId, String reason) {
         if (runs.cancelIfStatus(runId, RunStatus.QUEUED, RunStatus.CANCELLED) == 1) {
             recordEvent(runId, "RUN_CANCELLED", reason);
+            return true;
         }
+        return false;
     }
 
     private void recordEvent(UUID runId, String type, String detail) {

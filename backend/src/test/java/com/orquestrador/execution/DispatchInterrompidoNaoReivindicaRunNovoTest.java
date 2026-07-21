@@ -4,6 +4,7 @@ import com.orquestrador.execution.lineage.SpawnLineageGuard;
 import com.orquestrador.governance.budget.BudgetService;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.org.team.TeamService;
+import com.orquestrador.work.issue.IssueService;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -64,7 +65,8 @@ class DispatchInterrompidoNaoReivindicaRunNovoTest {
 
         HeartbeatDispatcher dispatcher = new HeartbeatDispatcher(runs, store, executor,
                 mock(BudgetService.class), mock(TeamService.class), mock(AgentRepository.class),
-                mock(SpawnLineageGuard.class), mock(TeamFanOutGate.class), mock(LeaseRenewer.class));
+                mock(SpawnLineageGuard.class), mock(TeamFanOutGate.class), mock(LeaseRenewer.class),
+                mock(IssueService.class));
 
         int despachados;
         boolean flagSobreviveuAoLaco;
