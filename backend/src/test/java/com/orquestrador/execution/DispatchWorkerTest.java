@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -169,6 +170,47 @@ class DispatchWorkerTest {
         assertThat(subiu.get())
                 .as("logar nao e engolir: um Error segue subindo depois da linha de diagnostico")
                 .isInstanceOf(StackOverflowError.class);
+    }
+
+    /**
+     * O {@code close()} era {@code shutdownNow()} e voltava na hora — e a thread do dispatch é
+     * DAEMON, então nada segura a JVM depois disso.
+     *
+     * <p>O que importa não é o que o interrupt CANCELA, e sim o que ele DISPARA: a passada
+     * interrompida desce por {@code ProcessoComPrazo.aguardar}, que escala a derrubada
+     * ({@code docker rm -f} do container do agente) antes de propagar. Esse trabalho leva tempo, roda
+     * DEPOIS da interrupção, e com {@code close()} voltando de imediato a JVM saía por cima dele —
+     * container órfão pelo mesmo desfecho que a fatia acabou de fechar uma camada abaixo, só que por
+     * outro caminho. Por isso a passada aqui faz o trabalho dela no {@code catch}, não antes dele.
+     */
+    @Test
+    void closeEsperaAPassadaEmVooTerminarDeEncerrar() throws Exception {
+        CountDownLatch entrou = new CountDownLatch(1);
+        AtomicBoolean derrubadaConcluiu = new AtomicBoolean(false);
+        HeartbeatDispatcher preso = mock(HeartbeatDispatcher.class);
+        when(preso.dispatchOnce()).thenAnswer(invocacao -> {
+            entrou.countDown();
+            try {
+                Thread.sleep(TimeUnit.SECONDS.toMillis(10));
+            } catch (InterruptedException oShutdownChegou) {
+                // A derrubada do container: só COMEÇA quando o interrupt chega, e o sleep aqui roda
+                // inteiro (o lançamento acima consumiu a flag) — o RED não é corrida com o scheduler.
+                Thread.sleep(300);
+                derrubadaConcluiu.set(true);
+            }
+            return 0;
+        });
+
+        DispatchWorker worker = new DispatchWorker(preso);
+        worker.dispatchAsync();
+        assertThat(entrou.await(3, TimeUnit.SECONDS)).isTrue();
+
+        worker.close();
+
+        assertThat(derrubadaConcluiu)
+                .as("close() não pode voltar com a derrubada ainda em curso: a thread é daemon e a"
+                        + " JVM sai por cima dela")
+                .isTrue();
     }
 
     private static void esperarPassadas(AtomicInteger passadas, int alvo) throws InterruptedException {

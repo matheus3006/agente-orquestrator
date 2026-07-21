@@ -3,7 +3,9 @@
 **Status:** Aceito (2026-07-20, execução da fatia motor-thread-única) · achado 🟠 2 da conferência do
 PR #53 (`docs/controle-paralelismo.md`) · kickoff `HANDOFF-motor-thread-unica-KICKOFF.md` · **zero
 migração** (nenhum estado novo — ver §4, que é a decisão central) · **EMENDA a ADR-0005** (lease) e a
-**ADR-0040** (interrupt), ver §Emendas.
+**ADR-0040** (interrupt), ver §Emendas · **§3 e §5 emendadas em 2026-07-21** (fatia
+a1-escalacao-morte): a escalação de morte tem de **completar**, não só ser chamada — ver §A escalação
+de morte tem de COMPLETAR. **ADR-0051 segue livre; V39 não consumida.**
 
 ## Contexto
 
@@ -153,6 +155,57 @@ si, o que **nunca aconteceu até hoje**.
   outra fatia.
 - **Limite conhecido (fora do escopo desta fatia):** consulta JDBC pendurada não tem prazo — não há
   timeout de query configurado. Não é `exec()`, mas é o mesmo formato de risco na mesma thread.
+
+## A escalação de morte tem de COMPLETAR (2026-07-21, fatia a1-escalacao-morte)
+
+> **Emenda a esta própria ADR**, nas §3 (a escalação) e §5 (o `DispatchWorker`) — é aqui que o
+> `ProcessoComPrazo` e a derrubada do container estão decididos. **Nenhuma ADR nova:** a reserva
+> **ADR-0051 segue livre**, e a migração **V39** não foi consumida. Fecha o 🔴 que sobrou da
+> conferência do PR #56, achado por dois verificadores adversariais de forma independente.
+
+### O PR #56 restaurou a simetria na CHAMADA, não no EFEITO
+
+O #56 fez o ramo de `InterruptedException` escalar como o de estouro (§3) — e o teste dele provava
+exatamente isso: que `escalarMorte` **era chamada**. Só que o runnable daquele teste era um
+`set(true)`, que não espera por nada; a escalação de verdade espera. Com o
+`Thread.currentThread().interrupt()` rodando **antes** do `matar(...)`, a flag de interrupção já
+estava reposta quando a escalação começava — e `docker rm -f` roda dentro de um
+`ProcessoComPrazo.aguardar` **ANINHADO, na mesma thread** (`DockerExecutionTarget.interrupt` →
+`exec` → `aguardar`). O `FutureTask.awaitDone` desse aninhado lança `InterruptedException` na hora
+quando a flag está posta, sem sequer olhar o processo: o cliente do `rm -f` levava
+`destroyForcibly` e voltava `exit -1`. **Container órfão — exatamente o desfecho que o #56 dizia ter
+fechado, agora com um teste verde por cima.**
+
+O ramo de estouro sempre funcionou porque **não tem flag nenhuma para repor**. A assimetria não era
+entre "escala / não escala"; era entre "escala com a flag limpa / com a flag posta".
+
+**A decisão:** no ramo de interrupção, `matar(...)` roda **antes** de repor a flag. Restaurar depois
+preserva o contrato de nunca engolir a interrupção — quem recebe a exceção recebe a flag junto —, e
+escalar com a flag limpa é o que faz a derrubada **concluir**. A ordem é o conserto, não estilo.
+
+**O teste mudou de alvo junto.** A asserção é sobre o efeito DEPOIS da espera, não sobre a entrada
+nela — e são dois: um sobre o contrato (a escalação conclui, com um ponto de espera sensível a
+interrupção) e um sobre a FORMA que a produção usa (um `aguardar` aninhado que tem de colher o exit
+real do subprocesso). Ambos ficam **vermelhos** em `b32c337` e verdes com a ordem trocada.
+
+### `close()` esperar é a outra metade da mesma garantia
+
+`DispatchWorker.close()` (§5) era `shutdownNow()` e voltava. Mas `shutdownNow` **interrompe** a
+passada; ele não a conclui — e o que a interrupção dispara é justamente a escalação acima, que leva
+tempo. Como a thread do dispatch é **daemon**, a JVM saía por cima da derrubada em curso: mesmo
+desfecho, outro caminho. Fechar só um dos dois deixaria a garantia meia-verdadeira.
+
+`close()` passa a esperar com `awaitTermination` e **teto curto e explícito de 5s** — folgado para um
+`docker rm -f` real, bem abaixo do teto patológico de 30s do `comando-curto` porque este é o
+orçamento do *shutdown*, não o do comando. Passado o prazo, a parada segue com WARN: perder uma
+derrubada é ruim, pendurar o shutdown para sempre é pior.
+
+### Limite conhecido, nomeado
+
+A garantia é **"a escalação não é morta pela própria flag do chamador"**, e ela vale para o ramo de
+interrupção do `aguardar` e para a espera do `close()`. Ela **não** promete que todo container morre
+em todo desfecho: o limite dos três containers efêmeros `--rm` sem `--name` (§Consequências) segue
+aberto e intocado, e um `SIGKILL` na JVM continua não deixando ninguém escalar nada.
 
 ## Emendas
 

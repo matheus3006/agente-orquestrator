@@ -7,7 +7,8 @@
 ADR-0012 e a ADR-0019** (ver §Emendas) · consome `DecisionOrigem.AGENTE` — o **primeiro writer
 pela porta do GATE** (ver §Emendas) · **contrato dos 4 gates de fim-de-run ampliado em 2026-07-21**
 (posse do run como pré-condição + bloco sem destino deixa rastro — ver §Endurecimento do executor;
-**ADR-0051 devolvida**, emenda bastou).
+**ADR-0051 devolvida**, emenda bastou) · **rede anti-silêncio ampliada para a `proposta` na fatia
+a1-escalacao-morte (2026-07-21)** — 4 das 9 gramáticas, as 5 restantes nomeadas.
 
 > ⚠️ **Corrigido no fecho do parecer (2026-07-20).** A forma anterior dizia que esta fatia consumia
 > `DecisionOrigem.AGENTE` *"reservado desde a ADR-0019 **sem writer**"*. **Era falso quando
@@ -455,8 +456,31 @@ ancorado em qual issue, com qual precedente (a issue órfã do board é absorvid
 não resolvida de passagem. O que esta fatia fecha é o pior: a perda deixou de ser muda, via step
 `BLOCO_DE_SAIDA_SEM_DESTINO`.
 
-**Escopo deliberado:** só o run sem issue E sem turno. O turno do CEO também descarta esses blocos,
-mas ali o canal de saída é outro (reply estruturado, com `proposta` própria) e avisar em todo turno
-seria ruído — é caso distinto, não esquecimento. O detector é **grosso de propósito**: pergunta só
+**Escopo deliberado:** só o run sem issue E sem turno. No TURNO o canal de saída existe e funciona
+(o `ProposalScanner` lê a `proposta`, o `PersonaHandoffScanner` lê o bastão de persona), então avisar
+lá seria ruído — é caso distinto, não esquecimento. O detector é **grosso de propósito**: pergunta só
 "existe cerca deste tipo?", em coluna 0 como os scanners, e nunca parseia o conteúdo — replicar a
 gramática de dentro criaria duas versões para divergir.
+
+### A rede anti-silêncio ganhou a `proposta` (2026-07-21, fatia a1-escalacao-morte)
+
+A rede nasceu cobrindo **3 das 9** gramáticas cercadas da casa — as três que os 4 gates leem — e
+deixou de fora o bloco de autoridade mais forte que existe: ` ```proposta`, o canal de saída do CEO
+(ADR-0018/0036, `ProposalScanner` → gate T3). Ele é lido **só** no settle de um TURNO; num wakeup sem
+issue não há turno nem gate, e ele seguia sumindo calado pelo mesmo caminho que os outros três
+deixaram de sumir. Agora são **4 de 9**, e o par negativo (wakeup sem bloco não ganha aviso nenhum)
+continua valendo.
+
+**O aviso passou a ser por CANAL, não uma frase só.** O texto antigo terminava em "para que valham,
+acorde o agente sobre uma issue" — conselho correto para `dirigir`/`parecer`/`pedido-skill`, que
+**têm** um caminho que os faz valer, e mentira para a `proposta`, que nenhum run de agente lê em
+caminho nenhum. Num aviso de PERDA, mandar o leitor a um caminho que também não funciona é pior que
+não aconselhar nada; a `proposta` ganhou a frase dela.
+
+**Limite conhecido, nomeado uma a uma em vez de "as outras".** Faltam as **5 do bastão de persona**:
+`handoff`, `needs-grilling`, `correcao`, `absorcao`, `retrabalho` (`PersonaHandoffScanner` →
+`PersonaBatonRouter`). Ficaram de fora por **juízo, não por esquecimento**: não são atos de
+autoridade e sim roteamento interno entre personas do CEO, e `handoff`/`correcao`/`retrabalho` são
+palavras comuns o bastante para um agente cercar como CONTEÚDO — o que faria o aviso virar
+exatamente o ruído que o par negativo desta rede existe para impedir. Somá-las é uma linha de código
+cada e uma decisão de quem quiser pagar esse custo; não é dívida escondida.

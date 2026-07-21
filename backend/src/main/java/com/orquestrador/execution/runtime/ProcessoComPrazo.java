@@ -29,8 +29,11 @@ import java.util.concurrent.TimeoutException;
  * o interrupt da ADR-0040 endereça o container pelo NOME). Por isso a morte aceita uma
  * {@code escalarMorte}: quem sabe alcançar o trabalho de verdade — {@code docker rm -f} pelo nome,
  * ou os descendentes no LOCAL — passa a própria derrubada, e ela roda ANTES do golpe no cliente.
- * <b>Os DOIS caminhos de morte escalam</b> — estouro de prazo e interrupção. O de interrupção é o
- * do shutdown da JVM, e era exatamente ali que a assimetria deixava container órfão.
+ * <b>Os DOIS caminhos de morte escalam, e nos dois a escalação COMPLETA</b> — estouro de prazo e
+ * interrupção. O de interrupção é o do shutdown da JVM, e era exatamente ali que a assimetria
+ * deixava container órfão: primeiro porque não escalava (fechado no PR #56), depois porque escalava
+ * com a flag de interrupção já reposta, o que matava a própria escalação no primeiro ponto de espera
+ * (fechado aqui — ver o comentário do ramo de {@code InterruptedException} em {@link #aguardar}).
  */
 final class ProcessoComPrazo {
 
@@ -85,13 +88,22 @@ final class ProcessoComPrazo {
             matar(operacao, processo, escalarMorte);
             return new Resultado<>(null, true, motivo);
         } catch (InterruptedException interrompido) {
-            // Nunca engolir: restaura a flag e derruba o processo antes de propagar. A derrubada é a
-            // MESMA do estouro — escalação inclusive. Este é o ramo do shutdown da JVM
+            // Derruba o processo e SÓ ENTÃO repõe a flag, antes de propagar. A derrubada é a MESMA
+            // do estouro — escalação inclusive. Este é o ramo do shutdown da JVM
             // (`DispatchWorker.close` → `shutdownNow` → `interrupt`), e sem escalar aqui o golpe
             // atingiria só o cliente `docker run`: a aplicação desceria deixando o container do
             // agente órfão, vivo e invisível. Assimetria entre dois caminhos de morte é dívida.
-            Thread.currentThread().interrupt();
+            //
+            // A ORDEM É O CONSERTO, não detalhe de estilo. O `awaitDone` do FutureTask CONSOME a
+            // flag ao lançar, e repô-la aqui em cima matava a própria escalação: `docker rm -f` roda
+            // dentro de um `aguardar` ANINHADO, na MESMA thread (DockerExecutionTarget.interrupt →
+            // exec → aguardar), e com a flag posta o `tarefa.get` desse aninhado lança na hora —
+            // o cliente do `rm -f` levava `destroyForcibly` e o container seguia órfão. Escalar
+            // com a flag limpa é o que faz a derrubada CONCLUIR; o ramo de estouro acima sempre
+            // funcionou por não ter flag nenhuma para repor. Restaurar depois preserva o contrato
+            // de nunca engolir a interrupção: quem recebe a exceção recebe a flag junto.
             matar(operacao, processo, escalarMorte);
+            Thread.currentThread().interrupt();
             throw interrompido;
         } catch (java.util.concurrent.ExecutionException falhaDaColeta) {
             Throwable causa = falhaDaColeta.getCause();
