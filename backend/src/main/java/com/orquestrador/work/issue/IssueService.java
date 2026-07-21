@@ -158,6 +158,33 @@ public class IssueService {
     /**
      * Checkout atomico. Gera um runId se nao vier (na fatia 1 nao ha heartbeat ainda;
      * a partir da fatia 2 o run vem do motor de heartbeat).
+     *
+     * <p><b>Este {@code UUID.randomUUID()} é a FONTE do pior lock órfão</b> (Fatia I-bis, item 2), e
+     * fica <b>de propósito</b> — decisão escrita, não omissão. O lock resultante nomeia um Run que
+     * <b>não existe</b>: {@code execution_lock_run_id} não tem FK, {@code tryCheckout} não confere
+     * existência/dono/company do {@code runId}, e o {@code POST /checkout} lê o corpo como opcional.
+     * Qualquer cliente que chame o endpoint sem corpo produz esse estado em UMA chamada.
+     *
+     * <p><b>Por que a correção desta fatia é só a REDE.</b> Três razões, medidas:
+     * <ol>
+     *   <li>O dano deixou de ser permanente — o {@code LockOrfaoReaper} passou a enxergar
+     *       exatamente esta classe (lock sem Run com futuro), então não há urgência forçando o
+     *       conserto da fonte para dentro desta fatia.</li>
+     *   <li>O checkout sem run é <b>semântica deliberada e testada</b> hoje
+     *       ({@code IssueCheckoutSemanticsTest}, {@code IssueCheckoutConcurrencyTest} passam
+     *       {@code null} de propósito, para exercer corrida e idempotência). Recusá-lo aqui obrigaria
+     *       a reescrever testes que existem por OUTRO motivo — misturando dois assuntos.</li>
+     *   <li>O defeito real não é "gerar UUID": é <b>o endpoint aceitar {@code runId} do corpo sem
+     *       conferir procedência</b>. E esse é <b>o mesmo defeito</b> do {@code POST /complete}, já
+     *       escopado em {@code docs/ficha-seguranca-complete.md} (*"derivar o runId da Issue ou
+     *       validar que o do corpo pertence ao ator"*) — cuja trava de ordem esta fatia acabou de
+     *       liberar. Os dois são um conserto só, e cortá-los ao meio deixaria metade da cerca de pé.</li>
+     * </ol>
+     *
+     * <p><b>O que fica exposto até lá, nomeado:</b> um membro da company Y pode carimbar a Issue
+     * dele com o {@code runId} de um Run da company X. A escrita segue cercada ({@code tryBlock} tem
+     * {@code company_id}), e desde a Fatia I-bis a varredura trata esse lock como órfão na hora —
+     * então a Issue de Y não fica refém do ciclo de vida do Run de X.
      */
     @Transactional
     public CheckoutResult checkout(UUID companyId, UUID issueId, UUID agentId, UUID runId) {
@@ -217,6 +244,23 @@ public class IssueService {
      */
     @Transactional
     public IssueSettlement settleAfterRun(UUID companyId, UUID issueId, UUID runId, RunOutcome outcome) {
+        return settleAfterRun(companyId, issueId, runId, outcome, ActorType.AGENT);
+    }
+
+    /**
+     * O mesmo settle, com o ATOR explícito (Fatia I-bis, item 6). Existe porque nem toda liquidação
+     * é ato de agente: a varredura do {@code LockOrfaoReaper} é de <b>sistema</b>, e gravar
+     * {@code AGENT} + {@code assignee} nela <b>imputa ao agente um ato que não foi dele</b> — logo
+     * onde alguém vai olhar para entender por que a Issue saiu de {@code IN_PROGRESS}. O precedente
+     * da casa é o {@code WorkspaceReaper.recordCollected} ({@code SYSTEM}, sem {@code actorId}).
+     *
+     * <p>O ator só alcança o ramo {@code BLOCKED} porque é o único que uma varredura produz: ela
+     * liquida com {@code RunOutcome.failure}, nunca com sucesso. Os ramos de sucesso/review seguem
+     * sendo de agente por construção — quem entrega é sempre um run de agente.
+     */
+    @Transactional
+    public IssueSettlement settleAfterRun(UUID companyId, UUID issueId, UUID runId, RunOutcome outcome,
+                                          ActorType ator) {
         // R22-A (ADR-0011 emendada): run NO-OP nunca fecha issue — nem DONE nem review (não há
         // entregável a revisar). O guard mora AQUI, no chokepoint que cunha o DONE: mesmo um
         // outcome "verde" com noop cai no park-for-human abaixo (o board não volta a mentir).
@@ -231,11 +275,13 @@ public class IssueService {
         if (issues.tryBlock(issueId, companyId, runId) == 0) {
             return IssueSettlement.NOT_SETTLED;
         }
-        // Ator = o agente que rodou (assignee fixado no checkout). detail só com IDs (ADR-0009): sem a
-        // mensagem de erro (pode conter texto sensível — o erro vive no StepTrace do run).
-        UUID actingAgentId = issues.findByIdAndCompanyId(issueId, companyId)
-                .map(Issue::getAssigneeAgentId).orElse(null);
-        activityLog.record(companyId, ActorType.AGENT, actingAgentId, ActivityAction.ISSUE_BLOCKED,
+        // Ator = o agente que rodou (assignee fixado no checkout) — ou SYSTEM, e aí NÃO há ator
+        // individual: uma varredura não é ato de ninguém em particular. detail só com IDs (ADR-0009):
+        // sem a mensagem de erro (pode conter texto sensível — o erro vive no StepTrace do run).
+        UUID actingAgentId = ator == ActorType.SYSTEM ? null
+                : issues.findByIdAndCompanyId(issueId, companyId)
+                        .map(Issue::getAssigneeAgentId).orElse(null);
+        activityLog.record(companyId, ator, actingAgentId, ActivityAction.ISSUE_BLOCKED,
                 "issue", issueId, Map.of("runId", runId));
         return IssueSettlement.BLOCKED;
     }

@@ -279,8 +279,16 @@ Se o dono decidisse o ciclo entre a resolução do gate e a do service, o servic
 **ninguém pegava**: o gate não tinha try/catch, o `AdapterRunExecutor` idem, e o `execute` chama
 `runToOutcome` **antes** de `settleAfterRun` ⇒ a exceção **pulava o settle**. A issue ficava
 `IN_PROGRESS` com `execution_lock_run_id` de um run morto; `tryCheckout` exige essa coluna
-null-ou-igual e **não existe reaper para ela** — impegável para sempre. Contradizia o fail-SOFT que
-o próprio gate declara.
+null-ou-igual. Contradizia o fail-SOFT que o próprio gate declara.
+
+> 🔧 **Emenda pontual 2026-07-21 (Fatia I-bis do lock órfão) — toque DECLARADO.** A frase original
+> terminava com *"e **não existe reaper para ela** — impegável para sempre"*. Isso deixou de ser
+> verdade com o `LockOrfaoReaper` (Fatia I, PR #59) e, para o run **sem linha** em `heartbeat_run`,
+> só passou a ser verdade com o fecho do ponto cego (Fatia I-bis). O dano descrito acima segue
+> real — a exceção ainda pula o settle —, mas ele agora é **uma Issue estacionada em `BLOCKED` pela
+> varredura**, não um bloqueio permanente. Esta ADR foi tocada **exclusivamente** nesta frase: a
+> reserva das fatias é sobre **número de ADR**, não sobre arquivo, e deixar afirmação falsa de pé
+> para preservar fronteira de reserva é pior que o toque. Nada mais no documento foi alterado.
 
 **Fecho em duas camadas:** (a) no `ParecerGate`, try/catch POR PARECER — uma recusa do service é
 resultado normal deste canal ("o gestor chegou tarde"), vira aviso contado e o lote segue; e

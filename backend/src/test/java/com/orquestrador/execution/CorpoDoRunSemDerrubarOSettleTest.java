@@ -34,9 +34,17 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * linhas, company removida, banco fora), e {@code issue.execution_lock_run_id} não tem FK, então o
  * checkout de fato acontece antes do tombo.
  *
- * <p><b>Rede × fonte.</b> O {@code LockOrfaoReaper} colheria esta Issue no tick seguinte — mas a
- * garantia inteira passaria a depender de ele rodar, e ele roda na {@code scheduling-1}, a thread
- * única. O cinto é a FONTE; o reaper é a REDE.
+ * <p><b>Rede × fonte — e a frase que esta classe afirmava sem ser verdade.</b> Até a Fatia I-bis
+ * este parágrafo dizia que <i>"o {@code LockOrfaoReaper} colheria esta Issue no tick seguinte"</i>.
+ * Era <b>falso exatamente no cenário que o teste monta</b>: o {@code runSemLinha} abaixo não tem
+ * linha em {@code heartbeat_run}, e a query da rede pedia {@code exists(run em status terminal)} —
+ * sem linha, a Issue nunca entrava na lista. A fonte cobria o caso e a rede declarada não cobria;
+ * a frase descrevia uma rede que não existia para este órfão. Com o ponto cego fechado
+ * (a query pergunta se existe Run <b>com futuro</b> segurando o lock), a afirmação passou a valer
+ * — e {@code LockOrfaoReaperTest.colheIssueCujoRunNaoTemLINHA_oPontoCegoDaRede} é quem a sustenta.
+ *
+ * <p>A garantia, ainda assim, não deve <b>depender</b> do reaper: ele roda na {@code scheduling-1},
+ * a thread única. O cinto é a FONTE (liquida na hora, com o motivo); o reaper é a REDE.
  */
 @SpringBootTest
 @ActiveProfiles("test")

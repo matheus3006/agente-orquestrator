@@ -202,13 +202,23 @@ public class AdapterRunExecutor implements RunExecutor {
      * PULA o settle e deixa a Issue em {@code IN_PROGRESS} com {@code execution_lock_run_id}
      * apontando um run morto, e o {@code tryCheckout} exige essa coluna null-ou-igual.
      *
-     * <p><b>Emendado pela Fatia I:</b> esta frase dizia que <b>não existia reaper</b> para essa
-     * coluna e que a Issue ficava impegável <b>para sempre</b>. O {@link LockOrfaoReaper} agora
-     * colhe issues carimbadas por Run em status terminal, e o
+     * <p><b>Emendado pela Fatia I, CORRIGIDO pela Fatia I-bis.</b> Esta frase dizia que <b>não
+     * existia reaper</b> para essa coluna e que a Issue ficava impegável <b>para sempre</b>. O
+     * {@link LockOrfaoReaper} colhe issues carimbadas por Run <b>sem futuro</b>, e o
      * {@code corpoDoRunSemDerrubarOSettle} garante que o settle seja TENTADO mesmo quando o corpo do
-     * run explode. O dano deixou de ser permanente; virou <b>uma Issue estacionada em BLOCKED com
-     * até um tick de atraso</b>. O cinto continua sendo a defesa certa: ele é a FONTE (liquida com
-     * o motivo, na hora), o reaper é a REDE.
+     * run explode.
+     *
+     * <p><b>Por que a emenda da Fatia I ainda ESTREITAVA:</b> ela declarava o dano "não mais
+     * permanente" quando a rede ainda era cega para o Run <b>sem linha</b> em {@code heartbeat_run}
+     * — que é justamente o gatilho do teste irmão ({@code CorpoDoRunSemDerrubarOSettleTest} monta um
+     * {@code runSemLinha}). Nesse caso o dano SEGUIA permanente. Com o ponto cego fechado a
+     * afirmação passou a valer, e vale para os dois: Run terminal e Run sem linha.
+     *
+     * <p><b>O atraso, dito com honestidade:</b> uma Issue sai no tick seguinte da varredura
+     * (cadência {@code orquestrador.heartbeat.reap-ms}, default 5s). Um <b>passivo</b> de N issues
+     * sai em mais de um tick, porque a varredura tem teto de 50 por passada — isso é conta, não
+     * medição. O cinto continua sendo a defesa certa: ele é a FONTE (liquida com o motivo REAL, na
+     * hora), o reaper é a REDE (só sabe que ninguém mais roda).
      *
      * <p>Cada gate já é fail-soft por dentro; isto é o que mantém a afirmação verdadeira se um
      * deles regredir amanhã. Não silencia: o incidente vira step VISÍVEL no StepTrace, no mesmo
@@ -219,7 +229,7 @@ public class AdapterRunExecutor implements RunExecutor {
      * linhas, company removida) ou o banco fora, a gravação do incidente levantava DE DENTRO do
      * catch e escapava — <b>pulando exatamente o settle que este cinto existe para garantir</b>.
      * Um cinto cuja falha reproduz o dano que ele previne não é cinto. O último recurso é o log:
-     * perder a linha do StepTrace é ruim, deixar a Issue impegável para sempre é pior.
+     * perder a linha do StepTrace é ruim, pular o settle e entregar a Issue à rede é pior.
      *
      * <p>Visibilidade de PACOTE de propósito (mesmo recurso do {@code WorkspaceReaper.sweepTarget}):
      * o cinto só se prova com um {@code ato} que explode, e nenhum gate real explode sob demanda —
@@ -413,9 +423,10 @@ public class AdapterRunExecutor implements RunExecutor {
      * A posse, consultada UMA vez para os 4 gates, com o descarte visível quando falta.
      *
      * <p>Toda a leitura é fail-soft pela mesma razão que o {@link #semDerrubarOSettle} existe: isto
-     * roda ANTES do {@code settleAfterRun}, e uma exceção daqui pularia o settle e deixaria a Issue
-     * impegável para sempre. Banco fora ⇒ sem posse confirmada ⇒ não age (e o run vai falhar no
-     * settle logo adiante de qualquer jeito, agora por um caminho que não trava issue).
+     * roda ANTES do {@code settleAfterRun}, e uma exceção daqui pularia o settle — jogando a Issue
+     * na rede do {@link LockOrfaoReaper}, que a estaciona sem saber o motivo real. Banco fora ⇒ sem
+     * posse confirmada ⇒ não age (e o run vai falhar no settle logo adiante de qualquer jeito,
+     * agora por um caminho que não trava issue).
      */
     private boolean posseConfirmada(RunContext runContext) {
         boolean detem;

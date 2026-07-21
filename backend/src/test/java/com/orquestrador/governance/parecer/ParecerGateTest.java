@@ -1000,8 +1000,14 @@ class ParecerGateTest {
      * tinha try/catch nem é {@code @Transactional}, o {@code AdapterRunExecutor} idem, e o
      * {@code execute} chama {@code runToOutcome} ANTES do {@code settleAfterRun} ⇒ a exceção
      * PULAVA o settle. A issue ficava {@code IN_PROGRESS} com {@code execution_lock_run_id} de um
-     * run morto, {@code tryCheckout} exige essa coluna null-ou-igual e não existe reaper para ela:
-     * impegável PARA SEMPRE. E contradizia o fail-SOFT que o próprio gate declara.
+     * run morto, e {@code tryCheckout} exige essa coluna null-ou-igual. E contradizia o fail-SOFT
+     * que o próprio gate declara.
+     *
+     * <p><b>Emendado pela Fatia I-bis:</b> este javadoc dizia que <i>não existe reaper para essa
+     * coluna</i> e que a issue ficava impegável PARA SEMPRE. O {@code LockOrfaoReaper} existe desde
+     * a Fatia I e, com o ponto cego fechado, alcança também o run sem linha — o dano virou uma
+     * Issue estacionada em {@code BLOCKED} pela varredura, não mais um bloqueio permanente. O que
+     * se perde sem este try/catch continua real: o motivo REAL do incidente, que só a fonte sabe.
      *
      * <p>Aqui o estado que a corrida DEIXA é construído direto (issue fora de
      * {@code PENDING_REVIEW} com o ciclo PENDING para trás) em vez de perseguir a janela de tempo:
