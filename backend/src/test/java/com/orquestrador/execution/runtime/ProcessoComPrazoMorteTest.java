@@ -142,6 +142,68 @@ class ProcessoComPrazoMorteTest {
     }
 
     /**
+     * A troca de ordem do #57 abriu uma EXPOSIÇÃO NOVA, e ela é estritamente pior que o estado
+     * anterior: {@code matar(...)} só cercava {@code RuntimeException}, então um {@code Error} vindo
+     * da escalação escapa do catch e leva junto as DUAS coisas que passaram a vir DEPOIS dele — o
+     * {@code destroyForcibly} no cliente e a reposição da flag de interrupção. Em {@code b32c337} a
+     * flag já tinha sido reposta antes de {@code matar}; com a ordem trocada ela some, e o javadoc
+     * seguia alegando "preserva o contrato de nunca engolir a interrupção".
+     *
+     * <p>É literalmente o mesmo argumento que fez o PR #56 alargar {@code DispatchWorker.passada} de
+     * {@code RuntimeException} para {@code Throwable}, com teste — {@code matar} ficou para trás.
+     *
+     * <p>As três asserções são os três contratos que o {@code Error} atropelava, e nenhuma delas é
+     * sobre a chamada: o processo do host MORRE (medido por {@code waitFor} com teto, não por
+     * {@code isAlive} logo depois do golpe, que seria corrida com a entrega do sinal), a flag VOLTA,
+     * e o {@code Error} SOBE — logar não é engolir.
+     */
+    @Test
+    void escalacaoQueExplodeComErrorNaoLevaJuntoOGolpeNemAFlag() throws Exception {
+        Process processo = new ProcessBuilder("sh", "-c", "sleep 3600").start();
+        AtomicReference<Throwable> propagado = new AtomicReference<>();
+        AtomicBoolean flagRestaurada = new AtomicBoolean(false);
+        CountDownLatch coletaPendurada = new CountDownLatch(1);
+
+        Thread chamador = new Thread(() -> {
+            try {
+                ProcessoComPrazo.aguardar("interrupcao", processo, Duration.ofSeconds(30),
+                        () -> {
+                            coletaPendurada.countDown();
+                            return processo.getInputStream().read();
+                        },
+                        () -> {
+                            throw new StackOverflowError("pilha estourada dentro da escalação");
+                        });
+            } catch (Throwable qualquerFalha) {
+                propagado.set(qualquerFalha);
+            } finally {
+                flagRestaurada.set(Thread.currentThread().isInterrupted());
+            }
+        }, "chamador-do-teste");
+
+        try {
+            chamador.start();
+            assertThat(coletaPendurada.await(10, TimeUnit.SECONDS)).isTrue();
+            chamador.interrupt();
+            chamador.join(TimeUnit.SECONDS.toMillis(10));
+
+            assertThat(flagRestaurada)
+                    .as("a interrupção não pode ser engolida por um Error da escalação: em b32c337"
+                            + " a flag já estava reposta antes de matar, e a nova ordem a perdeu")
+                    .isTrue();
+            assertThat(processo.waitFor(5, TimeUnit.SECONDS))
+                    .as("o golpe no processo do host tem de acontecer MESMO com a escalação"
+                            + " explodindo — é o dano original (thread do chamador presa) voltando")
+                    .isTrue();
+            assertThat(propagado.get())
+                    .as("logar não é engolir — o Error da JVM em apuros segue subindo")
+                    .isInstanceOf(StackOverflowError.class);
+        } finally {
+            processo.destroyForcibly();
+        }
+    }
+
+    /**
      * O mesmo defeito no molde EXATO do Docker, uma camada abaixo.
      *
      * <p>A escalação real não é um {@code sleep}: {@code DockerExecutionTarget.interrupt} chama

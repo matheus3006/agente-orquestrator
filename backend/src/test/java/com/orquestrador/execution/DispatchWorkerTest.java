@@ -213,6 +213,67 @@ class DispatchWorkerTest {
                 .isTrue();
     }
 
+    /**
+     * O único caminho MUDO da fatia do #57: {@code close()} repunha a flag e não logava nada.
+     *
+     * <p>É a mesma forma de falha que o {@code BLOCO_DE_SAIDA_SEM_DESTINO} da fatia irmã existe para
+     * combater, e que o ramo VIZINHO deste mesmo {@code close()} (o teto de 5s estourado) já trata
+     * com WARN. A consequência é idêntica nos dois: a derrubada em curso pode não completar e o
+     * container fica órfão — só que num deles o operador lê o porquê e no outro a aplicação desce em
+     * silêncio.
+     *
+     * <p>A passada aqui IGNORA a própria interrupção de propósito: o pool não pode terminar enquanto
+     * a espera é medida, senão {@code awaitTermination} voltaria {@code true} sem nunca esperar.
+     */
+    @Test
+    void closeInterrompidoNaEsperaTambemDeixaLinhaDeDiagnostico() throws Exception {
+        CountDownLatch entrou = new CountDownLatch(1);
+        AtomicBoolean liberar = new AtomicBoolean(false);
+        HeartbeatDispatcher teimoso = mock(HeartbeatDispatcher.class);
+        when(teimoso.dispatchOnce()).thenAnswer(invocacao -> {
+            entrou.countDown();
+            while (!liberar.get()) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException oShutdownChegou) {
+                    // De propósito: quem termina esta passada é o teste, não o shutdownNow.
+                }
+            }
+            return 0;
+        });
+
+        ListAppender<ILoggingEvent> avisos = new ListAppender<>();
+        avisos.start();
+        ch.qos.logback.classic.Logger workerLogger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(DispatchWorker.class);
+        workerLogger.addAppender(avisos);
+        DispatchWorker worker = new DispatchWorker(teimoso);
+        boolean flagRestaurada = false;
+        try {
+            worker.dispatchAsync();
+            assertThat(entrou.await(3, TimeUnit.SECONDS)).isTrue();
+            // Quem está PARANDO a aplicação leva interrupt (o shutdown hook do Boot é uma thread
+            // como outra qualquer) — e é aqui que a espera de close() morre pela metade.
+            Thread.currentThread().interrupt();
+
+            worker.close();
+
+            // Medir ANTES de limpar; limpar para não contaminar o resto da suíte.
+            flagRestaurada = Thread.interrupted();
+        } finally {
+            liberar.set(true);
+            workerLogger.detachAppender(avisos);
+        }
+
+        assertThat(avisos.list)
+                .filteredOn(evento -> evento.getLevel() == Level.WARN)
+                .as("desistir da espera em silêncio é o mesmo modo de falha que o ramo vizinho do"
+                        + " teto já trata com WARN — a derrubada em curso pode não completar")
+                .anySatisfy(evento -> assertThat(evento.getFormattedMessage())
+                        .containsIgnoringCase("interrompid"));
+        assertThat(flagRestaurada).as("logar não muda o contrato: a interrupção não é engolida").isTrue();
+    }
+
     private static void esperarPassadas(AtomicInteger passadas, int alvo) throws InterruptedException {
         for (int tentativa = 0; tentativa < 300 && passadas.get() < alvo; tentativa++) {
             Thread.sleep(10);

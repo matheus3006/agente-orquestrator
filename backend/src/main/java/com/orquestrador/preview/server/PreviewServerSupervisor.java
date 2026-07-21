@@ -152,12 +152,33 @@ public class PreviewServerSupervisor {
             return StartResult.failure("servidor nao subiu: " + start.error());
         }
         if (!waitPortAlive(target, serverName, start.hostPort())) {
-            String tail = target.previewServerLogTail(serverName, LOG_TAIL_LINES);
-            target.stopPreviewServer(serverName);
-            lastSeen.remove(serverName);
-            recordStartOutcome(companyId, issueId, boardUserId, null, false);
-            return StartResult.failure("servidor morreu ao subir (porta " + manifest.getPort()
-                    + " nunca respondeu)" + (tail.isBlank() ? "" : "\n--- ultimas linhas ---\n" + tail));
+            // A LIMPEZA RODA COM A FLAG CONSUMIDA, e a flag volta no `finally` (ADR-0050, §A escalação
+            // de morte tem de COMPLETAR). Sem isto, o poll interrompido devolvia a flag posta e as
+            // duas operações daqui — ambas subprocesso, ambas com espera — morriam NA HORA: o tail
+            // virava "null" na mensagem do board e o `docker rm -f` voltava exit -1 com o container
+            // VIVO. Mesma mecânica do ramo de `InterruptedException` do `ProcessoComPrazo`, outro
+            // módulo. O custo é limitado por construção: as duas chamadas já têm o teto do
+            // `comando-curto`, então a parada da aplicação atrasa no máximo isso.
+            boolean interrompidoNoPoll = Thread.interrupted();
+            try {
+                String tail = target.previewServerLogTail(serverName, LOG_TAIL_LINES);
+                ExecutionTarget.PreviewServerStop stop = target.stopPreviewServer(serverName);
+                if (stop.failed()) {
+                    // O retorno era descartado: a única falha de derrubada da classe sem rastro —
+                    // e é justamente a que deixa container órfão. `stopFor` e `reapOnce` já logam.
+                    log.warn("derrubada do servidor {} que morreu ao subir falhou: {}",
+                            serverName, stop.error());
+                }
+                lastSeen.remove(serverName);
+                recordStartOutcome(companyId, issueId, boardUserId, null, false);
+                return StartResult.failure("servidor morreu ao subir (porta " + manifest.getPort()
+                        + " nunca respondeu)"
+                        + (tail.isBlank() ? "" : "\n--- ultimas linhas ---\n" + tail));
+            } finally {
+                if (interrompidoNoPoll) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
         lastSeen.put(serverName, Instant.now());
         recordStartOutcome(companyId, issueId, boardUserId, start.hostPort(), true);
@@ -281,6 +302,10 @@ public class PreviewServerSupervisor {
     /**
      * Poll TCP ate a porta responder (ADR-0023 §7): sucesso = servidor de pe; sumir do runtime
      * ANTES do prazo = morte precoce (nao espera o resto); prazo estourado = falha.
+     *
+     * <p>Interrompido, repoe a flag e volta — nunca engole a interrupcao. Quem sabe que ainda ha
+     * LIMPEZA a fazer e o chamador, e e la que a flag e consumida e devolvida em volta dela: repor a
+     * flag antes da limpeza mata a limpeza (ver {@link #startFor}).
      */
     private boolean waitPortAlive(ExecutionTarget target, String serverName, int hostPort) {
         long deadline = System.currentTimeMillis() + startPoll.toMillis();
