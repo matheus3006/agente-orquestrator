@@ -62,13 +62,19 @@ public class IssueController {
         return issues.list(companyId).stream().map(this::respond).toList();
     }
 
+    /**
+     * O {@code runId} é OBRIGATÓRIO (Fatia I-ter, A1). Enquanto o corpo era opcional, a ausência
+     * dele fazia o serviço <b>fabricar</b> um {@code UUID.randomUUID()} — um lock que nomeia um Run
+     * inexistente, que o {@code LockOrfaoReaper} corretamente lê como órfão e liquida em
+     * {@code BLOCKED} em ≤5 s, matando a Issue VIVA que o cliente acabara de pegar. Quem faz
+     * checkout já tem um Run: é o Run que está executando.
+     */
     @PostMapping("/{issueId}/checkout")
     public CheckoutResponse checkout(@PathVariable UUID companyId, @PathVariable UUID issueId,
-                                     @RequestBody(required = false) CheckoutRequest request) {
+                                     @RequestBody @Valid CheckoutRequest request) {
         guard.assertMember(companyId);
         Actor agent = requireAgent("Apenas agentes fazem checkout de issues");
-        UUID runId = request != null ? request.runId() : null;
-        CheckoutResult result = issues.checkout(companyId, issueId, agent.id(), runId);
+        CheckoutResult result = issues.checkout(companyId, issueId, agent.id(), request.runId());
         if (!result.acquired()) {
             throw new ConflictException("Issue ja esta em execucao por outro agente/run");
         }
@@ -79,8 +85,10 @@ public class IssueController {
     public IssueResponse complete(@PathVariable UUID companyId, @PathVariable UUID issueId,
                                   @RequestBody @Valid CompleteRequest request) {
         guard.assertMember(companyId);
-        requireAgent("Apenas agentes concluem issues que executam");
-        if (!issues.complete(companyId, issueId, request.runId())) {
+        // A identidade do ator É parte do guard (Fatia I-ter, A2) — antes este requireAgent rodava
+        // SEM atribuição, autenticando e descartando quem estava chamando.
+        Actor agent = requireAgent("Apenas agentes concluem issues que executam");
+        if (!issues.complete(companyId, issueId, request.runId(), agent.id())) {
             throw new ConflictException("Issue nao esta travada por este run");
         }
         return respond(issues.get(companyId, issueId));
@@ -147,7 +155,7 @@ public class IssueController {
                                      @Min(1) @Max(5) Integer riskLevel) {
     }
 
-    public record CheckoutRequest(UUID runId) {
+    public record CheckoutRequest(@NotNull UUID runId) {
     }
 
     public record CompleteRequest(@NotNull UUID runId) {

@@ -8,6 +8,9 @@ import com.orquestrador.conversation.ConversationTurnRepository;
 import com.orquestrador.conversation.ProposalDescarteNotice;
 import com.orquestrador.conversation.TurnStatus;
 import com.orquestrador.execution.HeartbeatDispatcher;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.governance.approval.Approval;
 import com.orquestrador.governance.approval.ApprovalRepository;
@@ -69,6 +72,8 @@ class PersonaBatonFlowTest {
     private ProposalDescarteNotice descarteNotice;
     @Autowired
     private AbsorcaoDeIssueRouter absorcoes;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     /** A fila do dispatcher é GLOBAL no H2 compartilhado: drenar antes/depois isola as ondas. */
     @BeforeEach
@@ -117,9 +122,12 @@ class PersonaBatonFlowTest {
     /** Uma Issue ENTREGUE (checkout + complete = DONE de verdade) pelo agente dado. */
     private Issue entreguePor(UUID companyId, UUID agenteId, String titulo) {
         Issue issue = issues.create(companyId, titulo, "entregável original");
-        UUID runId = UUID.randomUUID();
+        // Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter). SUCCEEDED porque
+        // este run JÁ entregou: deixá-lo ativo prenderia o agente no coalescing do wakeup.
+        UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agenteId, issue.getId(),
+                RunStatus.SUCCEEDED)).getId();
         issues.checkout(companyId, issue.getId(), agenteId, runId);
-        issues.complete(companyId, issue.getId(), runId);
+        issues.complete(companyId, issue.getId(), runId, agenteId);
         return issue;
     }
 

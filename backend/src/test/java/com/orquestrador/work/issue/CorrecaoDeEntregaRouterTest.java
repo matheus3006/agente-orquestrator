@@ -5,6 +5,9 @@ import com.orquestrador.conversation.ConversationService;
 import com.orquestrador.conversation.ConversationTurn;
 import com.orquestrador.conversation.ConversationTurnRepository;
 import com.orquestrador.conversation.TurnStatus;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.memory.Decision;
 import com.orquestrador.memory.DecisionOrigem;
@@ -57,6 +60,8 @@ class CorrecaoDeEntregaRouterTest {
     private ConversationTurnRepository turns;
     @Autowired
     private DecisionRepository decisions;
+    @Autowired
+    private HeartbeatRunRepository runs;
     @Autowired
     private JdbcTemplate jdbc;
 
@@ -119,9 +124,9 @@ class CorrecaoDeEntregaRouterTest {
         Cenario semTime = cenarioCompleto();
         UUID avulso = agenteNoTime(semTime.companyId, "Avulso", null);
         Issue entregueAvulso = issues.create(semTime.companyId, "Do avulso", null);
-        UUID runAvulso = UUID.randomUUID();
+        UUID runAvulso = runReal(semTime.companyId, avulso, entregueAvulso.getId());
         issues.checkout(semTime.companyId, entregueAvulso.getId(), avulso, runAvulso);
-        issues.complete(semTime.companyId, entregueAvulso.getId(), runAvulso);
+        issues.complete(semTime.companyId, entregueAvulso.getId(), runAvulso, avulso);
         assertThat(router.rotear(turnoDoDono(semTime, "a #1 ficou ruim"), 1)).isTrue();
         assertAvisoSemCriacao(semTime, "fora de qualquer time");
 
@@ -171,9 +176,9 @@ class CorrecaoDeEntregaRouterTest {
         router.rotear(turnoDoDono(cenario, "a task #1 ficou ruim — valida e-mail"), original.getSeq());
         Issue primeiraCorretiva = issueRepo.findByCompanyIdAndSeq(cenario.companyId, 2).orElseThrow();
         // a 1ª corretiva foi ENTREGUE pelo arquiteto… e ficou ruim de novo
-        UUID runDoArquiteto = UUID.randomUUID();
+        UUID runDoArquiteto = runReal(cenario.companyId, cenario.arquitetoId, primeiraCorretiva.getId());
         issues.checkout(cenario.companyId, primeiraCorretiva.getId(), cenario.arquitetoId, runDoArquiteto);
-        issues.complete(cenario.companyId, primeiraCorretiva.getId(), runDoArquiteto);
+        issues.complete(cenario.companyId, primeiraCorretiva.getId(), runDoArquiteto, cenario.arquitetoId);
 
         assertThat(router.rotear(turnoDoDono(cenario, "a #2 continua ruim — agora o botão"), 2)).isTrue();
 
@@ -263,10 +268,16 @@ class CorrecaoDeEntregaRouterTest {
     /** Uma Issue ENTREGUE pelo executor do cenário (checkout + complete = DONE de verdade). */
     private Issue entregue(Cenario cenario, String titulo) {
         Issue issue = issues.create(cenario.companyId, titulo, "entregável original");
-        UUID runId = UUID.randomUUID();
+        UUID runId = runReal(cenario.companyId, cenario.executorId, issue.getId());
         issues.checkout(cenario.companyId, issue.getId(), cenario.executorId, runId);
-        issues.complete(cenario.companyId, issue.getId(), runId);
+        issues.complete(cenario.companyId, issue.getId(), runId, cenario.executorId);
         return issue;
+    }
+
+    /** Um Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter). */
+    private UUID runReal(UUID companyId, UUID agentId, UUID issueId) {
+        return runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
     }
 
     /** O turno-gatilho: a mensagem do dono que o Questionador acabou de responder (ANSWERED). */

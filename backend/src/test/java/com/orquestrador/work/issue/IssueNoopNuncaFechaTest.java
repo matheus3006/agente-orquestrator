@@ -2,7 +2,10 @@ package com.orquestrador.work.issue;
 
 import com.orquestrador.activitylog.ActivityAction;
 import com.orquestrador.activitylog.ActivityLogRepository;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.RunOutcome;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -34,6 +37,14 @@ class IssueNoopNuncaFechaTest {
     private IssueService issues;
     @Autowired
     private ActivityLogRepository activityLog;
+    @Autowired
+    private HeartbeatRunRepository runs;
+
+    /** Um Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter). */
+    private UUID runReal(UUID companyId, UUID agentId, UUID issueId) {
+        return runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
+    }
 
     private UUID newCompany() {
         return companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8), UUID.randomUUID()).getId();
@@ -55,7 +66,7 @@ class IssueNoopNuncaFechaTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "tarefa", null).getId();
-        UUID runId = UUID.randomUUID();
+        UUID runId = runReal(companyId, agentId, issueId);
         assertThat(issues.checkout(companyId, issueId, agentId, runId).acquired()).isTrue();
 
         assertThat(issues.settleAfterRun(companyId, issueId, runId,
@@ -76,7 +87,7 @@ class IssueNoopNuncaFechaTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "tarefa", null).getId();
-        UUID runId = UUID.randomUUID();
+        UUID runId = runReal(companyId, agentId, issueId);
         assertThat(issues.checkout(companyId, issueId, agentId, runId).acquired()).isTrue();
 
         IssueSettlement settlement = issues.settleAfterRun(companyId, issueId, runId,
@@ -93,7 +104,7 @@ class IssueNoopNuncaFechaTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "tarefa arriscada", null, 5).getId();
-        UUID runId = UUID.randomUUID();
+        UUID runId = runReal(companyId, agentId, issueId);
         assertThat(issues.checkout(companyId, issueId, agentId, runId).acquired()).isTrue();
 
         assertThat(issues.settleAfterRun(companyId, issueId, runId,

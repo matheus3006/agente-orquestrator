@@ -1,6 +1,8 @@
 package com.orquestrador.work.issue;
 
-import tools.jackson.databind.JsonNode;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +33,8 @@ class IssueCheckoutHttpTest {
     private MockMvc mvc;
     @Autowired
     private ObjectMapper om;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     private static String rand() {
         return UUID.randomUUID().toString().substring(0, 8);
@@ -97,6 +101,26 @@ class IssueCheckoutHttpTest {
         return idFrom(body);
     }
 
+    /**
+     * <b>Este teste afirmava, até a Fatia I-ter, o OPOSTO do
+     * {@code LockOrfaoReaperTest.colheIssueCujoRunNaoTemLINHA_oPontoCegoDaRede}</b>, e os dois
+     * conviviam verdes.
+     *
+     * <p>O estado era o mesmo — Issue {@code IN_PROGRESS} cujo lock nomeia um Run <b>sem linha</b>
+     * em {@code heartbeat_run} — e os destinos eram incompatíveis: aqui {@code DONE} (o checkout
+     * sem corpo fabricava o lock, e o {@code /complete} seguinte fechava a Issue), lá
+     * {@code BLOCKED} (a rede colhe o órfão). Conviviam porque
+     * {@code orquestrador.scheduling.enabled=false} no perfil de teste: a varredura nunca rodava
+     * durante ESTE teste. Em produção, com o scheduler ligado, o mesmo fluxo perdia a corrida para
+     * o reaper em ≤5 s — a Issue viva ia a {@code BLOCKED} e o {@code /complete} dava 409.
+     *
+     * <p><b>A reconciliação não foi escolher um vencedor: foi tirar o estado da mesa.</b> O
+     * checkout agora exige um {@code runId} com procedência, então este teste <b>não consegue
+     * mais</b> produzir o lock-sem-linha nem se quiser. O que ele passa a provar é o fluxo
+     * legítimo: Run real → checkout → complete → {@code DONE}, e nesse fluxo o reaper deixa a
+     * Issue em paz porque o Run <b>tem futuro</b>. O veredito do reaper sobre o lock-sem-linha
+     * segue de pé, intocado, para o passivo acumulado e para os produtores que não passam por aqui.
+     */
     @Test
     void checkoutAtomicoEGovernancaViaHttp() throws Exception {
         UUID board = UUID.randomUUID();
@@ -108,29 +132,38 @@ class IssueCheckoutHttpTest {
         UUID issueId = createIssue(board, companyId, "tarefa");
 
         String checkoutUrl = "/api/companies/" + companyId + "/issues/" + issueId + "/checkout";
+        UUID runId = runReal(companyId, a1, issueId);
 
-        // A1 pega -> 200, IN_PROGRESS, assignee A1
-        String body = mvc.perform(post(checkoutUrl).header(HttpHeaders.AUTHORIZATION, "Bearer " + keyA1))
+        // A1 pega com o PRÓPRIO run -> 200, IN_PROGRESS, assignee A1
+        mvc.perform(post(checkoutUrl).header(HttpHeaders.AUTHORIZATION, "Bearer " + keyA1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runId\":\"" + runId + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.issue.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.issue.assigneeAgentId").value(a1.toString()))
-                .andReturn().getResponse().getContentAsString();
-        UUID runId = UUID.fromString(om.readTree(body).get("runId").asText());
+                .andExpect(jsonPath("$.runId").value(runId.toString()));
 
-        // A2 tenta -> 409 (zero double-work)
-        mvc.perform(post(checkoutUrl).header(HttpHeaders.AUTHORIZATION, "Bearer " + keyA2))
+        // A2 tenta com o run DELE -> 409 (zero double-work). Com o run dele, e não com um UUID
+        // qualquer: senão o 409 viraria 403 e o teste deixaria de provar a arbitragem do banco.
+        mvc.perform(post(checkoutUrl).header(HttpHeaders.AUTHORIZATION, "Bearer " + keyA2)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runId\":\"" + runReal(companyId, a2, issueId) + "\"}"))
                 .andExpect(status().isConflict());
 
         // board nao faz checkout (so agentes) -> 403
-        mvc.perform(post(checkoutUrl).header("X-Board-User", board.toString()))
+        mvc.perform(post(checkoutUrl).header("X-Board-User", board.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runId\":\"" + UUID.randomUUID() + "\"}"))
                 .andExpect(status().isForbidden());
 
-        // agente de OUTRA company -> 403 (cross-tenant)
+        // agente de OUTRA company -> 403 (cross-tenant, barrado no assertMember antes do service)
         UUID board2 = UUID.randomUUID();
         UUID company2 = createCompany(board2, "co2-" + rand());
         UUID a3 = createAgent(board2, company2, "A3");
         String keyA3 = mintKey(board2, company2, a3);
-        mvc.perform(post(checkoutUrl).header(HttpHeaders.AUTHORIZATION, "Bearer " + keyA3))
+        mvc.perform(post(checkoutUrl).header(HttpHeaders.AUTHORIZATION, "Bearer " + keyA3)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runId\":\"" + UUID.randomUUID() + "\"}"))
                 .andExpect(status().isForbidden());
 
         // A1 conclui com o runId detentor -> 200 DONE
@@ -140,5 +173,11 @@ class IssueCheckoutHttpTest {
                         .content("{\"runId\":\"" + runId + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DONE"));
+    }
+
+    /** Um Run REAL do motor — sem a linha, o checkout recusa por falta de procedência. */
+    private UUID runReal(UUID companyId, UUID agentId, UUID issueId) {
+        return runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
     }
 }

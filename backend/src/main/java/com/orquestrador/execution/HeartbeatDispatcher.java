@@ -1,5 +1,6 @@
 package com.orquestrador.execution;
 
+import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.lineage.SpawnLineageGuard;
 import com.orquestrador.governance.budget.BudgetService;
 import com.orquestrador.org.agent.AgentRepository;
@@ -156,6 +157,18 @@ public class HeartbeatDispatcher {
      * "time sem arquiteto", "fan-out no teto", linhagem ilegal) — o park-for-human da ADR-0011,
      * exatamente onde o {@code unblock {REOPEN|CANCEL}} do board já funciona, e com {@code ISSUE_BLOCKED}
      * gravado no activity log de graça.
+     *
+     * <p><b>O ator do rastro é {@code SYSTEM}, não {@code AGENT}</b> (Fatia I-ter, B1 — decisão do
+     * dono). Nos quatro preflights o Run é barrado <b>antes do {@code claim}</b>, e o critério é
+     * sempre da ORQUESTRAÇÃO: orçamento da company, estrutura do time, cap do arquiteto, cadeia de
+     * linhagem. O agente é o <b>objeto</b> da decisão, não o sujeito — ele não pediu, não soube e
+     * não executou nada.
+     *
+     * <p>O ganho decisivo não é consistência cosmética: com {@code AGENT} aqui, um
+     * {@code ISSUE_BLOCKED} no log significava <b>duas coisas incompatíveis</b> — "o run rodou e
+     * falhou" e "o run nem chegou a rodar" — e nada no evento as separava. Com a troca a partição
+     * fica aprendível por quem lê o feed e por quem escrever diagnóstico em cima dele:
+     * <b>{@code AGENT} = houve execução; {@code SYSTEM} = a orquestração decidiu sem execução.</b>
      */
     private void cancelarELiquidar(HeartbeatRun run, String motivo) {
         if (!store.cancel(run.getId(), motivo)) {
@@ -163,7 +176,7 @@ public class HeartbeatDispatcher {
         }
         if (run.getIssueId() != null) {
             semDerrubarAPassada(run, () -> issues.settleAfterRun(run.getCompanyId(), run.getIssueId(),
-                    run.getId(), RunOutcome.failure(motivo)));
+                    run.getId(), RunOutcome.failure(motivo), ActorType.SYSTEM));
         }
     }
 

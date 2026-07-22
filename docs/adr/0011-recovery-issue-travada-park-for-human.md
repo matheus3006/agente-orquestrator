@@ -229,11 +229,38 @@ lock já carimbado e o processo **vivo**. O argumento é que **o banco arbitra a
 - **Lock apontando para Run que tem futuro e nunca o exerce.** O critério da varredura é *"existe
   algum Run com futuro (`QUEUED`/`RUNNING`/`RECOVERING`) segurando este lock?"*. Um Run que fica
   `QUEUED` para sempre porque ninguém o despacha mantém a Issue travada, e a rede — por construção —
-  não o toca. É o preço de não arrancar Issue de trabalho que ia continuar. Não há produtor conhecido
-  hoje: o `dispatchOnce` drena a fila a cada 1s e o `LeaseReaper` devolve o `RUNNING` vencido.
+  não o toca. É o preço de não arrancar Issue de trabalho que ia continuar.
+
+  > 🔵 **Emenda da Fatia I-ter — o racional anterior estava errado, e a linha "não há produtor
+  > conhecido hoje" está REFUTADA.**
+  >
+  > O texto dizia que não havia produtor porque *"o `dispatchOnce` drena a fila a cada 1s"*. **Falso.**
+  > O `DispatchWorker` tem **uma** thread e **pula, nunca enfileira**: um run longo segura a passada e
+  > os ticks seguintes são descartados. Quem impede o `QUEUED` eterno não é a cadência — é o **teto de
+  > 2h por run** (`PrazosDeExecucao.getRun()`). Conclusão certa, racional errado.
+  >
+  > E havia sim um produtor, **intra-company**, medido na conferência do PR #60: a cerca do reaper
+  > correlaciona por `r.id` + `r.companyId`, **não** por `r.issueId`. Um checkout da Issue Y com o
+  > `runId` de um Run **vivo** da Issue Z da mesma company produzia um lock que nomeia um Run "com
+  > futuro" — e Y ficava refém do ciclo de vida de Z, num estado que **a rede nunca alcança**. A
+  > Fatia I-ter fechou isso **na fonte**: `IssueService.checkout`/`.complete` exigem que o `runId`
+  > seja de um Run *desta* company, *deste* agente e *desta* issue. É o único produtor da lista que
+  > não tinha cura possível pela rede.
 - **O atraso da colheita cresce com o passivo.** A varredura tem teto de 50 por passada, então um
   passivo de N issues leva mais de um tick para drenar — *conta, não medição*. A ordem é
   `updated_at asc`, então o mais velho sai primeiro.
 - **A corrida interrupt × varredura.** Com `INTERRUPTED` dentro, se o reaper chegar antes do settle
   do próprio interrupt, a Issue pousa em `BLOCKED` com o motivo do **reaper** em vez do motivo real.
-  Os dois destinos são `BLOCKED`; o que se perde é a frase no log.
+
+  > 🔴 **Emenda da Fatia I-ter (D1): os destinos são TRÊS, não dois.** A frase acima dizia "os dois
+  > destinos são `BLOCKED`; o que se perde é a frase no log", e isso subconta o caso ruim. O kill é
+  > **best-effort** e pode não pegar: o processo sobrevive e o run **termina com SUCESSO**. Se o
+  > reaper venceu a corrida (≤5 s), o lock já sumiu, o settle bem-sucedido casa **0 linhas** e o
+  > **trabalho concluído é descartado em silêncio** — a Issue fica `BLOCKED` como se tivesse
+  > falhado. Não é "a frase no log": é entrega perdida. Segue **sem conserto**, agora nomeado.
+
+- **Inanição da varredura por Issue venenosa** (nomeado na Fatia I-ter, D3). A ordem é
+  `updated_at asc` com teto de 50, e é o `tryBlock` que move o `updated_at`. Uma Issue cujo settle
+  **lança** toda vez nunca tem o `updated_at` tocado ⇒ reaparece **na frente** de toda passada
+  seguinte, para sempre. Uma sozinha custa um slot; **50 delas ocupam a passada inteira** e a rede
+  para de drenar o passivo real — em silêncio, porque cada falha individual é só um WARN.

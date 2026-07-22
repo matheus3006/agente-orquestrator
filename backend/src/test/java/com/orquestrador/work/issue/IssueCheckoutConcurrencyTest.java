@@ -1,5 +1,8 @@
 package com.orquestrador.work.issue;
 
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -34,6 +37,8 @@ class IssueCheckoutConcurrencyTest {
     private CompanyService companies;
     @Autowired
     private AgentRepository agents;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     @Test
     void exatamenteUmAgenteGanhaACorrida() throws Exception {
@@ -45,16 +50,24 @@ class IssueCheckoutConcurrencyTest {
             agentIds.add(agents.save(new Agent(UUID.randomUUID(), companyId, "A" + i, "worker", null)).getId());
         }
         UUID issueId = issues.create(companyId, "corrida", null).getId();
+        // Cada disputante chega com o PRÓPRIO Run real desta issue — é o que a cerca de
+        // procedência exige (Fatia I-ter), e é o que 8 agentes disputando de verdade teriam.
+        // Sem a linha, os 8 tomariam 403 e a corrida teria zero vencedores em vez de um.
+        List<UUID> runIds = agentIds.stream()
+                .map(agentId -> runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId,
+                        issueId, RunStatus.RUNNING)).getId())
+                .toList();
 
         ExecutorService pool = Executors.newFixedThreadPool(n);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<Boolean>> futures = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             final UUID agentId = agentIds.get(i);
+            final UUID runId = runIds.get(i);
             futures.add(pool.submit(() -> {
                 start.await();
                 try {
-                    return issues.checkout(companyId, issueId, agentId, null).acquired();
+                    return issues.checkout(companyId, issueId, agentId, runId).acquired();
                 } catch (Exception e) {
                     return false;
                 }

@@ -1,6 +1,9 @@
 package com.orquestrador.execution.runtime;
 
 import com.orquestrador.activitylog.ActivityLogRepository;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -44,6 +47,8 @@ class WorkspaceReaperKillSwitchTest {
     private IssueService issues;
     @Autowired
     private ActivityLogRepository activityLog;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     private UUID companyId;
 
@@ -76,9 +81,11 @@ class WorkspaceReaperKillSwitchTest {
         UUID agentId = agents.save(agent).getId();
         UUID issueId = issues.create(companyId, "concluída", null).getId();
         Path workspace = workspaces.resolve(companyId, agentId, issueId);
-        UUID runId = UUID.randomUUID();
+        // Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter)
+        UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
         issues.checkout(companyId, issueId, agentId, runId);
-        issues.complete(companyId, issueId, runId); // DONE, retenção 0 -> seria coletada se ligado
+        issues.complete(companyId, issueId, runId, agentId); // DONE, retenção 0 -> seria coletada se ligado
 
         reaper.sweepOnce();
 

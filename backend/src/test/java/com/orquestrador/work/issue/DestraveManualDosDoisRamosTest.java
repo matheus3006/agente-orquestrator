@@ -1,6 +1,7 @@
 package com.orquestrador.work.issue;
 
 import com.orquestrador.common.error.ConflictException;
+import com.orquestrador.common.error.ForbiddenException;
 import com.orquestrador.execution.HeartbeatRun;
 import com.orquestrador.execution.LockOrfaoReaper;
 import com.orquestrador.execution.HeartbeatRunRepository;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.UUID;
 
@@ -47,13 +50,18 @@ class DestraveManualDosDoisRamosTest {
     private HeartbeatRunRepository runs;
     @Autowired
     private LockOrfaoReaper lockOrfaoReaper;
+    /** O UPDATE guardado cru: monta o lock sintético que o serviço, desde a I-ter, recusa criar. */
+    @Autowired
+    private IssueRepository issueRepo;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @Test
     void riscoBAIXO_aTerceiraChamadaPassaPorDoneEaQuartaEhOreabrir() {
         Travada travada = issueTravada(1);
 
         // 3ª chamada da ficha: POST /complete {runId} — libera o lock passando por DONE.
-        issues.complete(travada.companyId(), travada.issueId(), travada.runMorto());
+        issues.complete(travada.companyId(), travada.issueId(), travada.runMorto(), travada.agentId());
         assertThat(issues.get(travada.companyId(), travada.issueId()).getStatus()).isEqualTo(IssueStatus.DONE);
 
         // 4ª chamada — OBRIGATÓRIA: sem ela o board mostra entrega que ninguém entregou.
@@ -69,7 +77,7 @@ class DestraveManualDosDoisRamosTest {
 
         // 3ª chamada: o settle intercepta em trySubmitForReview — que TAMBÉM casa, porque a órfã
         // é IN_PROGRESS. A Issue NÃO passa por DONE.
-        issues.complete(travada.companyId(), travada.issueId(), travada.runMorto());
+        issues.complete(travada.companyId(), travada.issueId(), travada.runMorto(), travada.agentId());
         assertThat(issues.get(travada.companyId(), travada.issueId()).getStatus())
                 .isEqualTo(IssueStatus.PENDING_REVIEW);
 
@@ -91,28 +99,41 @@ class DestraveManualDosDoisRamosTest {
      * única para a qual ele ainda era necessário</b> (Fatia I-bis, item 3).
      *
      * <p>O {@code issueTravada} semeia um run <b>REAL</b>. Mas a classe de órfã que mais precisava
-     * do destrave manual é a do {@code runId} <b>SINTÉTICO</b> (sem linha em {@code heartbeat_run})
-     * — a que o {@code /checkout} sem corpo fabrica sozinho. Nela, com {@code riskLevel} ≥ limiar,
-     * a 3ª chamada da ficha <b>não destrava nada</b>: o {@code trySubmitForReview} casa (a Issue é
-     * {@code IN_PROGRESS}), o {@code existsByIdAndCompanyId} falha, e o {@code ConflictException}
-     * dá <b>rollback TOTAL</b> — o UPDATE guardado é desfeito e a Issue volta a {@code IN_PROGRESS}
-     * com o lock de pé. O operador executa o procedimento, recebe um 409 e a Issue segue travada.
+     * do destrave manual é a do {@code runId} <b>SINTÉTICO</b> (sem linha em {@code heartbeat_run}).
+     * Na Fatia I-bis a 3ª chamada da ficha falhava com {@code ConflictException} lá no fim do funil
+     * — o {@code trySubmitForReview} casava, o {@code existsByIdAndCompanyId} não, e o rollback
+     * TOTAL desfazia o destrave — e isso valia <b>só</b> para {@code riskLevel} ≥ limiar.
      *
-     * <p><b>O que fecha o buraco não é a ficha — é a REDE.</b> Com o ponto cego corrigido, esta
-     * classe é colhida automaticamente, e o destrave manual deixa de ser necessário justamente onde
-     * ele não funcionava. A ficha passa a dizer isso.
+     * <p><b>A Fatia I-ter moveu a recusa para mais cedo e a ALARGOU — é um limite que este desenho
+     * CRIA, e está escrito aqui em vez de na prosa.</b> A cerca de procedência roda antes do funil,
+     * então a 3ª chamada agora morre com {@code ForbiddenException} — e para <b>qualquer</b>
+     * {@code riskLevel}, porque um runId sem linha nunca tem procedência. Ou seja: o destrave
+     * manual, que já não funcionava para esta classe no ramo de risco alto, passou a não funcionar
+     * nela em ramo nenhum. É troca consciente: o preço de fechar a fonte é que o operador perde uma
+     * saída que, para esta classe, <b>nunca</b> chegou a funcionar por inteiro.
+     *
+     * <p><b>O que fecha o buraco não é a ficha — é a REDE</b>, que colhe esta classe sozinha em ≤5s.
      */
     @Test
     void riscoALTOcomRunSINTETICO_aFichaNAOdestrava_masARedeCOLHE() {
-        Travada travada = issueTravadaComRunSintetico();
+        Travada travada = issueTravadaComRunSintetico(5);
 
-        assertThatThrownBy(() -> issues.complete(travada.companyId(), travada.issueId(), travada.runMorto()))
-                .as("review exige run real: 409 e rollback TOTAL do UPDATE guardado")
-                .isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> issues.complete(travada.companyId(), travada.issueId(),
+                travada.runMorto(), travada.agentId()))
+                .as("a cerca de procedencia recusa ANTES do funil: runId sem linha nao e de ninguem")
+                .isInstanceOf(ForbiddenException.class);
+
+        // O alargamento, medido e não só afirmado: no ramo de risco BAIXO a ficha destravava esta
+        // classe até a I-bis (passava por DONE). Agora ela também para na cerca.
+        Travada baixo = issueTravadaComRunSintetico(1);
+        assertThatThrownBy(() -> issues.complete(baixo.companyId(), baixo.issueId(),
+                baixo.runMorto(), baixo.agentId()))
+                .as("o ramo de risco baixo, que ANTES destravava esta classe, agora tambem para")
+                .isInstanceOf(ForbiddenException.class);
 
         assertSoftly(softly -> {
             softly.assertThat(issues.get(travada.companyId(), travada.issueId()).getStatus())
-                    .as("o rollback desfaz o destrave: a Issue NÃO saiu de IN_PROGRESS")
+                    .as("recusada na porta, a chamada não move nada: a Issue NÃO saiu de IN_PROGRESS")
                     .isEqualTo(IssueStatus.IN_PROGRESS);
             softly.assertThat(issues.get(travada.companyId(), travada.issueId()).getExecutionLockRunId())
                     .as("e o lock continua de pé — a ficha não resolveu esta classe")
@@ -131,21 +152,26 @@ class DestraveManualDosDoisRamosTest {
         });
     }
 
-    private record Travada(UUID companyId, UUID issueId, UUID runMorto) {
+    /** O {@code agentId} entra no registro porque a 3ª chamada da ficha agora exige DIZER quem age. */
+    private record Travada(UUID companyId, UUID issueId, UUID runMorto, UUID agentId) {
     }
 
     /**
      * A órfã do PONTO CEGO com risco ALTO: {@code runId} sintético (sem linha em
-     * {@code heartbeat_run}), exatamente o que o {@code /checkout} sem corpo produz.
+     * {@code heartbeat_run}).
+     *
+     * <p>O carimbo vem do UPDATE guardado desde a Fatia I-ter: o {@code /checkout} deixou de
+     * fabricar este lock, mas ele segue existindo no banco como passivo acumulado e por produtores
+     * que não passam pelo balcão. É contra esse passivo que a ficha é executada.
      */
-    private Travada issueTravadaComRunSintetico() {
+    private Travada issueTravadaComRunSintetico(int riskLevel) {
         UUID companyId = companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8),
                 UUID.randomUUID()).getId();
         UUID agentId = agents.save(new Agent(UUID.randomUUID(), companyId, "A", "worker", null)).getId();
-        UUID issueId = issues.create(companyId, "travada por run sintetico", null, 5).getId();
+        UUID issueId = issues.create(companyId, "travada por run sintetico", null, riskLevel).getId();
         UUID runSintetico = UUID.randomUUID();
-        issues.checkout(companyId, issueId, agentId, runSintetico);
-        return new Travada(companyId, issueId, runSintetico);
+        carimbarCru(issueId, companyId, agentId, runSintetico);
+        return new Travada(companyId, issueId, runSintetico, agentId);
     }
 
     /** Uma Issue IN_PROGRESS carimbada com um run CANCELLED — o estado que a ficha destrava. */
@@ -157,6 +183,15 @@ class DestraveManualDosDoisRamosTest {
         UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
                 RunStatus.CANCELLED)).getId();
         issues.checkout(companyId, issueId, agentId, runId);
-        return new Travada(companyId, issueId, runId);
+        return new Travada(companyId, issueId, runId, agentId);
+    }
+
+    /**
+     * O UPDATE guardado precisa de transação (o {@code @Modifying} faz flush/clear). Mesmo recurso
+     * que o {@code RowRetentionReaperTest} e o {@code ParecerGateTest} já usam para escrever cru.
+     */
+    private void carimbarCru(UUID issueId, UUID companyId, UUID agentId, UUID runId) {
+        new TransactionTemplate(transactionManager)
+                .executeWithoutResult(status -> issueRepo.tryCheckout(issueId, companyId, agentId, runId));
     }
 }
