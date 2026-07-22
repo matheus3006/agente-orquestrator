@@ -1,6 +1,9 @@
 package com.orquestrador.skills;
 
 import com.orquestrador.common.security.ActorType;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -41,6 +44,8 @@ class IssueSkillAttachmentServiceTest {
     private CompanySkillRepository companySkills;
     @Autowired
     private IssueSkillAttachmentRepository attachments;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     @TempDir
     Path skillsRoot;
@@ -84,9 +89,11 @@ class IssueSkillAttachmentServiceTest {
 
         // Efeito efêmero: fechada a Issue (checkout + complete → DONE), a união volta à base (v1);
         // o registro do anexo PERSISTE (imutável).
-        UUID runId = UUID.randomUUID();
+        // Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter).
+        UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
         assertThat(issues.checkout(companyId, issueId, agentId, runId).acquired()).isTrue();
-        assertThat(issues.complete(companyId, issueId, runId)).isTrue();
+        assertThat(issues.complete(companyId, issueId, runId, agentId)).isTrue();
 
         assertThat(skillSets.resolveForRun(companyId, agentId, issueId)).singleElement()
                 .satisfies(version -> assertThat(version.getBody()).contains("BASE v1"));

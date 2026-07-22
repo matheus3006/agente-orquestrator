@@ -22,10 +22,18 @@ public class AgentApiKeyController {
         this.guard = guard;
     }
 
+    /**
+     * <b>Board-only</b> (Fatia I-ter, A3). Cunhar chave de agente é ato do OPERADOR: o segredo volta
+     * em claro e o {@code ActorResolutionFilter} o aceita como credencial de agente, então um
+     * {@code assertMember} aqui deixava um AGENTE autenticado cunhar a chave de <b>qualquer outro
+     * agente da company</b> — escalada lateral que transforma "sou o agente A" em "sou quem eu
+     * quiser". Somada ao {@code /complete} sem identidade, era a outra metade do assalto descrito em
+     * {@code docs/ficha-seguranca-complete.md}.
+     */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiKeyResponse mint(@PathVariable UUID companyId, @PathVariable UUID agentId) {
-        guard.assertMember(companyId);
+        guard.assertBoardMember(companyId);
         return new ApiKeyResponse(apiKeys.mint(companyId, agentId));
     }
 

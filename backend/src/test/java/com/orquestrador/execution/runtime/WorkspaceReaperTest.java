@@ -3,7 +3,10 @@ package com.orquestrador.execution.runtime;
 import com.orquestrador.activitylog.ActivityLog;
 import com.orquestrador.activitylog.ActivityLogRepository;
 import com.orquestrador.common.security.ActorType;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.RunOutcome;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -53,6 +56,8 @@ class WorkspaceReaperTest {
     private IssueRepository issueRepository;
     @Autowired
     private ActivityLogRepository activityLog;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     private final List<UUID> companiesToClean = new java.util.ArrayList<>();
 
@@ -81,14 +86,20 @@ class WorkspaceReaperTest {
         return new Ws(companyId, agentId, issueId, workspaces.resolve(companyId, agentId, issueId));
     }
 
+    /** Um Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter). */
+    private UUID runReal(UUID companyId, UUID agentId, UUID issueId) {
+        return runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
+    }
+
     private Ws done() {
         UUID companyId = newCompany();
         UUID agentId = newLocalAgent(companyId);
         UUID issueId = issues.create(companyId, "app com workspace", null).getId();
         Ws ws = workspaceFor(companyId, agentId, issueId);
-        UUID runId = UUID.randomUUID();
+        UUID runId = runReal(companyId, agentId, issueId);
         issues.checkout(companyId, issueId, agentId, runId);
-        issues.complete(companyId, issueId, runId); // risco 1 < limiar -> DONE
+        issues.complete(companyId, issueId, runId, agentId); // risco 1 < limiar -> DONE
         return ws;
     }
 
@@ -151,7 +162,7 @@ class WorkspaceReaperTest {
         UUID agentId = newLocalAgent(companyId);
         UUID issueId = issues.create(companyId, "cancelada", null).getId();
         Ws ws = workspaceFor(companyId, agentId, issueId);
-        UUID runId = UUID.randomUUID();
+        UUID runId = runReal(companyId, agentId, issueId);
         issues.checkout(companyId, issueId, agentId, runId);
         issues.settleAfterRun(companyId, issueId, runId, RunOutcome.failure("boom")); // -> BLOCKED
         issues.unblock(companyId, issueId, UnblockDecision.CANCEL, ActorType.BOARD, UUID.randomUUID());
@@ -167,11 +178,12 @@ class WorkspaceReaperTest {
         UUID agentId = newLocalAgent(companyId);
         UUID emProgresso = issues.create(companyId, "em progresso", null).getId();
         Ws wsProgresso = workspaceFor(companyId, agentId, emProgresso);
-        issues.checkout(companyId, emProgresso, agentId, UUID.randomUUID()); // IN_PROGRESS, assignee fixado
+        issues.checkout(companyId, emProgresso, agentId,
+                runReal(companyId, agentId, emProgresso)); // IN_PROGRESS, assignee fixado
 
         UUID bloqueada = issues.create(companyId, "bloqueada", null).getId();
         Ws wsBloqueada = workspaceFor(companyId, agentId, bloqueada);
-        UUID runBloqueada = UUID.randomUUID();
+        UUID runBloqueada = runReal(companyId, agentId, bloqueada);
         issues.checkout(companyId, bloqueada, agentId, runBloqueada);
         issues.settleAfterRun(companyId, bloqueada, runBloqueada, RunOutcome.failure("x")); // BLOCKED
 

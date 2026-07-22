@@ -7,12 +7,15 @@ import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
 import com.orquestrador.work.issue.Issue;
+import com.orquestrador.work.issue.IssueRepository;
 import com.orquestrador.work.issue.IssueService;
 import com.orquestrador.work.issue.IssueStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -69,6 +72,11 @@ class LockOrfaoReaperTest {
     private AgentRepository agents;
     @Autowired
     private IssueService issues;
+    /** O UPDATE guardado cru: monta o lock órfão que o serviço, desde a I-ter, se recusa a criar. */
+    @Autowired
+    private IssueRepository issueRepo;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @Test
     void colheIssueCarimbadaPorRunEmStatusTerminal() {
@@ -92,10 +100,17 @@ class LockOrfaoReaperTest {
      * {@code exists} é falso e a Issue <b>nunca entrava na lista</b>. A rede era fail-CLOSED
      * exatamente onde o dano é máximo: nenhum status a resgata, porque não há status.
      *
-     * <p><b>O estado é alcançável em UMA chamada, sem hostilidade nenhuma:</b>
-     * {@code IssueService.checkout} faz {@code effectiveRun = runId != null ? runId : randomUUID()}
-     * e {@code tryCheckout} não confere existência — qualquer cliente que chame {@code /checkout}
-     * sem corpo produz este estado, <b>por design</b>. E {@code execution_lock_run_id} não tem FK.
+     * <p><b>O estado ERA alcançável em UMA chamada, e não é mais</b> (Fatia I-ter). Até ela,
+     * {@code IssueService.checkout} fazia {@code effectiveRun = runId != null ? runId : randomUUID()}
+     * e o {@code tryCheckout} não conferia existência: qualquer cliente que chamasse
+     * {@code /checkout} sem corpo produzia este estado <b>por design</b>. Essa fonte está fechada —
+     * o serviço agora exige um {@code runId} com procedência.
+     *
+     * <p><b>O teste continua, e o veredito não mudou.</b> {@code execution_lock_run_id} segue sem
+     * FK, e o estado segue chegando ao banco por vias que não passam pelo balcão: o passivo já
+     * acumulado, o drain em lote do hard-stop, um {@code settleAfterRun} que lança no meio, um
+     * crash entre o CAS e o settle. <b>Fechar a fonte não aposenta a rede</b> — só tira dela o
+     * produtor mais fácil.
      */
     @Test
     void colheIssueCujoRunNaoTemLINHA_oPontoCegoDaRede() {
@@ -179,10 +194,11 @@ class LockOrfaoReaperTest {
      * Y era colhida e QUANDO — um canal de estado/timing atravessando o tenant. Enquanto o run de
      * X estivesse vivo, a Issue de Y ficava refém dele; quando X terminasse, Y era colhida.
      *
-     * <p><b>O caminho é real, não hipotético:</b> o {@code POST /checkout} lê o {@code runId} do
-     * corpo e não o confere contra a company (item 2 desta fatia), então um membro de Y carimba a
-     * Issue dele com o {@code runId} de X. Com a cerca, esse lock não nomeia Run nenhum <i>de Y</i>
-     * — é órfão na hora, independente do que X faça.
+     * <p><b>O caminho ERA real, e a Fatia I-ter o fechou na fonte:</b> o {@code POST /checkout} lia
+     * o {@code runId} do corpo sem conferi-lo contra a company, então um membro de Y carimbava a
+     * Issue dele com o {@code runId} de X. Hoje o serviço exige procedência e recusa. A cerca da
+     * varredura continua valendo para o estado que já esteja no banco: um lock que não nomeia Run
+     * nenhum <i>de Y</i> é órfão na hora, independente do que X faça.
      *
      * <p>As duas metades na MESMA varredura: colhe a refém E deixa em paz a Issue da company que
      * de fato é dona do Run.
@@ -195,7 +211,11 @@ class LockOrfaoReaperTest {
                 UUID.randomUUID()).getId();
         UUID agentY = agents.save(new Agent(UUID.randomUUID(), companyY, "AY", "worker", null)).getId();
         UUID issueY = issues.create(companyY, "refem do run alheio", null).getId();
-        issues.checkout(companyY, issueY, agentY, donoLegitimo.runId());
+        // Pelo UPDATE guardado: desde a Fatia I-ter o /checkout recusa runId de outra company, então
+        // o caminho descrito no parágrafo acima ("um membro de Y carimba com o runId de X") está
+        // FECHADO NA FONTE. A rede segue provando que, se o estado existir no banco por qualquer
+        // outra via, a Issue de Y não fica refém do ciclo de vida do Run de X.
+        carimbarCru(issueY, companyY, agentY, donoLegitimo.runId());
 
         reaper.reapOnce();
 
@@ -296,7 +316,15 @@ class LockOrfaoReaperTest {
 
     /**
      * O órfão do PONTO CEGO: a Issue é carimbada com um {@code runId} que <b>não existe</b> em
-     * {@code heartbeat_run} — o mesmo estado que o {@code /checkout} sem corpo produz sozinho.
+     * {@code heartbeat_run}.
+     *
+     * <p><b>O carimbo vem do UPDATE guardado, não do {@code IssueService}</b> (mudou na Fatia
+     * I-ter). Até ela, este fixture dizia — com razão — que "o {@code /checkout} sem corpo produz
+     * este estado sozinho"; era a FONTE que a I-ter fechou. Hoje o serviço exige procedência e
+     * <b>recusa</b> criar este lock, então montá-lo pelo {@code tryCheckout} é o único jeito
+     * honesto: é exatamente o que sobra no banco vindo do <b>passivo já acumulado</b> e dos
+     * produtores que não passam pelo balcão (drain em lote, settle que lança, crash entre o CAS e o
+     * settle). A rede continua existindo por causa deles — fonte e rede nunca se substituíram.
      */
     private Carimbada carimbarComRunSemLinha() {
         UUID companyId = companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8),
@@ -304,7 +332,7 @@ class LockOrfaoReaperTest {
         UUID agentId = agents.save(new Agent(UUID.randomUUID(), companyId, "A", "worker", null)).getId();
         UUID issueId = issues.create(companyId, "tarefa com run fantasma", null).getId();
         UUID runSemLinha = UUID.randomUUID();
-        issues.checkout(companyId, issueId, agentId, runSemLinha);
+        carimbarCru(issueId, companyId, agentId, runSemLinha);
         return new Carimbada(companyId, issueId, runSemLinha);
     }
 
@@ -330,5 +358,14 @@ class LockOrfaoReaperTest {
 
     private Issue recarregar(Carimbada carimbada) {
         return issues.get(carimbada.companyId(), carimbada.issueId());
+    }
+
+    /**
+     * O UPDATE guardado precisa de transação (o {@code @Modifying} faz flush/clear). Mesmo recurso
+     * que o {@code RowRetentionReaperTest} e o {@code ParecerGateTest} já usam para escrever cru.
+     */
+    private void carimbarCru(UUID issueId, UUID companyId, UUID agentId, UUID runId) {
+        new TransactionTemplate(transactionManager)
+                .executeWithoutResult(status -> issueRepo.tryCheckout(issueId, companyId, agentId, runId));
     }
 }

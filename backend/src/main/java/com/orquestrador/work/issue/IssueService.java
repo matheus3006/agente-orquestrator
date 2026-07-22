@@ -156,46 +156,63 @@ public class IssueService {
     }
 
     /**
-     * Checkout atomico. Gera um runId se nao vier (na fatia 1 nao ha heartbeat ainda;
-     * a partir da fatia 2 o run vem do motor de heartbeat).
+     * Checkout atômico: o Run detém a Issue carimbando {@code execution_lock_run_id} com o próprio
+     * {@code runId}, e o banco arbitra a corrida ({@link IssueRepository#tryCheckout}).
      *
-     * <p><b>Este {@code UUID.randomUUID()} é a FONTE do pior lock órfão</b> (Fatia I-bis, item 2), e
-     * fica <b>de propósito</b> — decisão escrita, não omissão. O lock resultante nomeia um Run que
-     * <b>não existe</b>: {@code execution_lock_run_id} não tem FK, {@code tryCheckout} não confere
-     * existência/dono/company do {@code runId}, e o {@code POST /checkout} lê o corpo como opcional.
-     * Qualquer cliente que chame o endpoint sem corpo produz esse estado em UMA chamada.
+     * <p><b>O {@code runId} é EXIGIDO e tem de ter PROCEDÊNCIA</b> (Fatia I-ter, A1). Até aqui este
+     * método fazia {@code effectiveRun = runId != null ? runId : UUID.randomUUID()} — e essa linha
+     * era a FONTE do pior lock órfão da casa. O lock nascido dela nomeia um Run que <b>não
+     * existe</b>, e o {@code POST /checkout} devolvia esse runId ao cliente como se valesse: em ≤5 s
+     * o {@code LockOrfaoReaper} lia corretamente "nenhum Run com futuro segura este lock" e
+     * liquidava em {@code BLOCKED} <b>a Issue viva</b> que o cliente acabara de pegar. O
+     * {@code /complete} seguinte dava 409 e só {@code unblock} humano devolvia.
      *
-     * <p><b>Por que a correção desta fatia é só a REDE.</b> Três razões, medidas:
-     * <ol>
-     *   <li>O dano deixou de ser permanente — o {@code LockOrfaoReaper} passou a enxergar
-     *       exatamente esta classe (lock sem Run com futuro), então não há urgência forçando o
-     *       conserto da fonte para dentro desta fatia.</li>
-     *   <li>O checkout sem run é <b>semântica deliberada e testada</b> hoje
-     *       ({@code IssueCheckoutSemanticsTest}, {@code IssueCheckoutConcurrencyTest} passam
-     *       {@code null} de propósito, para exercer corrida e idempotência). Recusá-lo aqui obrigaria
-     *       a reescrever testes que existem por OUTRO motivo — misturando dois assuntos.</li>
-     *   <li>O defeito real não é "gerar UUID": é <b>o endpoint aceitar {@code runId} do corpo sem
-     *       conferir procedência</b>. E esse é <b>o mesmo defeito</b> do {@code POST /complete}, já
-     *       escopado em {@code docs/ficha-seguranca-complete.md} (*"derivar o runId da Issue ou
-     *       validar que o do corpo pertence ao ator"*) — cuja trava de ordem esta fatia acabou de
-     *       liberar. Os dois são um conserto só, e cortá-los ao meio deixaria metade da cerca de pé.</li>
-     * </ol>
+     * <p><b>Por que a cerca mora AQUI e não no controller.</b> É o chokepoint: o balcão HTTP e o
+     * {@code AdapterRunExecutor} entram pela mesma porta, e um controller novo amanhã não pode
+     * reabrir o furo por esquecimento. É também o precedente da casa — a checagem "toda review
+     * corresponde a um run REAL desta company" já vive no {@link #submitForReview}, não no
+     * {@code IssueController}.
      *
-     * <p><b>O que fica exposto até lá, nomeado:</b> um membro da company Y pode carimbar a Issue
-     * dele com o {@code runId} de um Run da company X. A escrita segue cercada ({@code tryBlock} tem
-     * {@code company_id}), e desde a Fatia I-bis a varredura trata esse lock como órfão na hora —
-     * então a Issue de Y não fica refém do ciclo de vida do Run de X.
+     * <p><b>Isto NÃO estreita o motor:</b> o executor chama com os quatro campos do mesmo Run que
+     * está executando, então a cerca é verdadeira lá por construção — ver
+     * {@link com.orquestrador.execution.HeartbeatRunRepository#existsByIdAndCompanyIdAndAgentIdAndIssueId}.
+     *
+     * <p><b>O que a cerca fecha e a REDE não podia:</b> o 6º produtor, intra-company — Issue Y
+     * carimbada com o runId de um Run VIVO da Issue Z da mesma company. Aquele lock nomeia um Run
+     * <i>com futuro</i>, então a varredura, por construção, <b>nunca</b> o alcança. Só a fonte cura.
      */
     @Transactional
     public CheckoutResult checkout(UUID companyId, UUID issueId, UUID agentId, UUID runId) {
-        UUID effectiveRun = runId != null ? runId : UUID.randomUUID();
-        int rows = issues.tryCheckout(issueId, companyId, agentId, effectiveRun);
+        exigirProcedenciaDoRun(companyId, issueId, agentId, runId);
+        int rows = issues.tryCheckout(issueId, companyId, agentId, runId);
         if (rows == 0) {
             return CheckoutResult.conflict();
         }
         Issue issue = issues.findByIdAndCompanyId(issueId, companyId)
                 .orElseThrow(() -> new NotFoundException("Issue nao encontrada: " + issueId));
-        return CheckoutResult.acquired(issue, effectiveRun);
+        return CheckoutResult.acquired(issue, runId);
+    }
+
+    /**
+     * <b>"Este agente pode agir em nome deste run, sobre esta Issue?"</b> — a cerca de PROCEDÊNCIA
+     * (Fatia I-ter), exigida por {@link #checkout} e {@link #complete}, os dois caminhos
+     * agent-facing que escrevem {@code execution_lock_run_id}.
+     *
+     * <p>Um único 403 para todos os motivos, <b>de propósito</b>: distinguir "esse run não existe"
+     * de "esse run não é seu" transformaria o endpoint num oráculo de existência de runs para
+     * qualquer chave de agente da company. A mensagem também não repete o {@code runId} recebido.
+     *
+     * <p>Note que a cerca é sobre <b>identidade</b>, não sobre <b>liveness</b>: um Run em status
+     * terminal tem procedência plena. É deliberado — o destrave manual da
+     * {@code docs/ficha-seguranca-complete.md} conclui uma Issue travada com o runId de um Run que
+     * já morreu, e ele continua funcionando para quem é dono do run.
+     */
+    private void exigirProcedenciaDoRun(UUID companyId, UUID issueId, UUID agentId, UUID runId) {
+        if (runId == null || !heartbeatRuns.existsByIdAndCompanyIdAndAgentIdAndIssueId(
+                runId, companyId, agentId, issueId)) {
+            throw new ForbiddenException(
+                    "runId sem procedencia: um agente so age em nome de um run proprio desta issue");
+        }
     }
 
     /**
@@ -224,9 +241,21 @@ public class IssueService {
      * {@link #settleAfterRun} — alto risco estaciona em PENDING_REVIEW em vez de DONE. Um único
      * caminho para DONE fecha o bypass "o agente pulou a revisão" (ADR-0006/0012; achado ALTA
      * da revisão adversarial da R.2).
+     *
+     * <p><b>Recebe o {@code agentId} do ator porque a identidade dele é parte do guard</b>
+     * (Fatia I-ter, A2). O {@code IssueController.complete} autenticava com {@code requireAgent(...)}
+     * e <b>descartava o retorno</b> — o único guard restante era o lock, que a listagem de issues
+     * publica. Qualquer chave de agente da company liquidava qualquer Issue em nome de qualquer run.
+     * O parâmetro existe para tornar o descarte impossível: não há como chamar este método sem
+     * dizer <b>quem</b> está concluindo.
+     *
+     * <p>A cerca de procedência roda ANTES do funil, e o guard do lock ({@code tryComplete}) segue
+     * valendo depois: um é sobre <b>quem</b> pode agir em nome do run, o outro sobre <b>se o run
+     * ainda detém</b> a Issue. Nenhum substitui o outro.
      */
     @Transactional
-    public boolean complete(UUID companyId, UUID issueId, UUID runId) {
+    public boolean complete(UUID companyId, UUID issueId, UUID runId, UUID agentId) {
+        exigirProcedenciaDoRun(companyId, issueId, agentId, runId);
         return settleAfterRun(companyId, issueId, runId, RunOutcome.success()) != IssueSettlement.NOT_SETTLED;
     }
 

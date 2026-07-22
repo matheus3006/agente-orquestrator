@@ -157,7 +157,8 @@ class RowRetentionReaperTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "em progresso", null).getId();
-        issues.checkout(companyId, issueId, agentId, UUID.randomUUID()); // IN_PROGRESS (não-terminal)
+        issues.checkout(companyId, issueId, agentId,
+                runReal(companyId, agentId, issueId)); // IN_PROGRESS (não-terminal)
 
         UUID t1 = saveThumbnail(companyId, issueId, agentId);
         saveThumbnail(companyId, issueId, agentId);
@@ -403,10 +404,16 @@ class RowRetentionReaperTest {
 
     private UUID doneIssue(UUID companyId, UUID agentId) {
         UUID issueId = issues.create(companyId, "app com cauda", null).getId();
-        UUID lockRun = UUID.randomUUID();
+        UUID lockRun = runReal(companyId, agentId, issueId);
         issues.checkout(companyId, issueId, agentId, lockRun);
-        issues.complete(companyId, issueId, lockRun); // risco 1 < limiar -> DONE (terminal)
+        issues.complete(companyId, issueId, lockRun, agentId); // risco 1 < limiar -> DONE (terminal)
         return issueId;
+    }
+
+    /** Um Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter). */
+    private UUID runReal(UUID companyId, UUID agentId, UUID issueId) {
+        return runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
     }
 
     private UUID saveThumbnail(UUID companyId, UUID issueId, UUID agentId) {

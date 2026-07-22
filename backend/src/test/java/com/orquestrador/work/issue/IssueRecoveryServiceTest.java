@@ -5,7 +5,10 @@ import com.orquestrador.activitylog.ActivityLogRepository;
 import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.security.ActorType;
 import com.orquestrador.execution.HeartbeatDispatcher;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.RunOutcome;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.execution.WakeupService;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
@@ -41,6 +44,17 @@ class IssueRecoveryServiceTest {
     private HeartbeatDispatcher dispatcher;
     @Autowired
     private ActivityLogRepository activityLog;
+    @Autowired
+    private HeartbeatRunRepository runs;
+
+    /**
+     * Um Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter). O status é do
+     * caso: um run ainda ATIVO (QUEUED/RUNNING/RECOVERING) prende o agente no coalescing do
+     * {@code WakeupService}, e aí o REOPEN não conseguiria enfileirar a re-execução.
+     */
+    private UUID runReal(UUID companyId, UUID agentId, UUID issueId, RunStatus status) {
+        return runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId, status)).getId();
+    }
 
     private UUID newCompany() {
         return companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8), UUID.randomUUID()).getId();
@@ -62,7 +76,7 @@ class IssueRecoveryServiceTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "tarefa", null).getId();
-        UUID runId = UUID.randomUUID();
+        UUID runId = runReal(companyId, agentId, issueId, RunStatus.FAILED);
         assertThat(issues.checkout(companyId, issueId, agentId, runId).acquired()).isTrue();
 
         assertThat(issues.settleAfterRun(companyId, issueId, runId, RunOutcome.failure("boom")))
@@ -80,7 +94,7 @@ class IssueRecoveryServiceTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "tarefa", null).getId();
-        UUID owningRun = UUID.randomUUID();
+        UUID owningRun = runReal(companyId, agentId, issueId, RunStatus.RUNNING);
         assertThat(issues.checkout(companyId, issueId, agentId, owningRun).acquired()).isTrue();
 
         // Um run intruso (que não detém a Issue) falha → NÃO pode bloquear a vítima.
@@ -98,7 +112,7 @@ class IssueRecoveryServiceTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId); // "echo ok" (sucede)
         UUID issueId = issues.create(companyId, "tarefa", null).getId();
-        UUID failedRun = UUID.randomUUID();
+        UUID failedRun = runReal(companyId, agentId, issueId, RunStatus.FAILED);
         issues.checkout(companyId, issueId, agentId, failedRun);
         issues.settleAfterRun(companyId, issueId, failedRun, RunOutcome.failure("boom")); // → BLOCKED
 
@@ -119,7 +133,7 @@ class IssueRecoveryServiceTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "tarefa", null).getId();
-        UUID failedRun = UUID.randomUUID();
+        UUID failedRun = runReal(companyId, agentId, issueId, RunStatus.FAILED);
         issues.checkout(companyId, issueId, agentId, failedRun);
         issues.settleAfterRun(companyId, issueId, failedRun, RunOutcome.failure("boom"));
 

@@ -1,7 +1,10 @@
 package com.orquestrador.work.issue;
 
 import tools.jackson.databind.ObjectMapper;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
 import com.orquestrador.execution.RunOutcome;
+import com.orquestrador.execution.RunStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -32,6 +35,8 @@ class IssueUnblockHttpTest {
     private ObjectMapper om;
     @Autowired
     private IssueService issues;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     private UUID idFrom(String json) throws Exception {
         return UUID.fromString(om.readTree(json).get("id").asText());
@@ -55,8 +60,10 @@ class IssueUnblockHttpTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"tarefa\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
 
-        // Monta o estado BLOCKED pelo seam (um run detém a Issue e falha).
-        UUID runId = UUID.randomUUID();
+        // Monta o estado BLOCKED pelo seam (um run REAL detém a Issue e falha) — o checkout exige
+        // procedencia do runId (Fatia I-ter).
+        UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.FAILED)).getId();
         issues.checkout(companyId, issueId, agentId, runId);
         issues.settleAfterRun(companyId, issueId, runId, RunOutcome.failure("boom"));
 

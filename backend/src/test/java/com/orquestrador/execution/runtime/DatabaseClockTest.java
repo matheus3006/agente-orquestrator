@@ -1,5 +1,8 @@
 package com.orquestrador.execution.runtime;
 
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -38,6 +41,8 @@ class DatabaseClockTest {
     private IssueService issues;
     @Autowired
     private IssueRepository issueRepository;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     @Test
     void relogioDoBancoEUpdatedAtVivemNoMesmoFrame() {
@@ -49,7 +54,10 @@ class DatabaseClockTest {
         UUID issueId = issues.create(companyId, "issue", null).getId();
 
         // checkout (transacional) carimba updated_at = now() do BANCO (a âncora terminal do reaper).
-        issues.checkout(companyId, issueId, agentId, UUID.randomUUID());
+        // Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter).
+        UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
+        issues.checkout(companyId, issueId, agentId, runId);
         Instant carimboDoBanco = issueRepository.findById(issueId).map(Issue::getUpdatedAt).orElseThrow();
 
         Instant agoraDoBanco = clock.now();

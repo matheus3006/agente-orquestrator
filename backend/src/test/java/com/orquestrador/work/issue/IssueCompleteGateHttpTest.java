@@ -40,6 +40,8 @@ class IssueCompleteGateHttpTest {
     private ReviewRepository reviews;
     @Autowired
     private HeartbeatRunRepository runs;
+    @Autowired
+    private IssueService issues;
 
     private UUID idFrom(String json) throws Exception {
         return UUID.fromString(om.readTree(json).get("id").asText());
@@ -88,22 +90,23 @@ class IssueCompleteGateHttpTest {
                 .hasSize(1)
                 .allSatisfy(review -> assertThat(review.getStatus()).isEqualTo(ReviewStatus.PENDING));
 
-        // Checkout SEM runId (o caminho manual da fatia 1 gera um sintético, sem linha em
-        // heartbeat_run): concluir alto risco exige um run real revisável → 409, nada muda.
+        // Checkout SEM runId: até a Fatia I-ter ele era ACEITO e o serviço fabricava um runId
+        // sintético (sem linha em heartbeat_run); a Issue ficava carimbada, e só lá no fim — no
+        // gate de review, que exige run real revisável — vinha o 409. Ou seja, o bypass era barrado
+        // TARDE, depois de a Issue já ter sido travada por um lock que a rede colhe como órfão.
+        // Hoje ele é barrado NA PORTA: o corpo é obrigatório, e a Issue nem chega a ser tocada.
         UUID secondIssue = idFrom(mvc.perform(post("/api/companies/" + companyId + "/issues")
                         .header("X-Board-User", board.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"alto risco manual\",\"riskLevel\":5}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-        String manualCheckout = mvc.perform(post("/api/companies/" + companyId + "/issues/" + secondIssue + "/checkout")
+        mvc.perform(post("/api/companies/" + companyId + "/issues/" + secondIssue + "/checkout")
                         .header("Authorization", "Bearer " + key))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        String syntheticRun = om.readTree(manualCheckout).get("runId").asText();
-        mvc.perform(post("/api/companies/" + companyId + "/issues/" + secondIssue + "/complete")
-                        .header("Authorization", "Bearer " + key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"runId\":\"" + syntheticRun + "\"}"))
-                .andExpect(status().isConflict());
+                .andExpect(status().isBadRequest());
+
+        assertThat(issues.get(companyId, secondIssue).getExecutionLockRunId())
+                .as("sem corpo, nenhum lock sintético nasce — a fonte do órfão está fechada")
+                .isNull();
         assertThat(reviews.findByCompanyIdAndIssueId(companyId, secondIssue)).isEmpty();
     }
 

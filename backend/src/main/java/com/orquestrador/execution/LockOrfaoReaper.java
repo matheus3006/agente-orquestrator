@@ -68,11 +68,25 @@ import java.util.UUID;
  * desenho, não bug: troca um dano permanente e mudo por um {@code REOPEN} do board sobre uma Issue
  * visível, com {@code ISSUE_BLOCKED} e o {@code runId} no activity log. (2) Com {@code INTERRUPTED}
  * dentro, a janela entre o CAS do interrupt e o settle do próprio interrupt passa a ser
- * <b>corrida com a varredura</b>: se o reaper chegar primeiro, o settle tardio casa 0 linhas e a
- * Issue pousa em {@code BLOCKED} pelo motivo do reaper em vez do motivo do interrupt. Os dois
- * destinos são {@code BLOCKED}; o que muda é a frase no log. (3) O que a rede <b>não</b> alcança:
- * lock apontando para Run que tem futuro e nunca o exerce (um {@code QUEUED} que ninguém despacha).
- * Esse é o resíduo honesto — ver a §Emenda da ADR-0011.
+ * <b>corrida com a varredura</b>. E aqui os destinos são <b>TRÊS, não dois</b> (correção da Fatia
+ * I-ter, D1 — este javadoc dizia "os dois destinos são {@code BLOCKED}; o que muda é a frase no
+ * log"): (a) o settle do interrupt chega primeiro e a Issue pousa em {@code BLOCKED} com o motivo
+ * do interrupt; (b) o reaper chega primeiro e ela pousa em {@code BLOCKED} com o motivo do reaper;
+ * (c) <b>o kill é best-effort e pode NÃO pegar</b> — o processo sobrevive, o run <b>termina com
+ * SUCESSO</b>, mas o reaper já venceu a corrida em ≤5 s e o lock sumiu, então o settle bem-sucedido
+ * casa <b>0 linhas</b> e <b>trabalho concluído é descartado em silêncio</b>. A Issue fica
+ * {@code BLOCKED} como se tivesse falhado. É o pior dos três e o único que perde informação; o
+ * conserto não é desta fatia, mas ele deixa de estar escondido atrás de uma contagem errada.
+ * (3) O que a rede <b>não</b> alcança: lock apontando para Run que tem futuro e nunca o exerce (um
+ * {@code QUEUED} que ninguém despacha). Esse é o resíduo honesto — ver a §Emenda da ADR-0011.
+ *
+ * <p><b>(4) INANIÇÃO por Issue venenosa</b> (Fatia I-ter, D3). A ordem é {@code updated_at asc} com
+ * teto de 50, e o {@code tryBlock} é o que move o {@code updated_at}. Uma Issue cujo settle
+ * <b>lança</b> toda vez nunca tem o {@code updated_at} tocado, então ela reaparece <b>na frente</b>
+ * de todas as passadas seguintes, para sempre. Uma sozinha custa um slot; <b>50 delas ocupam a
+ * passada inteira e a varredura para de drenar o passivo real</b> — silenciosamente, porque cada
+ * falha individual é só um WARN. Não há conserto aqui nesta fatia; o remédio natural seria ordenar
+ * por tentativa/idade em vez de {@code updated_at}, ou carimbar a tentativa.
  */
 @Service
 public class LockOrfaoReaper {
@@ -87,6 +101,32 @@ public class LockOrfaoReaper {
      */
     private static final List<RunStatus> RUNS_QUE_NAO_RODAM_MAIS = List.of(
             RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.SUCCEEDED, RunStatus.INTERRUPTED);
+
+    /*
+     * ⚠️ AVISO A QUEM FOR LIGAR O AUTO-RETRY — leia antes de escrever RECOVERING em qualquer lugar
+     * (Fatia I-ter, C2).
+     *
+     * RECOVERING está classificado acima como "tem futuro" (fora da lista de colheita) porque a
+     * ADR-0011 o reserva ao auto-retry. Hoje isso é INÓCUO por um motivo que não é o declarado:
+     * NADA em src/main escreve RECOVERING e NADA tira um run dele. O status é inalcançável, então
+     * a classificação nunca é exercida.
+     *
+     * No dia em que alguém ligar o ramo `transient_upstream -> RECOVERING` (o ponto reservado fica
+     * em IssueService.settleAfterRun), RECOVERING deixa de ser inalcançável e passa a ser um
+     * SUMIDOURO SEM SAÍDA: um run entra e nenhum código o move para frente. A Issue dele fica
+     * IN_PROGRESS para sempre, e a rede — que trata RECOVERING como "tem futuro" — por construção
+     * NUNCA a toca. É lock órfão PERMANENTE e MUDO, a classe que esta esteira inteira existe para
+     * eliminar.
+     *
+     * E NENHUM TESTE CAI quando isso acontecer. A trava do
+     * LockOrfaoReaperTest.todoStatusDeRunTemLADO_eOreaperConcordaComACLASSIFICACAO pega STATUS NOVO
+     * no enum — não pega PRODUTOR NOVO de status VELHO. São perguntas diferentes, e só a primeira
+     * está guardada.
+     *
+     * Portanto: quem ligar o retry tem de, na MESMA fatia, escrever quem tira o run de RECOVERING
+     * (e em que prazo). Sem essa saída, RECOVERING pertence à lista de colheita acima, não a esta
+     * nota.
+     */
 
     /**
      * Teto de Issues por passada, na disciplina do {@code findTop50} do {@code dispatchOnce}: esta
@@ -122,11 +162,22 @@ public class LockOrfaoReaper {
             orfas = issues.findComLockDeRunTerminal(IssueStatus.IN_PROGRESS, RUNS_QUE_NAO_RODAM_MAIS,
                     PageRequest.ofSize(TETO_POR_PASSADA));
         } catch (RuntimeException aoVarrer) {
-            // A própria VARREDURA estava fora do cinto: o try/catch de baixo protege o laço, mas um
-            // throw aqui subia inteiro. Nesta thread (scheduling-1, compartilhada pelos 6
-            // @Scheduled) isso derruba o resto do tick — e a passada seguinte reencontra os mesmos
-            // órfãos, então perder UMA passada custa um tick, não um órfão.
-            log.warn("varredura do lock orfao falhou nesta passada: {}", aoVarrer.toString());
+            // O RACIONAL, corrigido na Fatia I-ter (D2). A Fatia I-bis dizia que este cinto impedia
+            // um throw daqui de "derrubar o resto do tick" — não é o que acontece: o reapOnce() é o
+            // ÚLTIMO statement do reap(), então não há resto de tick, e o Spring já capturava a
+            // exceção com ERROR + stack trace. O efeito real do cinto era REBAIXAR esse ERROR para
+            // um warn(toString()) — ou seja, ele perdia informação em vez de proteger.
+            //
+            // O que ele de fato garante, e que basta para existir: a passada devolve 0 em vez de
+            // propagar, então o contrato "reapOnce não lança" (que o javadoc declara e que o caller
+            // pode assumir) vale também para a varredura, não só para o laço. Perder UMA passada
+            // custa um tick, não um órfão — a seguinte reencontra os mesmos.
+            //
+            // ERROR com a exceção como ÚLTIMO argumento: é o que preserva o stack trace que o
+            // toString() jogava fora. E o LIMITE que fica nomeado: o LeaseReaper roda ANTES desta
+            // varredura no mesmo tick e segue SEM cinto — a direção que realmente importaria para
+            // "não derrubar o resto do tick" continua descoberta.
+            log.error("varredura do lock orfao falhou nesta passada", aoVarrer);
             return 0;
         }
         int colhidas = 0;
@@ -139,8 +190,11 @@ public class LockOrfaoReaper {
                     colhidas++;
                 }
             } catch (RuntimeException aoLiquidar) {
-                log.warn("falha ao colher o lock orfao da issue {} (run morto {}): {}",
-                        orfa.getId(), runMorto, aoLiquidar.toString());
+                // Mesmo defeito de duas linhas acima, mesma correção (I-ter, D2): o toString()
+                // descartava o stack. WARN e não ERROR de propósito — aqui UMA issue falhou e as
+                // demais seguem, e a passada seguinte reencontra esta.
+                log.warn("falha ao colher o lock orfao da issue {} (run morto {})",
+                        orfa.getId(), runMorto, aoLiquidar);
             }
         }
         if (colhidas > 0) {

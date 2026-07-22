@@ -1,5 +1,8 @@
 package com.orquestrador.work.issue;
 
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +37,8 @@ class IssueCorretivaTest {
     @Autowired
     private CompanyService companies;
     @Autowired
+    private HeartbeatRunRepository runs;
+    @Autowired
     private MockMvc mvc;
 
     @Test
@@ -63,10 +68,20 @@ class IssueCorretivaTest {
         Issue corretiva = issues.createCorretiva(companyId, "Correção da #1 — Landing page",
                 "palavras do dono", original.getId(), arquitetoId);
 
-        assertThat(issues.checkout(companyId, corretiva.getId(), intruso, UUID.randomUUID())
+        // Cada um com um Run PRÓPRIO desta Issue — a procedencia do runId está OK dos dois lados
+        // (Fatia I-ter); o que separa os dois checkouts continua sendo só o dono da mesa.
+        assertThat(issues.checkout(companyId, corretiva.getId(), intruso,
+                runReal(companyId, intruso, corretiva.getId()))
                 .acquired()).as("agente que não é o dono da mesa não pega").isFalse();
-        assertThat(issues.checkout(companyId, corretiva.getId(), arquitetoId, UUID.randomUUID())
+        assertThat(issues.checkout(companyId, corretiva.getId(), arquitetoId,
+                runReal(companyId, arquitetoId, corretiva.getId()))
                 .acquired()).isTrue();
+    }
+
+    /** Um Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter). */
+    private UUID runReal(UUID companyId, UUID agentId, UUID issueId) {
+        return runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
     }
 
     /** M7: a ligação sai ADITIVA no JSON — id de máquina + o #N humano do alvo (o selo do board). */

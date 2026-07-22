@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.UUID;
@@ -48,6 +50,11 @@ class IssueReviewGateTest {
     private ActivityLogRepository activityLog;
     @Autowired
     private HeartbeatRunRepository runs;
+    /** O UPDATE guardado cru: monta o lock que o serviço, desde a I-ter, recusa criar. */
+    @Autowired
+    private IssueRepository issueRepo;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private UUID newCompany() {
         return companies.create("C", "co-" + UUID.randomUUID().toString().substring(0, 8), UUID.randomUUID()).getId();
@@ -103,7 +110,7 @@ class IssueReviewGateTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "rotina", null, 4).getId();
-        UUID runId = UUID.randomUUID();
+        UUID runId = newRun(companyId, agentId, issueId);
         issues.checkout(companyId, issueId, agentId, runId);
 
         assertThat(issues.settleAfterRun(companyId, issueId, runId, RunOutcome.success()))
@@ -119,7 +126,7 @@ class IssueReviewGateTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "alto risco", null, 5).getId();
-        UUID owningRun = UUID.randomUUID();
+        UUID owningRun = newRun(companyId, agentId, issueId);
         issues.checkout(companyId, issueId, agentId, owningRun);
 
         // Run intruso "sucede" sem deter a Issue → guard casa 0 linhas, mesmo no branch de review.
@@ -143,7 +150,8 @@ class IssueReviewGateTest {
         issues.settleAfterRun(companyId, issueId, runId, RunOutcome.success()); // → PENDING_REVIEW
 
         // Nem o próprio agente re-adquire: PENDING_REVIEW não é pegável → não roda → não gasta budget.
-        assertThat(issues.checkout(companyId, issueId, agentId, UUID.randomUUID()).acquired()).isFalse();
+        assertThat(issues.checkout(companyId, issueId, agentId, newRun(companyId, agentId, issueId))
+                .acquired()).isFalse();
     }
 
     @Test
@@ -156,7 +164,7 @@ class IssueReviewGateTest {
 
         // O caminho complete (o do endpoint agent-facing) NÃO pode furar o gate (achado ALTA da
         // revisão adversarial): concluir uma Issue de alto risco ESTACIONA, não faz DONE.
-        assertThat(issues.complete(companyId, issueId, runId)).isTrue();
+        assertThat(issues.complete(companyId, issueId, runId, agentId)).isTrue();
 
         Issue parked = issues.get(companyId, issueId);
         assertThat(parked.getStatus()).isEqualTo(IssueStatus.PENDING_REVIEW);
@@ -169,10 +177,14 @@ class IssueReviewGateTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "alto risco", null, 5).getId();
-        // runId SINTÉTICO (sem linha em heartbeat_run — o caminho manual da fatia 1): a review
-        // referencia um run concluído (FK da V11) → o gate recusa com 409 e faz rollback TOTAL.
+        // runId SINTÉTICO (sem linha em heartbeat_run): a review referencia um run concluído
+        // (FK da V11) → o gate recusa com 409 e faz rollback TOTAL.
+        // O carimbo vem do UPDATE guardado desde a Fatia I-ter — o /checkout não cria mais este
+        // lock. O que este teste prova segue valendo e é OUTRA cerca: o settleAfterRun é o
+        // chokepoint do MOTOR (não é agent-facing, não recebe ator) e não tem cerca de procedência,
+        // então o estado vindo de outros produtores ainda chega aqui e ainda é recusado no gate.
         UUID syntheticRun = UUID.randomUUID();
-        issues.checkout(companyId, issueId, agentId, syntheticRun);
+        carimbarCru(issueId, companyId, agentId, syntheticRun);
 
         assertThatThrownBy(() -> issues.settleAfterRun(companyId, issueId, syntheticRun, RunOutcome.success()))
                 .isInstanceOf(ConflictException.class);
@@ -186,7 +198,7 @@ class IssueReviewGateTest {
         UUID otherCompany = newCompany();
         UUID foreignRun = newRun(otherCompany, newAgent(otherCompany), null);
         UUID secondIssue = issues.create(companyId, "alto risco 2", null, 5).getId();
-        issues.checkout(companyId, secondIssue, agentId, foreignRun);
+        carimbarCru(secondIssue, companyId, agentId, foreignRun);
         assertThatThrownBy(() -> issues.settleAfterRun(companyId, secondIssue, foreignRun, RunOutcome.success()))
                 .isInstanceOf(ConflictException.class);
         assertThat(reviews.findByCompanyIdAndIssueId(companyId, secondIssue)).isEmpty();
@@ -197,7 +209,7 @@ class IssueReviewGateTest {
         UUID companyId = newCompany();
         UUID agentId = newAgent(companyId);
         UUID issueId = issues.create(companyId, "alto risco", null, 5).getId();
-        UUID runId = UUID.randomUUID();
+        UUID runId = newRun(companyId, agentId, issueId);
         issues.checkout(companyId, issueId, agentId, runId);
 
         assertThat(issues.settleAfterRun(companyId, issueId, runId, RunOutcome.failure("boom")))
@@ -205,5 +217,14 @@ class IssueReviewGateTest {
 
         assertThat(issues.get(companyId, issueId).getStatus()).isEqualTo(IssueStatus.BLOCKED);
         assertThat(reviews.findByCompanyIdAndIssueId(companyId, issueId)).isEmpty(); // §7 intacto
+    }
+
+    /**
+     * O UPDATE guardado precisa de transação (o {@code @Modifying} faz flush/clear). Mesmo recurso
+     * que o {@code RowRetentionReaperTest} e o {@code ParecerGateTest} já usam para escrever cru.
+     */
+    private void carimbarCru(UUID issueId, UUID companyId, UUID agentId, UUID runId) {
+        new TransactionTemplate(transactionManager)
+                .executeWithoutResult(status -> issueRepo.tryCheckout(issueId, companyId, agentId, runId));
     }
 }

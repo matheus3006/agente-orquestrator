@@ -21,6 +21,33 @@ public interface HeartbeatRunRepository extends JpaRepository<HeartbeatRun, UUID
     /** Guard do review gate (ADR-0012): a review só referencia run REAL desta company (deny-by-default). */
     boolean existsByIdAndCompanyId(UUID id, UUID companyId);
 
+    /**
+     * <b>A PROCEDÊNCIA de um {@code runId}</b> (Fatia I-ter): este Run existe, é <b>desta</b>
+     * company, é <b>deste</b> agente e é <b>desta</b> Issue. O predicado que
+     * {@code IssueService.checkout}/{@code .complete} exigem antes de deixar um agente carimbar ou
+     * descarimbar o {@code execution_lock_run_id} — a coluna que <b>não tem FK</b>, e por isso
+     * aceitava qualquer UUID que o cliente inventasse.
+     *
+     * <p><b>As quatro componentes fecham quatro furos distintos</b>, e nenhuma é redundante:
+     * {@code id} recusa o runId sem linha (o pior lock órfão, e o que o {@code /checkout} sem corpo
+     * fabricava sozinho); {@code companyId} recusa o run alheio cross-tenant; {@code agentId} recusa
+     * agir em nome de run de outro agente (o furo do {@code /complete}, que autenticava e descartava
+     * a identidade); e {@code issueId} recusa o <b>6º produtor, intra-company</b> — carimbar a Issue
+     * Y com o runId de um Run VIVO da Issue Z da mesma company, que a rede do
+     * {@code LockOrfaoReaper} <b>por construção não alcança</b>, porque o Run nomeado tem futuro.
+     *
+     * <p><b>Deny-by-default, e é ele quem faz a cerca fechar sozinha:</b> um Run que não existe
+     * responde {@code false} sem caso especial — a mesma forma negativa que a Fatia I-bis provou
+     * ser a correta em {@code findComLockDeRunTerminal}.
+     *
+     * <p><b>O motor REAL satisfaz isto por construção</b>, e é o que torna a cerca barata: o
+     * {@code AdapterRunExecutor} chama o checkout com {@code runContext.companyId()},
+     * {@code .agentId()}, {@code .issueId()} e {@code .runId()} — os quatro campos do MESMO Run que
+     * ele está executando. A cerca não estreita nenhum caminho legítimo; só nomeia o invariante que
+     * o motor já cumpria e o balcão HTTP não exigia.
+     */
+    boolean existsByIdAndCompanyIdAndAgentIdAndIssueId(UUID id, UUID companyId, UUID agentId, UUID issueId);
+
     /** Leitura company-led de um run (transcript do board): fora da company = ausente (404). */
     Optional<HeartbeatRun> findByIdAndCompanyId(UUID id, UUID companyId);
 

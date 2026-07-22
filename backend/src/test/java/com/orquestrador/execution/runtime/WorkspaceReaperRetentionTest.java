@@ -1,5 +1,8 @@
 package com.orquestrador.execution.runtime;
 
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.identity.company.CompanyService;
 import com.orquestrador.org.agent.Agent;
 import com.orquestrador.org.agent.AgentRepository;
@@ -40,6 +43,8 @@ class WorkspaceReaperRetentionTest {
     private AgentRepository agents;
     @Autowired
     private IssueService issues;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     private UUID companyId;
 
@@ -72,9 +77,11 @@ class WorkspaceReaperRetentionTest {
         UUID agentId = agents.save(agent).getId();
         UUID issueId = issues.create(companyId, "recém-concluída", null).getId();
         Path workspace = workspaces.resolve(companyId, agentId, issueId);
-        UUID runId = UUID.randomUUID();
+        // Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter)
+        UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.RUNNING)).getId();
         issues.checkout(companyId, issueId, agentId, runId);
-        issues.complete(companyId, issueId, runId); // DONE agora — vencerá só daqui a 100 anos
+        issues.complete(companyId, issueId, runId, agentId); // DONE agora — vencerá só daqui a 100 anos
 
         WorkspaceReaper.SweepReport report = reaper.sweepTarget(targets.forType(ExecutionTarget.Type.LOCAL));
 

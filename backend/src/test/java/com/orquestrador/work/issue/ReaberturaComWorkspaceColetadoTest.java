@@ -6,6 +6,9 @@ import ch.qos.logback.core.read.ListAppender;
 import com.orquestrador.activitylog.ActivityLogService;
 import com.orquestrador.common.error.ConflictException;
 import com.orquestrador.common.security.ActorType;
+import com.orquestrador.execution.HeartbeatRun;
+import com.orquestrador.execution.HeartbeatRunRepository;
+import com.orquestrador.execution.RunStatus;
 import com.orquestrador.execution.runtime.DatabaseClock;
 import com.orquestrador.execution.runtime.ExecutionTarget;
 import com.orquestrador.execution.runtime.ExecutionTargets;
@@ -75,6 +78,8 @@ class ReaberturaComWorkspaceColetadoTest {
     private IssueRepository issueRepository;
     @Autowired
     private DatabaseClock clock;
+    @Autowired
+    private HeartbeatRunRepository runs;
 
     private UUID companyId;
 
@@ -109,9 +114,11 @@ class ReaberturaComWorkspaceColetadoTest {
         UUID agentId = agents.save(agent).getId();
         UUID issueId = issues.create(companyId, "entrega com artefato", null).getId();
         Path workspace = workspaces.resolve(companyId, agentId, issueId);
-        UUID runId = UUID.randomUUID();
+        // Run REAL do motor — o checkout exige procedencia do runId (Fatia I-ter).
+        UUID runId = runs.save(new HeartbeatRun(UUID.randomUUID(), companyId, agentId, issueId,
+                RunStatus.SUCCEEDED)).getId();
         issues.checkout(companyId, issueId, agentId, runId);
-        issues.complete(companyId, issueId, runId);
+        issues.complete(companyId, issueId, runId, agentId);
         assertThat(issues.get(companyId, issueId).getStatus()).isEqualTo(IssueStatus.DONE);
         return new Entrega(issueId, workspace);
     }
