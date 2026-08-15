@@ -1,0 +1,166 @@
+<meta charset="utf-8">
+<title>P5 — Grill: o repositório no modelo</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › P5</div>
+
+<h1>P5 — O orquestrador não tem código no modelo dele</h1>
+<p class="subtitulo">Não é bug no backlog. É <b>capacidade ausente</b> — e é a que separa "demo" de "eu uso nos meus projetos".</p>
+
+<div class="fichas">
+  <span class="ficha">Tipo <b>Grill</b></span>
+  <span class="ficha">Slot <b>não ocupa</b></span>
+  <span class="ficha">Código <b>zero</b></span>
+  <span class="ficha">Forma <b>já decidida pelo dono</b></span>
+  <span class="ficha">Kickoff <b>a escrever</b></span>
+</div>
+
+<h2>O achado que abriu o assunto (medido em 2026-07-27)</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Âncora</th><th>O que se mediu</th></tr></thead>
+  <tbody>
+    <tr><td><code>identity/company/Company.java:13</code></td>
+      <td><code>Company</code> = <code>{id, name, slug, createdAt}</code>. <b>Nada aponta para repositório.</b></td></tr>
+    <tr><td><code>work/issue/Issue.java</code></td>
+      <td>Sem campo de <b>branch</b>, <b>repo</b>, <b>diff</b> ou <b>PR</b>.</td></tr>
+    <tr><td><code>src/main</code> inteiro</td>
+      <td><b class="v-vermelho">Zero invocação de <code>git</code>.</b> Nenhum <code>clone</code>, nenhum
+      <code>repoUrl</code>, nenhum <code>remoteUrl</code>.</td></tr>
+    <tr><td><code>runtime/WorkspaceResolver.java:48</code></td>
+      <td>Workspace = <code>root/{companyId}/{agentId}/{issueId}</code> — <b>scratch vazio</b>, semeado com
+      <code>CLAUDE.md</code> + skills + hooks, e varrido depois pelo <code>WorkspaceReaper</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><b>É por isso que todo entregável provado até hoje foi documento</b> — pesquisa, digest competitivo,
+modelagem de elasticidade, <code>.orq/preview/ci-digest.md</code>. Nunca uma mudança de código num repositório.
+O agente até conseguiria dar <code>git clone</code> na marra (ele tem <code>Bash</code>), mas nada no produto
+modela isso: sem credencial, sem branch, o review é de texto e não de mudança, e o workspace é apagado no fim.</p>
+
+<h2>A forma, já decidida pelo dono (2026-07-27)</h2>
+
+<div class="caixa ok">
+  <span class="rotulo">Verbatim do requisito</span>
+  <p><i>"Criar uma pasta <code>Orquestrador/&lt;empresa&gt;</code> na raiz do usuário, cada empresa ganha sua
+  própria pasta, gerenciada pelo orquestrador"</i> — dito no contexto de passar a usar o orquestrador para
+  desenvolver os projetos reais dele.</p>
+</div>
+
+<p>Sobre isso o dono fechou três escolhas:</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Decisão</th><th>Escolha</th><th>Consequência direta</th></tr></thead>
+  <tbody>
+    <tr><td>Escopo do agente</td><td><b>Escreve código e abre PR</b></td>
+      <td>Exige credencial, branch por issue, e o <b>review vira review de DIFF</b>, não de texto</td></tr>
+    <tr><td>Isolamento entre agentes</td><td><b><code>git worktree</code> por issue</b></td>
+      <td>Um clone base no disco; worktree por issue embaixo. Mesmo método que o dono já usa nas faixas
+      paralelas deste repo</td></tr>
+    <tr><td>Projetos por empresa</td><td><b>Vários</b></td>
+      <td><code>~/Orquestrador/&lt;empresa&gt;/&lt;projeto&gt;/</code>; a Issue passa a apontar para qual
+      projeto</td></tr>
+  </tbody>
+</table>
+</div>
+
+<pre><code>~/Orquestrador/&lt;empresa&gt;/&lt;projeto&gt;/          ← clone base, PERMANENTE
+~/Orquestrador/&lt;empresa&gt;/&lt;projeto&gt;/.wt/#N/   ← worktree da issue #N, DESCARTÁVEL</code></pre>
+
+<h2>O que já existe a favor — não é obra de raiz</h2>
+
+<ul>
+  <li><b>O default de hoje já é na home:</b> <code>~/.orquestrador/workspaces</code>, via
+  <code>@Value("${orquestrador.workspace.root:#{systemProperties['user.home']}/.orquestrador/workspaces}")</code>
+  em <code>WorkspaceResolver:33</code>. A mudança é de <b>convenção de nome</b>, não de lugar.</li>
+  <li><b><code>Company.slug</code> é único, não-nulo e IMUTÁVEL</b> (não tem setter) ⇒ serve de nome de pasta
+  sem risco de renomear debaixo do sistema.</li>
+  <li><b><code>estado_aplicacao: desenvolvimento</code></b> ⇒ zero migração, zero camada de compatibilidade.
+  Breaking change é livre.</li>
+</ul>
+
+<h2>As colisões que o grill tem de resolver</h2>
+
+<div class="caixa risco">
+  <span class="rotulo">1. O WorkspaceReaper pressupõe um mundo 100% derivado dele</span>
+  <p>O javadoc é explícito: ele lista o mundo, <b>deriva</b> o caminho esperado a partir do banco, intersecta —
+  <i>"zero parsing de nome, zero estado especular, zero migração (o nome usa UUID encurtado, a inversão
+  nome→banco é impossível)"</i>. Um ref fora de toda derivação é <b>órfão</b>: hoje só <code>WARN</code>, nunca
+  deleção cega.</p>
+  <p>Uma pasta <b>gerenciada mas com coisa do usuário dentro</b> quebra a premissa. Passa a existir
+  <code>WARN</code> permanente para tudo que você puser lá — e qualquer evolução futura que faça órfão ser
+  realmente coletado passa a apontar para o seu projeto. <b>A fronteira tem de ser explícita antes:
+  clone base = PERMANENTE, worktree = DESCARTÁVEL.</b></p>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">2. Worktree não se apaga com <code>rm -rf</code></span>
+  <p>Isso deixa <b>metadado stale</b> no repo base. A coleta tem de ser <code>git worktree remove</code> /
+  <code>git worktree prune</code> — e os reapers de hoje fazem remoção de filesystem. É mudança no
+  <b>mecanismo</b> de coleta, não só no caminho.</p>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">3. A chave do workspace muda</span>
+  <p>Hoje é <code>(company, agent, issue)</code>. Com worktree-por-issue, <b>o agente sai da chave</b> — o
+  worktree pertence à issue, não a quem a pegou. Isso mexe em três lugares de uma vez:</p>
+  <ul>
+    <li>a <b>derivação do <code>WorkspaceReaper</code></b>;</li>
+    <li>o <b>nome do volume Docker</b> (<code>orq_&lt;c8&gt;_&lt;a8&gt;_&lt;i8&gt;</code>, com segmento de
+    agente);</li>
+    <li>o workspace <code>_agent</code> (agente sem issue), hoje
+    <code>pathFor(company, agent, null)</code>.</li>
+  </ul>
+  <p>O workspace de <b>CONVERSA</b> (chaveado por <code>conversationId</code>, ADR-0031) é outro eixo e
+  permanece.</p>
+</div>
+
+<div class="caixa aviso">
+  <span class="rotulo">4. Docker não tem pasta de host</span>
+  <p>O alvo DOCKER usa <b>volume nomeado</b>, não caminho. Worktree é conceito de filesystem LOCAL; sob Docker
+  vira bind-mount — que é o <b>item 12 do roadmap</b> (Paridade Docker), hoje em fail-soft.</p>
+</div>
+
+<h2>Perguntas que o grill tem de responder</h2>
+
+<ol>
+  <li><b>Onde mora a credencial de push?</b> O agente precisa lê-la por definição — "esconder do agente" não é
+  opção. A pergunta real é <b>escopo</b>: token por projeto, por empresa, ou um só? E o que impede o agente da
+  empresa A de ler o token da empresa B?</li>
+  <li><b>Quem faz o merge?</b> O APPROVE do review dispara, ou fica sempre na mão do dono? A regra vigente do
+  dono é <b>preferir PR sobre push direto</b>. Encaixa no APPROVE/REJECT que já existe (F-ORG-C), mas é
+  decisão.</li>
+  <li><b>O review de diff</b> — o card de Review passa a mostrar o quê? Ligação com o achado B1b.3 (o card hoje
+  já não renderiza o comando/porta que tem na mão).</li>
+  <li><b>Onde nasce o clone base?</b> Ato do dono na UI, ou o orquestrador clona ao criar o projeto? E se o
+  repo já existe no disco do dono, adota ou clona de novo?</li>
+  <li><b>O que acontece com o worktree quando a Issue é reaberta</b> depois de coletado?</li>
+  <li><b>Qual o limite que a decisão NÃO vai fechar</b>, nomeado no alcançável.</li>
+</ol>
+
+<h2>O que este ponto NÃO fecha</h2>
+
+<ul>
+  <li>Zero código. O produto é decisão numerada <code>D-REPO-1..N</code>, cada uma <b>com racional</b> — é o
+  racional que impede a próxima sessão de reabrir.</li>
+  <li>Não emite o kickoff da implementação (isso é o <a href="P6-fatias-do-repositorio.html">P6</a>).</li>
+  <li>Não endurece o guard — isso é o <a href="P4-furo-do-guard.html">P4</a>, que corre em paralelo.</li>
+</ul>
+
+<h2>Ligações</h2>
+<ul>
+  <li><a href="P2-f2-produtor-coletor.html">P2</a> e <a href="P3-fatia2-posse-do-run.html">P3</a> — o ciclo de
+  vida do worktree vai amarrar no <b>lock de issue</b>. Desenhar sobre semântica de posse já correta.</li>
+  <li><a href="P1-grill-do-schema.html">P1</a> — a tabela <code>project</code> nasce com FK, exatamente a
+  classe que a suíte não enxerga.</li>
+  <li><a href="P4-furo-do-guard.html">P4</a> — pré-requisito para o primeiro projeto real entrar.</li>
+</ul>
+
+<p class="medido">Norte fixado pelo dono em 2026-07-27. Medições de código feitas na mesma data contra
+<code>main = 39dce6a</code>. Reservas livres nessa data: <b>V39</b> e <b>ADR-0051</b>.</p>
+
+</main>

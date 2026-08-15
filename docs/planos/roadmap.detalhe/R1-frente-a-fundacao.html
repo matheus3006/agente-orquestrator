@@ -1,0 +1,143 @@
+<meta charset="utf-8">
+<title>R1 — Frente A: fundação implementada</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › R1</div>
+
+<h1>R1 — Frente A: a fundação</h1>
+<p class="subtitulo">Onde vivem os 28 ADRs implementados. Cada linha = uma capacidade, com <b>uma evidência-âncora</b> <code>file:line</code>.</p>
+
+<div class="fichas">
+  <span class="ficha">Estágio <b>VENDO/FECHADO</b></span>
+  <span class="ficha">ADRs <b>28</b></span>
+  <span class="ficha">Auditado <b>2026-07-07</b></span>
+</div>
+
+<div class="caixa aviso">
+  <span class="rotulo">Como ler as âncoras desta página</span>
+  <p>As citações <code>file:line</code> são do <b>inventário de 2026-07-07</b>, com passadas suplementares até
+  <code>fd3be27</code> (2026-07-15). O repo sofreu drift de linha desde então — Frente E tocou 101 arquivos, e as
+  fatias #40–#61 mexeram no motor de execução. <b>Reconferir a âncora antes de citar.</b> O resto da prova mora
+  no ADR/handoff apontado.</p>
+</div>
+
+<h2>A.1 — Stack, estrutura, invariantes &amp; regra de ouro dos nomes</h2>
+<div class="rolagem"><table>
+  <thead><tr><th>Capacidade</th><th>Evidência-âncora</th><th>Ponteiro</th></tr></thead>
+  <tbody>
+    <tr><td>Stack + estrutura + invariantes (multi-tenant, checkout atômico, deny-by-default)</td>
+      <td><code>backend/pom.xml:7-35,73-75</code> · checkout <code>IssueRepository.java:48-64</code> · escopo
+      <code>CompanyAccessGuard.java:25-41</code></td>
+      <td>ADR-0001 + ADR-0043 ⚠ <i>(2 divergências: jOOQ e SKIP LOCKED — ver <a href="R8-divergencias.html">R8</a>)</i></td></tr>
+    <tr><td>Nomes que carregam o fluxo + módulos profundos (regra de ouro)</td>
+      <td><code>skills/LineCursor.java:17-48</code> (3 métodos, seam package-private)</td>
+      <td>ADR-0010</td></tr>
+  </tbody>
+</table></div>
+
+<h2>A.2 — Skills &amp; KnowAll</h2>
+<div class="rolagem"><table>
+  <thead><tr><th>Capacidade</th><th>Evidência-âncora</th><th>Ponteiro</th></tr></thead>
+  <tbody>
+    <tr><td>SkillSet estático × aumento dinâmico (base pinada + anexo por-Issue)</td>
+      <td><code>skills/AgentSkillSelection.java:34</code> + <code>V9__agent_skill_selection.sql:11</code></td><td>ADR-0003</td></tr>
+    <tr><td>Modelo de dados de Skills (catálogo global + versão + savelog)</td>
+      <td><code>V7__skills_global_catalog.sql:10-37</code></td><td>ADR-0007</td></tr>
+    <tr><td>KnowAll nível-operador (Camada 1 global × Camada 2 por-company)</td>
+      <td><code>CompanyLibraryInstaller.java:30-38</code> · <code>SkillMaterializer.java:34,59</code></td><td>ADR-0008</td></tr>
+  </tbody>
+</table></div>
+
+<h2>A.3 — Motores, adapters &amp; session (o eixo motor-agnóstico)</h2>
+<div class="rolagem"><table>
+  <thead><tr><th>Capacidade</th><th>Evidência-âncora</th><th>Ponteiro</th></tr></thead>
+  <tbody>
+    <tr><td>Persistência híbrida da Session do adapter</td><td><code>V16__conversation.sql:42-51</code></td><td>ADR-0002</td></tr>
+    <tr><td>Contrato <code>AgentAdapter.execute()</code> (o seam do motor)</td>
+      <td><code>AgentAdapter.java:19,47-50</code></td><td>ADR-0004 ⚠ <i>(<code>producedArtifacts</code>)</i></td></tr>
+    <tr><td>Motor por agente (adapter + model + effort)</td><td><code>V12__agent_engine.sql:4-5</code> + <code>Agent.java:41-45,159-165</code></td><td>ADR-0014</td></tr>
+    <tr><td><b>Segundo</b> motor vivo (codex) — prova do eixo</td><td><code>CodexAdapter.java:14,28</code></td><td>ADR-0024</td></tr>
+    <tr><td>Sandbox por <b>postura</b> do ExecutionTarget</td><td><code>ExecutionTarget.java:22-24,141-143</code></td><td>ADR-0025</td></tr>
+  </tbody>
+</table></div>
+
+<h2>A.4 — Execução: heartbeat, isolamento &amp; os 3 reapers</h2>
+<div class="rolagem"><table>
+  <thead><tr><th>Capacidade</th><th>Evidência-âncora</th><th>Ponteiro</th></tr></thead>
+  <tbody>
+    <tr><td>Modelo de heartbeat / execução (state machine + wakeups)</td>
+      <td><code>V3__heartbeat.sql:26</code> (<code>uq_run_active_agent</code>) + <code>heartbeat_run_event</code> append-only + <code>LeaseRenewer</code></td>
+      <td>ADR-0005 ✅ <i>(divergência ALTA do lease FECHADA 2026-07-10)</i></td></tr>
+    <tr><td>Isolamento de plano por container (Docker)</td><td><code>EngineContainer.java:27-46</code></td><td>ADR-0016</td></tr>
+    <tr><td><b>2º reaper</b> — WorkspaceReaper (GC de workspace em disco)</td><td><code>WorkspaceReaper.java:74-171</code></td><td>ADR-0026</td></tr>
+    <tr><td><b>3º reaper</b> — cap+graduação de rows (PURE-DB)</td><td><code>RowRetentionReaper.java:53-107</code> + <code>RowRetentionPolicy.java:78-103</code></td><td>ADR-0028</td></tr>
+    <tr><td>Retenção do rastro de conversa (2ª passada)</td><td><code>HeartbeatRunRepository.java:41-48</code></td><td>ADR-0029</td></tr>
+  </tbody>
+</table></div>
+
+<h2>A.5 — Governança: budget, review, recovery &amp; approval</h2>
+<div class="rolagem"><table>
+  <thead><tr><th>Capacidade</th><th>Evidência-âncora</th><th>Ponteiro</th></tr></thead>
+  <tbody>
+    <tr><td>Enforcement de governança em runtime (budget + revisão)</td><td>preflight <code>HeartbeatDispatcher.java:53</code></td><td>ADR-0006</td></tr>
+    <tr><td>Recovery de Issue travada por Run FAILED (park-for-human <b>de ISSUE</b>)</td>
+      <td><code>IssueService.java:185</code> (<code>tryBlock</code> guardado por runId + <code>ISSUE_BLOCKED</code>)</td>
+      <td>ADR-0011 (emendada R19-A + R22-A)</td></tr>
+    <tr><td>Review gate pós-hoc por risco (runtime-enforced)</td><td><code>V11__review.sql:4</code></td><td>ADR-0012</td></tr>
+  </tbody>
+</table></div>
+
+<div class="caixa aviso">
+  <span class="rotulo">Não confundir os dois park-for-human</span>
+  <p>O <b>de ISSUE</b> (ADR-0011, acima) estaciona uma Issue travada por Run FAILED. O <b>de CONVERSA</b> (fix
+  do PR #33) estaciona a retomada de contexto enquanto o kickback espera o dono. Nomes iguais, mecanismos
+  distintos — a sobrecarga do termo está registrada como drift documental (achado P10).</p>
+</div>
+
+<h2>A.6 — Teams &amp; orquestração do CEO</h2>
+<div class="rolagem"><table>
+  <thead><tr><th>Capacidade</th><th>Evidência-âncora</th><th>Ponteiro</th></tr></thead>
+  <tbody>
+    <tr><td>Teams — roles, presets/moldes, composição, cadeia de comando, contenção</td>
+      <td><code>TipoFuncao.java:16-25</code> · <code>TeamService.java:53-109</code> · <code>SpawnLineageGuard.java:24,47-73</code> (MAX_DEPTH=5)</td><td>ADR-0017</td></tr>
+    <tr><td>Orquestração — CEO mediado por proposta</td><td><code>ProposalScanner.java:28-66</code> (deny-by-default)</td><td>ADR-0018</td></tr>
+  </tbody>
+</table></div>
+
+<h2>A.7–A.8 — Memória do CEO e Activity Log</h2>
+<div class="rolagem"><table>
+  <thead><tr><th>Capacidade</th><th>Evidência-âncora</th><th>Ponteiro</th></tr></thead>
+  <tbody>
+    <tr><td>Decision-log — a decisão como átomo</td><td><code>V18__company_memory_decision.sql:19-41</code> (racional NOT NULL, <code>supersedes_id</code>)</td><td>ADR-0019</td></tr>
+    <tr><td>Racional arrancado por grill no gate</td><td><code>RacionalPolicy.java:48-70</code> (lógico bloqueia, intuição commita)</td><td>ADR-0020</td></tr>
+    <tr><td>Modelo do Activity Log (schema híbrido)</td><td><code>V1__init.sql:54-63</code></td><td>ADR-0009 ⚠ <i>(drift camelCase — item 17 do <a href="R4-roadmap-de-ajustes.html">R4</a>)</i></td></tr>
+  </tbody>
+</table></div>
+
+<h2>A.9–A.10 — Preview real e frontend</h2>
+<div class="rolagem"><table>
+  <thead><tr><th>Capacidade</th><th>Evidência-âncora</th><th>Ponteiro</th></tr></thead>
+  <tbody>
+    <tr><td>Preview real — captura no settle, render sandboxed</td><td><code>V20__preview_artifact.sql:8-22</code> (append-only)</td><td>ADR-0021</td></tr>
+    <tr><td>Escritor de workspace — árvore materializada pelo mesmo seam</td><td><code>ExecutionTarget.java:37-48</code> (replace por subtree, host-vence)</td><td>ADR-0022</td></tr>
+    <tr><td>Preview processo/porta — servidor vivo sob demanda</td><td><code>V21__preview_server_manifest.sql:8-19</code> + <code>PreviewServerSupervisor.java</code></td><td>ADR-0023 ⚠ <i>(N10: o card não renderiza comando/porta)</i></td></tr>
+    <tr><td>Thumbnail do servidor vivo (v2)</td><td><code>V22__preview_server_thumbnail.sql:12-24</code> + <code>PreviewThumbnailCapturer.java:50-60</code></td><td>ADR-0027</td></tr>
+    <tr><td>Arquitetura do frontend (board do operador)</td><td><code>frontend/src/lib/api.ts:45,35-40</code> (fetcher único <code>X-Board-User</code>)</td><td>ADR-0013</td></tr>
+    <tr><td>Fase de UI/UX P0–P2C</td><td><code>mission-control.ts:136-157</code> · <code>glossario-dialog.tsx</code> · guard E1 <code>board-shell.tsx:44</code></td><td><b>sem ADR</b> — registrado em <a href="R8-divergencias.html">R8</a></td></tr>
+  </tbody>
+</table></div>
+
+<h2>O que esta frente NÃO cobre</h2>
+<ul>
+  <li><b>Nada aqui é re-testado pela fase de descoberta por padrão.</b> "IMPLEMENTADA" significa que a
+  capacidade está no código com espelho de teste — <b>não</b> que foi provada ao vivo. A distinção é o motivo da
+  fase de caça existir.</li>
+  <li>As divergências doc×código sobreviventes estão em <a href="R8-divergencias.html">R8</a>, não aqui.</li>
+</ul>
+
+<p class="medido">Inventário auditado em 2026-07-07: 29 ADRs + 40 handoffs verificados contra o código por 18
+auditores em paralelo, com refutação adversarial de cada divergência (48 candidatas → 25 confirmadas).
+Passada suplementar até <code>fd3be27</code> em 2026-07-15: <b>zero divergência nova</b>.</p>
+
+</main>

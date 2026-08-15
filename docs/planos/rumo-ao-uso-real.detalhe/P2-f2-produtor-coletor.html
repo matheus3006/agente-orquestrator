@@ -1,0 +1,201 @@
+<meta charset="utf-8">
+<title>P2 — F2: o produtor do lock concorda com o coletor</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › P2</div>
+
+<h1>P2 — Uma chamada derruba uma Issue viva</h1>
+<p class="subtitulo">O produtor do lock e o coletor do lock discordam sobre o que é um lock válido.</p>
+
+<div class="fichas">
+  <span class="ficha">Tipo <b>Fatia</b></span>
+  <span class="ficha">Slot <b>1 de 2</b></span>
+  <span class="ficha">Portas <b>:18081 / :15432</b></span>
+  <span class="ficha">Branch <b>seguranca/produtor-concorda-com-coletor</b></span>
+  <span class="ficha">Kickoff <b>já escrito</b></span>
+</div>
+
+<h2>O defeito, em uma frase</h2>
+
+<p><code>POST /checkout</code> com <b>o meu próprio run desta issue, já terminal</b>
+(<code>SUCCEEDED</code>/<code>FAILED</code>/<code>CANCELLED</code>/<code>INTERRUPTED</code>) passa a cerca,
+passa o <code>tryCheckout</code>, e carimba a Issue com um lock que nomeia um Run <b>sem futuro</b> — que é,
+pela definição do próprio <code>IssueRepository.findComLockDeRunTerminal</code>, um <b>lock órfão</b>. O
+<code>LockOrfaoReaper</code> colhe em ≤5 s e <b>a Issue VIVA cai em <code>BLOCKED</code></b>.</p>
+
+<p>Uma chamada. Com um <code>runId</code> que a própria API publica.</p>
+
+<div class="caixa risco">
+  <span class="rotulo">O diagnóstico que orienta a fatia</span>
+  <p>O <b>coletor</b> exige <i>"lock segurado por Run COM FUTURO"</i>. O <b>produtor</b> só exige
+  <i>"run meu e desta issue"</i>. São dois invariantes que <b>precisam concordar</b> e são mantidos à mão em
+  lugares diferentes. Consertar o sintoma sem travar a concordância deixa a próxima divergência nascer igual.</p>
+</div>
+
+<h2>Evidência reconferida (2026-07-27, contra <code>main = 39dce6a</code>)</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Âncora</th><th>O que se mediu</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>IssueService.java:210</code></td>
+      <td><code>exigirProcedenciaDoRun</code> checa <b>só</b>
+      <code>existsByIdAndCompanyIdAndAgentIdAndIssueId</code>. <b>Nenhum predicado de status.</b></td>
+    </tr>
+    <tr>
+      <td><code>IssueService.java:205-208</code></td>
+      <td>O javadoc <b>declara a omissão como deliberada</b>: <i>"a cerca é sobre identidade, não sobre
+      liveness: um Run em status terminal tem procedência plena"</i>.</td>
+    </tr>
+    <tr>
+      <td><code>LockOrfaoReaper.java:102</code></td>
+      <td><code>RUNS_QUE_NAO_RODAM_MAIS = {CANCELLED, FAILED, SUCCEEDED, INTERRUPTED}</code> —
+      complemento exato de <code>QUEUED</code>/<code>RUNNING</code>/<code>RECOVERING</code>.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">A nuance que o kickoff pede e que o código confirma</span>
+  <p><code>exigirProcedenciaDoRun</code> é chamado de <b>dois</b> call sites:
+  <code>checkout:186</code> e <code>complete:258</code>.</p>
+  <p><b>O conserto NÃO é "somar um predicado ao helper".</b> No <code>/complete</code> a ausência de
+  liveness é <b>deliberada</b> — é ela que permite o destrave manual da ficha, concluindo uma Issue travada
+  com o <code>runId</code> de um Run que já morreu. Amarrar liveness lá <b>mata o procedimento de
+  emergência</b>.</p>
+  <p>O conserto é <b>separar as duas exigências</b>. O helper compartilhado é o nó.</p>
+</div>
+
+<h2>Os cinco itens da fatia</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th></th><th>Item</th><th>Nota</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="v-vermelho">1</td>
+      <td>Predicado de status no <code>exigirProcedenciaDoRun</code>, <b>só no <code>/checkout</code></b></td>
+      <td>Derivar do mesmo lugar que <code>RUNS_QUE_NAO_RODAM_MAIS</code>, ou deixar explícito por que não dá.
+      Duas listas mantidas à mão é o defeito que se está consertando.</td>
+    </tr>
+    <tr>
+      <td class="v-vermelho">2</td>
+      <td>O procedimento numerado da ficha está <b>quebrado como está escrito</b></td>
+      <td>Ver abaixo.</td>
+    </tr>
+    <tr>
+      <td class="v-ambar">3</td>
+      <td>Javadoc stale que a I-ter deixou em produção</td>
+      <td><code>LockOrfaoReaper.java:60</code> ainda afirma <b>no presente</b> que
+      <i>"<code>IssueService.checkout</code> <b>fabrica</b> <code>UUID.randomUUID()</code>"</i> —
+      falso desde <code>07c6f94</code>. Reconferido hoje: <b>a frase segue lá</b>.</td>
+    </tr>
+    <tr>
+      <td class="v-vermelho">4</td>
+      <td>O B2, que sumiu do PR #61 sem ser feito nem devolvido</td>
+      <td><code>RunOutcome.failure(MOTIVO)</code> do reaper <b>nunca é lido</b> —
+      <code>settleAfterRun</code> só consulta <code>succeeded()</code>/<code>noop()</code>, e a constante é
+      texto morto. O front (<code>frontend/src/lib/feed.ts</code>) renderiza <i>"sistema travou em #12 — run
+      ab12cd34"</i> apontando para um run <b>que não existe</b>.</td>
+    </tr>
+    <tr>
+      <td class="v-ambar">5</td>
+      <td>Dívida de fixture que liga no <a href="P1-grill-do-schema.html">P1</a></td>
+      <td>Os testes de checkout criam múltiplos runs <code>RUNNING</code> para o <b>mesmo agente</b> — estado
+      que <code>uq_run_active_agent</code> (índice único parcial, <code>V3__heartbeat.sql</code>) proíbe em
+      produção. Não invalida as asserções; codifica um estado impossível.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Por que o item 2 importa mais do que parece</h3>
+
+<p>Em <code>docs/ficha-seguranca-complete.md</code> a cerca agora exige que o ator seja <b>dono do run</b>, e o
+anexo diz isso — <b>em <code>:160-164</code>, cerca de 118 linhas abaixo dos passos</b>. Os passos numerados
+(<code>:42-44</code>) não foram atualizados:</p>
+
+<ul>
+  <li>o <b>passo 1</b> manda ler <code>executionLockRunId</code> e <code>riskLevel</code>, e <b>não</b> manda
+  ler <code>assigneeAgentId</code>, agora obrigatório;</li>
+  <li>o <b>passo 2</b> diz "cunhar a chave do agente" sem qualificar <b>qual</b>, e não diz que o
+  <code>mint</code> virou board-only.</li>
+</ul>
+
+<p><b>Quem seguir 1→2→3 ao pé da letra leva 403.</b> É a <i>"emenda declarada e não aplicada"</i> que a própria
+Fatia I-ter chama de marca registrada da casa — e que ela reproduziu <b>no mesmo arquivo, no conserto dela</b>.
+Executável: <code>IssueResponse</code> já expõe o <code>assigneeAgentId</code>. Uma linha no passo 1 resolve.</p>
+
+<div class="caixa aviso">
+  <span class="rotulo">E o over-claim a corrigir</span>
+  <p>O javadoc de <code>HeartbeatRunRepository</code> afirma que <i>"as quatro componentes fecham quatro furos
+  distintos, e nenhuma é redundante"</i>. Para o <code>/checkout</code> isso é <b>falso</b>:
+  <code>WakeupController.wake</code> é guardado só por <code>assertMember</code>, recebe o
+  <code>issueId</code> no corpo e <b>devolve o <code>runId</code></b> ⇒ o agente compra
+  <code>agentId</code> e <code>issueId</code> com a mesma credencial, numa chamada. <b>O ganho real do
+  <code>/checkout</code> é integridade do lock, não autorização.</b></p>
+</div>
+
+<h2>Fronteira de arquivo com o P3</h2>
+
+<p>As duas fatias correm juntas e fazem prova viva na mesma rodada. A divisão é contratual:</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>P2 (esta) é dona de</th><th>P3 é dona de</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>IssueService</code> · <code>IssueRepository</code> · <code>LockOrfaoReaper</code> · a ficha ·
+      o front</td>
+      <td><code>AdapterRunExecutor.java</code> <b>inteiro</b>, inclusive javadoc</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>P2 <b>não toca</b> <code>AdapterRunExecutor</code>, nem em comentário. P3 mexe apenas no <b>call site</b> do
+<code>settleAfterRun</code>, capturando o retorno — se a assinatura mudar por baixo, fala com o controle em vez
+de adaptar em silêncio.</p>
+
+<div class="caixa aviso">
+  <span class="rotulo">Armadilha de ambiente</span>
+  <p>As duas faixas sobem instância. <b>Nada de <code>pkill</code> por padrão de porta</b> — isso já derrubou a
+  instância de uma faixa irmã nesta esteira. Container com sufixo próprio.</p>
+</div>
+
+<h2>Critérios de aceite</h2>
+
+<ol>
+  <li><b>RED por item comportamental</b>, com <b>controle positivo dentro do mesmo bloco</b>.
+  <code>assertSoftly</code> com o discriminante <b>dentro</b> do bloco — asserção fora, ou blocos sequenciais,
+  ainda escondem.</li>
+  <li><b>Prova viva registrando o artefato:</b> SHA do jar <b>e o <code>app.log</code> retido</b>. A I-ter
+  registrou o jar e perdeu o log, então as saídas observadas não eram re-conferíveis.</li>
+  <li><b>Um teste que trave a concordância produtor↔coletor:</b> se alguém mudar um dos dois conjuntos de
+  status e não o outro, <b>o teste quebra</b>. Modelo: a trava anti-default que usa
+  <code>EnumSet.allOf</code> com tabelas literais.</li>
+  <li><b>Piso 2× nas duas pontas.</b> Entrada declarada: <b>965 backend / 323 front</b> — <b>re-medir</b>,
+  não herdar.</li>
+  <li>PR contra <code>main</code>. <b>Não mergear.</b></li>
+</ol>
+
+<h2>O que este ponto NÃO fecha</h2>
+
+<ul>
+  <li><b>O eixo liveness do run</b> — é o <a href="P3-fatia2-posse-do-run.html">P3</a>. Esta fatia amarra
+  <b>identidade</b> do lock.</li>
+  <li><b>As instâncias pré-existentes.</b> Para a 5ª classe, instância já criada não tem saída: o
+  <code>/complete</code> recusa (403) e o reaper nunca a toca. <b>Cura o futuro, não o acumulado</b> — e isso
+  precisa estar nomeado no documento.</li>
+  <li>A dívida de fixture (item 5) pode ser devolvida ao <a href="P1-grill-do-schema.html">P1</a>, que é dono
+  do assunto.</li>
+</ul>
+
+<p class="medido">Kickoff: <code>HANDOFF-f2-produtor-coletor-KICKOFF.md</code> (raiz), sessão de controle #9,
+2026-07-22, base <code>main = 39dce6a</code> medida às 12:42:15 -03. Âncoras reconferidas em 2026-07-27:
+todas existem, alegações centrais se sustentam.</p>
+
+</main>

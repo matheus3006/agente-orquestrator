@@ -1,0 +1,128 @@
+<meta charset="utf-8">
+<title>Ledger — rumo ao uso real</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › Ledger</div>
+
+<h1>Ledger</h1>
+<p class="subtitulo">Estado atual no topo. Histórico abaixo, do mais novo para o mais velho. <b>O plano nunca copia daqui — só linka.</b></p>
+
+<div class="caixa risco">
+  <span class="rotulo">A regra que este arquivo existe para impor</span>
+  <p>Ledger <b>não vive dentro do plano</b>. A razão é medida, não teórica: no
+  <code>docs/plano-descoberta-bugs.md</code> cada atualização do controle foi <b>anexada como parágrafo</b> e os
+  parágrafos antigos <b>nunca foram apagados</b>. Ler a prosa de cima para baixo entrega números substituídos
+  três vezes.</p>
+  <p><b>O custo real:</b> em 2026-07-27 uma sessão inteira leu aquela prosa e apresentou a Bateria 1 como
+  "próxima task" — fechada desde 2026-07-17. O plano tinha até um rastro registrado (R31, 2026-07-19) avisando
+  que a prosa estava velha. <b>Avisou e pegou mesmo assim.</b> Por isso a separação virou estrutural em vez de
+  disciplinar.</p>
+</div>
+
+<h2>Estado atual</h2>
+
+<p><b>Esta seção é a ÚNICA fonte de verdade do estado.</b> Ela é <b>sobrescrita</b>, nunca acrescida. Quem
+precisar do que mudou, lê o histórico abaixo.</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Dimensão</th><th>Valor vigente</th><th>Medido em</th></tr></thead>
+  <tbody>
+    <tr><td><code>main</code></td><td><code>39dce6a</code> (merge do PR #61)</td><td>2026-07-27</td></tr>
+    <tr><td>Último PR mergeado</td><td><b>#61</b>, em 2026-07-22 11:35:48 -03</td><td>2026-07-27</td></tr>
+    <tr><td>PRs abertos</td><td><b>nenhum</b></td><td>2026-07-27</td></tr>
+    <tr><td>Worktrees</td><td>1 (<code>wt-fatia1ter-procedencia</code>, da fatia já mergeada)</td><td>2026-07-27</td></tr>
+    <tr><td>Piso declarado</td><td>965 backend / 323 front — <b>não re-medido nesta sessão</b></td><td>2026-07-22</td></tr>
+    <tr><td>Reservas livres</td><td><b>V39</b> · <b>ADR-0051</b></td><td>2026-07-27</td></tr>
+    <tr><td>Backend <code>:8080</code></td><td><b class="v-vermelho">fora do ar</b></td><td>2026-07-27</td></tr>
+    <tr><td>Pontos do plano concluídos</td><td><b>0 de 8</b></td><td>2026-07-27</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Inventário da descoberta de bugs</h3>
+
+<p>Fonte de verdade: <b>tabela do §3 de <code>docs/plano-descoberta-bugs.md:183</code></b> — <b>não</b> a prosa
+que a segue.</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>✅ provada</th><th>🔴 refutada</th><th>🎯 agora</th><th>🎯 pós-reboot</th><th>🚫 fora</th><th>❓</th><th>total</th></tr></thead>
+  <tbody>
+    <tr><td><b>310</b></td><td><b>22</b></td><td><b>394</b></td><td><b>136</b></td><td><b>215</b></td><td><b>8</b></td><td><b>1085</b></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa aviso">
+  <span class="rotulo">Armadilha ativa naquele arquivo</span>
+  <p>A prosa logo abaixo daquela tabela ainda diz <code>308 ✅</code> / <code>142 🎯pós-reboot</code> (era R26-A),
+  e um parágrafo mais acima diz <code>301/17/398/146</code> (interino de 2026-07-17, pré-Bateria 1).
+  <b>Só a tabela vale.</b> Enquanto aquele plano não for migrado para esta convenção, quem o ler precisa saber
+  disso.</p>
+</div>
+
+<h2>Histórico</h2>
+
+<h3>2026-07-27 — plano criado; convenção de plano e ledger estabelecida</h3>
+<ul>
+  <li>Reconciliação de estado: confirmado que as <b>Baterias 1 e 1b estão fechadas</b> (R25-A 07-17, R26-A 07-17,
+  R27-A 07-18) e que a fila real são os <b>3 kickoffs de 2026-07-22</b>, nenhum executado.</li>
+  <li>Os 3 kickoffs <b>revalidados</b> contra <code>main = 39dce6a</code>: todas as âncoras existem, alegações
+  centrais se sustentam. Duas ressalvas levantadas (nome escopado da skill <code>verify</code> é condicional ao
+  cwd; contagem de fixtures do P2 item 5 é de invocações, não de ocorrências — <code>grep -c</code> mede proxy
+  errado).</li>
+  <li><b>Achado novo, medido:</b> o orquestrador <b>não tem código no modelo</b> — <code>Company</code> =
+  <code>{id, name, slug, createdAt}</code>, <code>Issue</code> sem branch/repo/diff/PR, <b>zero <code>git</code>
+  em <code>src/main</code></b>. Origem do <a href="P5-grill-repositorio.html">P5</a>.</li>
+  <li><b>Norte fixado pelo dono:</b> <code>~/Orquestrador/&lt;empresa&gt;/&lt;projeto&gt;/</code>, worktree por
+  issue, agente escreve código e abre PR.</li>
+  <li><b><a href="P4-furo-do-guard.html">P4</a> promovido</b> de achado (roadmap #20) a <b>pré-requisito</b>: com
+  projeto real e token na pasta, o furo do guard muda de categoria.</li>
+  <li><b>Correção de registro:</b> a memória dizia "PR #61 não mergeado". Foi mergeado em <code>39dce6a</code>,
+  2026-07-22 11:35:48 -03 — medido, corrigido.</li>
+</ul>
+
+<h3>2026-07-22 — três kickoffs emitidos (sessão de controle #9)</h3>
+<ul>
+  <li>PR #61 (Fatia I-ter, procedência do lock) mergeado às 11:35:48 -03.</li>
+  <li>Conferência do #61 com 5 verificadores ⇒ emitidos <a href="P2-f2-produtor-coletor.html">F2</a>,
+  <a href="P3-fatia2-posse-do-run.html">Fatia II</a> e <a href="P1-grill-do-schema.html">grill do schema</a>,
+  todos medindo <code>main = 39dce6a</code> às 12:42:15 -03.</li>
+  <li>Piso medido: 965 backend / 323 front, 2× nas duas pontas.</li>
+</ul>
+
+<h3>2026-07-18 a 2026-07-22 — a esteira do lock órfão</h3>
+<ul>
+  <li>PRs <b>#59</b> (Fatia I — fonte e rede), <b>#60</b> (I-bis — ponto cego da rede), <b>#61</b> (I-ter —
+  procedência) mergeados. Cada um fechou furos reais e o último <b>criou o produtor novo</b> que virou o
+  <a href="P2-f2-produtor-coletor.html">P2</a>.</li>
+</ul>
+
+<h3>2026-07-17 e 2026-07-18 — as duas baterias da descoberta</h3>
+<ul>
+  <li><b>Bateria 1 (R25-A)</b>: B1.1 ✅ · B1.2 N6 reforçado · B1.3 refutada a sub-contagem ·
+  <b>B1.4 fronteira 6 quebrada 🔴</b> (roadmap #19) · <b>B1.5 N8 camelCase 🔴</b> · B1.6 herdada.</li>
+  <li><b>Bateria 1b (R26-A + R27-A)</b>: fronteira 8 <b>refutada</b> (o cinto segura), mas
+  <b><a href="P4-furo-do-guard.html">achado 🔴 do home-absoluto</a></b> · <b>N4 confirmado</b> (org não
+  decompõe → <a href="P8-org-nao-decompoe.html">P8</a>) · <b>breaker mudo</b>, <b>materializer sobrescreve</b>,
+  <b><code>adapterType</code> sem validação</b> (→ <a href="P7-lote-falha-silenciosa.html">P7</a>).</li>
+</ul>
+
+<h2>Como escrever neste ledger</h2>
+
+<ol>
+  <li><b>Sobrescreva</b> a seção "Estado atual". Nunca acrescente uma segunda tabela de estado.</li>
+  <li><b>Acrescente</b> uma entrada nova no topo do histórico, com data.</li>
+  <li>Cada entrada diz <b>o que mudou</b>, não repete o estado inteiro.</li>
+  <li><b>Toda medição carrega a data</b> em que foi medida. Número sem data é número sem valor — foi o que
+  produziu o incidente que originou esta convenção.</li>
+  <li>Se um número no "Estado atual" <b>não</b> foi re-medido nesta rodada, marque isso explicitamente (como
+  está feito no piso).</li>
+</ol>
+
+<p class="medido">Criado em 2026-07-27. Convenção completa em <code>docs/convencao-plano-e-ledger.md</code>;
+conformidade verificável por <code>scripts/checar-plano.sh</code>.</p>
+
+</main>

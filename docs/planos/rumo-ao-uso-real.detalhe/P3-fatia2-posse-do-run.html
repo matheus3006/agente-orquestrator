@@ -1,0 +1,198 @@
+<meta charset="utf-8">
+<title>P3 — Fatia II: posse do run (eixo liveness)</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › P3</div>
+
+<h1>P3 — Você aperta "parar" e o sistema age mesmo assim</h1>
+<p class="subtitulo">O gate pergunta à Issue. Quem perde autoridade é o Run. São dois objetos, e um não responde pelo outro.</p>
+
+<div class="fichas">
+  <span class="ficha">Tipo <b>Fatia</b></span>
+  <span class="ficha">Slot <b>2 de 2</b></span>
+  <span class="ficha">Portas <b>:18082 / :15433</b></span>
+  <span class="ficha">Branch <b>posse/fatia2-run-com-autoridade</b></span>
+  <span class="ficha">Kickoff <b>já escrito</b></span>
+</div>
+
+<h2>O defeito</h2>
+
+<p>Você aperta "parar". O CAS <code>RUNNING→INTERRUPTED</code> vence. O kill é <b>best-effort</b> e não pega.
+O processo segue vivo. E os <b>4 gates de saída</b> disparam <b>em nome de um run cuja autoridade foi
+revogada</b> — criando Approval, issue dirigida, parecer e pedido de skill.</p>
+
+<div class="caixa aviso">
+  <span class="rotulo">Por que a fatia anterior não cobriu isto</span>
+  <p><b>Esse cenário não passa por checkout nenhum.</b> A Fatia I-ter amarrou <b>identidade</b>; esta é o eixo
+  <b>liveness</b>. Medido pela conferência: a I-ter <b>reforçou</b> o caso desta fatia em vez de erodi-lo.
+  Complementares, sem dupla contagem.</p>
+</div>
+
+<h2>Evidência reconferida (2026-07-27, contra <code>main = 39dce6a</code>)</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Âncora</th><th>O que se mediu</th></tr></thead>
+  <tbody>
+    <tr><td><code>AdapterRunExecutor.java:143</code></td>
+      <td>Chama <code>issues.settleAfterRun(...)</code> <b>e descarta o retorno</b> — sem atribuição.
+      É a mecânica do D1, exatamente como descrita.</td></tr>
+    <tr><td><code>AdapterRunExecutor.java:431</code></td><td><code>posseConfirmada</code> existe.</td></tr>
+    <tr><td><code>AdapterRunExecutor.java:295</code></td><td><code>entregarSaidaAosGates</code> existe; chama
+      <code>posseConfirmada</code> na linha 296.</td></tr>
+    <tr><td><code>HeartbeatDispatcher.java:217</code></td>
+      <td><code>nodeId()</code> — <b>zero chamadores</b> em <code>main/java</code> + <code>test/java</code>.
+      Confirmado por varredura hoje.</td></tr>
+    <tr><td><code>GateDeSaidaExigePosseDoRunTest</code></td><td>Existe, e é onde os dois casos novos entram.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>A — As 7 entregas do desenho (saíram de grill de 2 rodadas)</h2>
+
+<ol>
+  <li><b><code>posseConfirmada</code> ganha a SEGUNDA pergunta</b> — <i>"este run ainda tem autoridade?"</i> —
+  somando o estado de vida do run à pergunta que hoje só interroga a Issue.</li>
+  <li><b>O detail do <code>GATE_DE_SAIDA_SEM_POSSE</code> passa a dizer QUAL das duas faltou.</b> Hoje um
+  código único cobre dois motivos distintos e o operador não distingue.</li>
+  <li><b>O predicado "este run ainda está <code>RUNNING</code>?" no <code>HeartbeatRunStore</code></b>, ao lado
+  dos irmãos.</li>
+  <li><b>Apagar <code>HeartbeatDispatcher.nodeId()</code></b> — acessor público sem chamadores.</li>
+  <li><b>Javadoc nos 4 gates.</b></li>
+  <li><b>Dois casos novos</b> em <code>GateDeSaidaExigePosseDoRunTest</code>.</li>
+  <li><b>Emenda da ADR-0048.</b></li>
+</ol>
+
+<div class="caixa risco">
+  <span class="rotulo">Duas armadilhas de redação que já derrubaram rodadas aqui</span>
+  <p><b>No item 3, NÃO escreva</b> que é <i>"o mesmo <code>where</code> de <code>finalizeRun</code>/
+  <code>renewLease</code>, zero invariante novo"</i>. A conferência da rodada 1 refutou: aqueles incluem
+  <code>leaseOwner</code> (que a D-POSSE-5 recusou puxar), o <code>finalizeRun</code> recebe o status como
+  <b>parâmetro</b>, e ambos são <code>update…where</code> (<b>CAS</b>) contra um <code>select exists</code>
+  (<b>read-then-act</b>). <b>Nomeie o acoplamento que de fato nasce.</b></p>
+  <p><b>No item 7</b>, confira a emenda na <b>granularidade SEÇÃO</b>, com <code>awk</code> da seção e lendo o
+  corpo. <i>"O arquivo mudou"</i> e <i>"o diff tem N hunks"</i> já deixaram passar emenda inexistente nesta
+  esteira <b>duas vezes</b>.</p>
+</div>
+
+<div class="caixa aviso">
+  <span class="rotulo">Fora de escopo por decisão do dono</span>
+  <p>A <b>D-POSSE-6</b> (contrato do settle sob autoridade revogada) segue em <b>fila de grill próprio</b>, por
+  escolha do dono <b>contra</b> a recomendação da rodada 1. A ADR deve dizer <b>"pergunta aberta em fila de
+  grill"</b>, nunca <i>"limite aceito"</i>.</p>
+</div>
+
+<h2>B — O D1 embutido: a entrega descartada</h2>
+
+<p>Decisão do dono: é a mesma corrida vista de dois lados. A Fatia II impede que os <b>gates</b> do run parado
+ajam; o D1 é a <b>entrega</b> do run parado sendo descartada. Mesmo método, mesmo arquivo, mesmo tick.</p>
+
+<h3>A mecânica, confirmada linha a linha</h3>
+
+<pre><code>kill best-effort falha
+  → o processo termina COM SUCESSO
+  → o LockOrfaoReaper (tick 5s; INTERRUPTED está no conjunto colhido) já liberou o lock
+  → AdapterRunExecutor:143 chama settleAfterRun(success)
+  → tryComplete casa 0 linhas
+  → NOT_SETTLED, e o retorno é DESCARTADO
+  → pior: store.finishSuccess é CAS a partir de RUNNING
+     ⇒ nem o registro do run guarda que ele teve sucesso</code></pre>
+
+<p><b>Conserto (~6 linhas):</b> capturar o <code>IssueSettlement</code> e, se
+<code>outcome.succeeded() &amp;&amp; settlement == NOT_SETTLED</code>, gravar <code>recordStep</code> +
+<code>log.warn</code>. As peças já existem — <code>IssueSettlement</code> já é o tipo de retorno e
+<code>recordStep</code> é o idioma 100 linhas abaixo.</p>
+
+<div class="caixa risco">
+  <span class="rotulo">Não tente recuperar o trabalho</span>
+  <p><code>/reabrir</code> é board-only com guard <code>status='DONE'</code> e nem alcança Issue
+  <code>BLOCKED</code>. Ressurreição automática invade assunto de outra fatia. <b>O entregável é tornar a perda
+  AUDÍVEL</b> — e o guard no <b>mecanismo</b> cobre os irmãos de graça.</p>
+</div>
+
+<h3>Três correções da conferência — não as reproduza erradas</h3>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th></th><th>A correção</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="v-vermelho">🔴</td>
+      <td><b><i>"É o único resíduo que perde trabalho"</i> é FALSO.</b> O descarte é propriedade do
+      <b>MECANISMO</b> (o retorno jogado fora), não do gatilho. Irmãos medidos: <b>(i)</b> o destrave manual da
+      ficha sobre uma Issue cujo run <b>ainda executa</b>; <b>(ii)</b> o <code>posseConfirmada</code>
+      <b>fail-soft</b> — num erro <b>transitório</b> de banco ele devolve <code>false</code>, os 4 gates são
+      pulados, e se o soluço passa o settle <b>sucede</b>: a Issue fecha <b>sem</b> o
+      Approval/dirigir/parecer que o run produziu. <b>Porta possivelmente mais larga que a do próprio D1.</b>
+      ⇒ <i>D1 é a instância mais afiada de uma CLASSE.</i></td>
+    </tr>
+    <tr>
+      <td class="v-ambar">🟠</td>
+      <td><b>São QUATRO destinos, não três.</b> Falta o caso em que o kill falha, o run termina com sucesso e
+      <b>o reaper ainda não rodou</b> (Δ&lt;5 s): <code>tryComplete</code> casa <b>1 linha</b>, a Issue vai a
+      <b><code>DONE</code></b> e o Run fica <code>INTERRUPTED</code> para sempre. <b>O "parar" do operador é
+      atropelado e uma entrega entra no board a partir de um run que ele mandou matar.</b> Não está nomeado em
+      lugar nenhum.</td>
+    </tr>
+    <tr>
+      <td>🔵</td>
+      <td><b><i>"Em silêncio"</i> é exagero leve:</b> o <code>posseConfirmada</code> grava
+      <code>GATE_DE_SAIDA_SEM_POSSE</code> no StepTrace <b>antes</b>. Há migalha — mas enquadrada como
+      <i>"os 4 gates foram descartados"</i>, não <i>"uma entrega foi descartada"</i>, e nada a correlaciona com
+      a Issue. <b>Não herde o exagero no texto do conserto.</b></td>
+    </tr>
+    <tr>
+      <td>🔵</td>
+      <td><b>A janela não é "5 s de exposição": é "5 s de carência, depois perda CERTA"</b> — condicionado ao
+      kill falhar, o reaper ganha quase sempre. E <b>a exposição CRESCEU: foi a I-bis que pôs
+      <code>INTERRUPTED</code> no reaper.</b> Custo criado por uma fatia, nomeado por outra, consertado por
+      esta.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>C — O javadoc stale que esta fatia herda</h2>
+
+<p><code>AdapterRunExecutor:205-220</code> descreve o gatilho do <code>CorpoDoRunSemDerrubarOSettleTest</code>
+com a semântica <b>anterior</b> ao PR #61.</p>
+
+<div class="caixa aviso">
+  <span class="rotulo">Ressalva medida em 2026-07-27</span>
+  <p>O bloco está no lugar apontado e fala do gatilho <code>runSemLinha</code>, mas <b>não contém</b> a frase
+  "fabrica UUID" — essa está no <code>LockOrfaoReaper:60</code>, que é do <a href="P2-f2-produtor-coletor.html">P2</a>.
+  A staleness aqui é <b>derivada</b> (o gatilho ainda é produzível pós-<code>07c6f94</code>?), não literal.
+  <b>Quem citar isso na devolutiva, meça o gatilho, não o texto.</b></p>
+</div>
+
+<h2>Critérios de aceite</h2>
+
+<ol>
+  <li>RED por item comportamental, com <b>controle positivo dentro do mesmo bloco</b>.</li>
+  <li>Prova viva com artefato: <b>SHA do jar E o <code>app.log</code> retido</b>.</li>
+  <li><b>Nomeie os quatro destinos</b> e diga que o D1 é uma <b>classe</b>, não um evento.</li>
+  <li>Piso 2× nas duas pontas. Entrada: <b>965 / 323</b> — re-medir.</li>
+  <li>PR contra <code>main</code>. <b>Não mergear.</b></li>
+</ol>
+
+<div class="caixa aviso">
+  <span class="rotulo">Não herde números</span>
+  <p>A contagem de fixtures de <code>RunContext</code> mudou de rodada em rodada ("8" virou 9 com um teste novo).
+  <b>Re-meça.</b> E lembre que <code>grep -c</code> conta por substring — sobre enum com prefixo comum, use
+  match exato.</p>
+</div>
+
+<h2>O que este ponto NÃO fecha</h2>
+
+<ul>
+  <li><b>Identidade do lock</b> — é o <a href="P2-f2-produtor-coletor.html">P2</a>.</li>
+  <li><b>D-POSSE-6</b> — fila de grill próprio, por decisão do dono.</li>
+  <li><b>Recuperar trabalho perdido</b> — explicitamente fora. O entregável é audibilidade.</li>
+</ul>
+
+<p class="medido">Kickoff: <code>HANDOFF-fatia2-posse-do-run-KICKOFF.md</code> (raiz), sessão de controle #9,
+2026-07-22. Desenho em <code>HANDOFF-grill-posse-do-run.md</code> (D-POSSE-1..8, rodada 2 revisada).
+Âncoras reconferidas em 2026-07-27.</p>
+
+</main>

@@ -1,0 +1,225 @@
+<meta charset="utf-8">
+<title>R4 — Roadmap de ajustes (21 itens)</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › R4</div>
+
+<h1>R4 — Roadmap de ajustes</h1>
+<p class="subtitulo">Os ajustes que a fase de descoberta produziu. <b>Reconciliado em 2026-07-27: de 10 para 21 itens.</b></p>
+
+<div class="fichas">
+  <span class="ficha">Aberto <b>2026-07-16</b></span>
+  <span class="ficha">Itens <b>21</b></span>
+  <span class="ficha">Fechados <b>1</b></span>
+  <span class="ficha">Origem <b>R21-A · Baterias 1 e 1b</b></span>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">O que a migração de 2026-07-27 consertou aqui</span>
+  <p>O arquivo antigo parava no <b>item 10</b> e não era tocado desde <b>2026-07-17 10:41</b>. Os itens
+  <b>#11 a #21 tinham sido numerados</b> pelas faixas de descoberta — as referências existem no plano de
+  caça e na memória (<i>"roadmap #15"</i>, <i>"roadmap #20 recaracterizado"</i>) — mas <b>nunca foram
+  escritos no roadmap</b>. Quem abrisse o arquivo lia um retrato incompleto e não sabia disso.</p>
+  <p>Os 11 itens abaixo foram recuperados do plano de caça (achados <b>N1–N15</b>) e dos vereditos das
+  Baterias 1 e 1b. <b>Nenhum item foi inventado</b>: cada um cita a origem.</p>
+</div>
+
+<h2>Método (decisão do dono, verbatim)</h2>
+
+<p>Do <code>docs/handoffs/HANDOFF-prova-final-v1.md</code> §10: as ADRs viram a <b>especificação</b>; cada
+funcionalidade descrita nelas é testada <b>ao vivo</b> (motor real) e classificada
+<b>funciona / não funciona</b>; o resultado alimenta esta seção.</p>
+
+<p>As 4 lições de como caçar estão em <a href="../descoberta-de-bugs.detalhe/D1-metodo-e-licoes.html">D1 do
+plano de caça</a>: a ADR afirma / o dado decide · o bug mora no <b>cruzamento</b> entre ADRs · testar pelo
+<b>produtor real</b>, nunca por fixture · não julgar sistema <b>em voo</b>.</p>
+
+<h2>Itens 1–10 (da prova final, R21-A)</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>#</th><th>Item</th><th>Origem</th><th>Estágio</th></tr></thead>
+  <tbody>
+    <tr><td><b>1</b></td>
+      <td><b>A organização contratada não consegue trabalhar — e declara DONE.</b> Run de issue sem
+      compositor de prompt + no-op verde + settle completa. Medido: run <code>e67ff7dd</code>, 58 ms, zero
+      motor, #1→DONE</td>
+      <td>prova final §2</td>
+      <td class="v-verde">✅ MERGED PR #34 (R22-A)</td></tr>
+    <tr><td>2</td>
+      <td><b>Vão ADR-0037 §7(8) × ADR-0030</b> — <i>"anti-loop = freio humano por construção"</i> é FALSO:
+      a continuação de contexto RETOMA o para-e-avisa sem o dono</td>
+      <td>prova final §6.1</td><td>💡 A GRELHAR</td></tr>
+    <tr><td>3</td>
+      <td><b><code>HIRE_AGENT</code> não carrega time</b> — o executor nasce com <code>team_id</code> NULL.
+      <b>Nota da N6:</b> o <code>teamId</code> <b>nem existe</b> como campo do <code>HireCommand</code> —
+      é a raiz, não um null esquecido</td>
+      <td>prova final §6.2</td><td>💡 A GRELHAR</td></tr>
+    <tr><td>4</td><td><b><code>FILTRO_TIPOS</code> stale no front</b> (<code>approvals.ts:12-22</code>: 3
+      tipos; o gate tem 7 ações). Não-bloqueador</td><td>prova final §6.3</td><td>💡 A GRELHAR</td></tr>
+    <tr><td>5</td><td><b>"você" em turno que o SISTEMA escreveu</b>
+      (<code>issue-conversa-section.tsx:44</code>), com UUID cru visível ao dono</td>
+      <td>prova final §6.4</td><td>💡 A GRELHAR</td></tr>
+    <tr><td>6</td><td>Cosmético: <code>..</code> duplicado no texto do para-e-avisa</td>
+      <td>prova final §6.5</td><td>💡 A GRELHAR</td></tr>
+    <tr><td>7</td><td><b>Aprovação em LOTE sem feedback na UI</b> — o dono aprovou 27 e a tela "não fez
+      nada"; o ato commitou</td><td>ledger R21-A</td><td>💡 A GRELHAR</td></tr>
+    <tr><td>8</td><td><b><code>launch.json</code> sem config <code>frontend-prova</code></b> — a config
+      tracked força <code>BACKEND_ORIGIN=:18081</code> morto ⇒ tela cega</td>
+      <td>ledger R21-A §3</td><td>💡 A GRELHAR</td></tr>
+    <tr><td>9</td><td>Fraseado do <code>oQueMudou</code> da review (mistura os 2 espaços de
+      <code>#N</code>)</td><td>candidata v1.1 #14</td><td>💡 A GRELHAR</td></tr>
+    <tr><td>10</td><td>Rename mecânico <code>KnowAllMcpBridge</code> → <code>McpBridge</code></td>
+      <td>candidata v1.1 #15</td><td>💡 A GRELHAR</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Itens 11–18 — recuperados dos achados N1–N15 do plano de caça</h2>
+
+<p>Achados de <b>montagem</b> (2026-07-17): 13 levantados por verificadores, <b>12 sobreviveram</b> à
+conferência contra a <code>4c1b35f</code>. Todos com âncora de código conferida na época —
+<b>reconferir antes de citar</b>, o repo sofre drift de linha a cada Frente.</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>#</th><th>Achado (origem)</th><th>Grav.</th><th>Fronteira</th></tr></thead>
+  <tbody>
+    <tr><td><b>11</b></td>
+      <td><b>A ESTRATÉGIA só chega na issue nascida no board</b> — a do gate e a corretiva degradam.
+      <code>ancorarConversa</code> tem um único chamador; <code>createAtribuida</code> não ancora conversa.
+      <b>Nuance:</b> o dano não é automático — só existe se a issue do gate tiver, a montante, uma conversa
+      <b>com</b> estratégia que não a alcança. E aí é <b>em silêncio</b> (o anti-silêncio cobre estratégia
+      ilegível, não não-ancorada). <i>(N1)</i></td>
+      <td class="v-vermelho">🔴 se confirmado</td><td>0037×0034×0018×0011</td></tr>
+    <tr><td><b>12</b></td>
+      <td><b>O #34 não faz o agente do gate trabalhar — faz ele falhar honesto.</b> Hire sem
+      <code>adapterType</code> segue mudo, agora com BLOCKED legível em vez de DONE fantasma.
+      <b>Fork a observar:</b> a proposta do CEO carrega <code>adapterType</code> na prática? <i>(N3)</i>
+      — <b>respondido pela R26-A: carrega, mas pode carregar INVÁLIDO</b> (ver item 21)</td>
+      <td class="v-vermelho">🔴 se confirmado</td><td>0018×0004×0011×0037</td></tr>
+    <tr><td><b>13</b></td>
+      <td><b>Nenhum código cria Issue a partir de run de ISSUE</b> — o arquiteto empregado não tem canal.
+      <code>ProposalScanner</code> só é chamado do galho TURNO, e turno só existe para
+      <code>role='ceo'</code>. <i>(N4)</i> — <b>CONFIRMADO ao vivo pela R26-A (B1b.4)</b></td>
+      <td class="v-vermelho">🔴</td><td>0018×0017×0031</td></tr>
+    <tr><td><b>14</b></td>
+      <td><b>Breaker (0018) × BLOCKED (0011): deadlock silencioso.</b> Os "3 FAILED consecutivos do par" só
+      acumulam com 2 REOPENs do dono; ao 3º a issue fica <b>OPEN eterna, sem run e sem aviso</b>.
+      <i>(N5)</i> — <b>CONFIRMADO ao vivo pela R27-A</b>, ver item 21</td>
+      <td class="v-ambar">🟠</td><td>0018×0011×0012</td></tr>
+    <tr><td><b>15</b></td>
+      <td><b>O v1 não tem produtor real para <code>executionTarget=DOCKER</code></b> — provado em 5 pontos
+      (default LOCAL · gate passa null nas 2 portas · UI chumba "LOCAL" · PATCH não troca ·
+      <code>git grep '"DOCKER"'</code> = zero hits em <code>src/main</code>). Existe endpoint, <b>não existe
+      produtor</b>. <i>(N6 — irmã do item 3; promove a candidata v1.1 #12)</i></td>
+      <td class="v-ambar">🟠</td><td>transversal (0016/0023/0025/0026/0027/0041/0042)</td></tr>
+    <tr><td><b>16</b></td>
+      <td><b>O no-op atravessa o <code>succeeded()</code> do pedido de skill.</b> Único ponto pós-#34 em que
+      o no-op cruza um <code>succeeded()</code> sem a guarda <code>!noop</code>. Inócuo hoje. <i>(N7,
+      carona)</i></td>
+      <td>⚪</td><td>0004×0003×0011</td></tr>
+    <tr><td><b>17</b></td>
+      <td><b>Duas emendas documentais devidas.</b> (a) A letra <i>"env vazio"</i> (0018:30) morreu — o run de
+      issue sempre tem prompt agora, e a R22-A emendou 0037/0011/0004 mas <b>não a 0018</b>. (b) A
+      <b>ADR-0004 quebrou as próprias âncoras</b>: cita linhas que o próprio #34 deslocou, e afirma que o
+      <code>Result</code> tem 4 campos quando são 6. <i>(N9 + N13)</i></td>
+      <td class="v-ambar">🟡</td><td>0018×0004×0016</td></tr>
+    <tr><td><b>18</b></td>
+      <td><b>Diagnóstico errado no checkout.</b> <i>"checkout da issue falhou (já em execução por outro
+      run)"</i> aparece também quando a causa é outra. <b>Âncora corrigida pela R27-A:</b>
+      <code>AdapterRunExecutor:178</code> — <b>não <code>:213</code></b>, que era erro de citação da R26-A.
+      <i>(N11, carona)</i></td>
+      <td>⚪</td><td>0005×0012</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Itens 19–21 — vereditos das Baterias 1 e 1b (provados ao vivo)</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>#</th><th>Achado</th><th>Grav.</th><th>Prova</th></tr></thead>
+  <tbody>
+    <tr><td><b>19</b></td>
+      <td><b>A busca de skill falha em pergunta em prosa.</b> Paráfrase natural → "gap"; jargão literal →
+      match. <b>É a mesma classe já corrigida do lado da memória, nunca replicada na busca de skill.</b></td>
+      <td class="v-vermelho">🔴</td><td>B1.4 (R25-A, 2026-07-17)</td></tr>
+    <tr><td><b>20</b></td>
+      <td><b>O guard protege só o workspace, não a home.</b> <code>pretooluse-guard.js</code> resolve
+      <code>.claude/skills</code> <b>relativo ao cwd</b> ⇒ escrita no <code>~/.claude/skills</code> GLOBAL
+      passa. O CEO Executor plantou skill viva lá e apagou.
+      <b>⚠️ Recaracterizado</b> — a reserva original era para <i>"ultracode sobrescreve o hook"</i>, hipótese
+      <b>REFUTADA</b> (<code>--settings</code> mescla, o cinto segura). <b>A diferença foi PATH, não
+      effort.</b></td>
+      <td class="v-vermelho">🔴</td><td>B1.6 (R26-A, 2026-07-17)</td></tr>
+    <tr><td><b>21</b></td>
+      <td><b>O circuit breaker está armado e mudo.</b> 3 runs FAILED (<code>adapterType</code> inválido) →
+      issue <b>OPEN intocada</b>, <b>0</b> <code>ISSUE_BLOCKED</code>, <b>0</b> alerta. Duas causas: wakeup
+      manual de raiz fura o <code>WakeupService</code>; e para issue sem conversa a notice fail-softa a
+      <code>log.warn</code>. <b>Convergência viva do item 14.</b>
+      <br>Irmão do mesmo achado: <b>o gate não valida <code>adapterType</code></b> ⇒ time natimorto em
+      silêncio.</td>
+      <td class="v-vermelho">🔴</td><td>B1b.5 (R27-A, 2026-07-18)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Achados que NÃO viraram item</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Achado</th><th>Desfecho</th></tr></thead>
+  <tbody>
+    <tr><td><b>N2</b> — "a trava no-op tem uma porta que a fura"</td>
+      <td><b>REFUTADO por inspeção</b> na própria montagem: o único chamador é um endpoint que o agente chama
+      <b>durante o run</b>, e um run no-op é por definição aquele em que o motor nunca foi invocado. Caminho
+      inalcançável. <b>Registrado para não ser re-levantado.</b></td></tr>
+    <tr><td><b>N14</b> — "500 em vez de 404 no front"</td>
+      <td><b>REFUTADO ao vivo.</b> A âncora citada era um <code>console.error</code> num componente
+      <code>"use client"</code> que não busca nada. Medido nas duas condições: <b>com o backend vivo, todo
+      caminho inexistente já responde 404</b>. O 500 era cascata de dependência morta. <b>Não abrir
+      fatia.</b></td></tr>
+    <tr><td><b>N15</b> — caminho de 1 segmento custa ida ao backend</td>
+      <td>Real e menor: <code>[companySlug]</code> engole <code>/qualquer-coisa</code>, e
+      <code>frontend/public/</code> <b>não existe</b> ⇒ o <code>/favicon.ico</code> de toda visita faz
+      round-trip. Não é bug de correção; é desperdício. <b>Carona, sem urgência.</b></td></tr>
+    <tr><td><b>N10</b> — review gate não registra comando/porta</td>
+      <td><b>CONFIRMADO na B1b.3</b> (R27-A): <code>ReviewServerEmbed</code> tem <code>.command</code>/
+      <code>.port</code> na mão e não renderiza; a mesma declaração aparece na página da Issue. Move
+      <code>0023-A31</code> 🎯→🔴. <b>Entra no lote de conserto, não como item novo.</b></td></tr>
+    <tr><td><b>N8</b> — drift camelCase no <code>activity_log</code></td>
+      <td><b>CONFIRMADO na B1.5</b>: 32/32 camelCase contra a ADR-0009:28-29.
+      <code>0009-A10</code>→🔴, <code>A11</code>→✅.</td></tr>
+    <tr><td><b>N12</b> — o dossiê documentava o bug como prova</td>
+      <td>Integridade do inventário: <code>0012-A4</code> era ✅ PROVADA com evidência única que documentava o
+      <b>próprio bug</b>. <b>Rebaixada</b> por decisão do controle.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>O que este ponto NÃO fecha</h2>
+
+<ul>
+  <li><b>Nenhum dos itens 2–21 tem fatia emitida.</b> Todos seguem <b>💡 A GRELHAR</b> ou aguardando
+  desenho. O único fechado é o item 1.</li>
+  <li><b>A ordem de execução não mora aqui</b> — mora no <a href="../rumo-ao-uso-real.md">plano rumo ao uso
+  real</a>, que sequencia os que bloqueiam o uso nos projetos do dono.</li>
+  <li><b>O estoque de caça residual</b> (394 🎯 + 136 pós-reboot) é do
+  <a href="../descoberta-de-bugs.md">plano de caça</a>, não deste ponto.</li>
+</ul>
+
+<h2>Ligações</h2>
+<ul>
+  <li><a href="../descoberta-de-bugs.md">Plano de caça</a> — de onde vieram os itens 11–21.</li>
+  <li><a href="R5-backlog-v11.html">R5</a> — as candidatas v1.1; o item 15 promove a #12 de lá.</li>
+  <li><a href="../rumo-ao-uso-real.md">Rumo ao uso real</a> — sequencia os itens 20 e 21.</li>
+</ul>
+
+<p class="medido">Itens 1–10 escritos em 2026-07-16/17 (R22-A). Itens 11–18 recuperados dos achados N1–N15 do
+plano de caça (montados 2026-07-17, âncoras conferidas contra <code>4c1b35f</code>). Itens 19–21 dos vereditos
+ao vivo das Baterias 1 e 1b (2026-07-17/18). <b>Reconciliado e escrito aqui em 2026-07-27</b> — antes disso os
+itens 11–21 existiam só como referência numérica.</p>
+
+</main>

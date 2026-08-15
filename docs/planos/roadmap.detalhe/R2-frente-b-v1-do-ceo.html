@@ -1,0 +1,132 @@
+<meta charset="utf-8">
+<title>R2 — Frente B: o v1 do CEO</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › R2</div>
+
+<h1>R2 — Frente B: a camada de orquestração</h1>
+<p class="subtitulo">O v1 do CEO. <b>Declarado FECHADO pelo dono em 2026-07-16</b>, PRs #1–#33.</p>
+
+<div class="fichas">
+  <span class="ficha">Estágio <b>FECHADO</b></span>
+  <span class="ficha">PRs <b>#1–#33</b></span>
+  <span class="ficha">main do fecho <b>83c5fe9</b></span>
+  <span class="ficha">Piso do fecho <b>738 / 294</b></span>
+</div>
+
+<h2>As fatias que compõem o v1</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Fatia</th><th>O que entregou</th><th>PR · ADR</th></tr></thead>
+  <tbody>
+    <tr><td><b>Fatia 1</b> — loop de handoff de contexto (50-60%)</td>
+      <td>Detecção de % pós-run com fail-open + dial 55 · bilhete destilado · trava N=5 + idempotência ·
+      skill sintética de destilação · 1º leitor <code>--resume</code> cirúrgico</td>
+      <td>PR #1 · <b>ADR-0030</b></td></tr>
+    <tr><td><b>Fatia AGENTS.md (G3)</b> — o adapter declara a convenção de workspace</td>
+      <td>O codex passa a receber carta em <code>AGENTS.md</code> + skills em <code>.codex/skills/</code>
+      (canais nativos, sondas S1/S2); faxina permanente apaga o espelho <code>.claude/</code> que ele nunca
+      leu. <b>Layout claude bit-idêntico</b> — asserções intocadas</td>
+      <td>PR #4 · <b>ADR-0032</b></td></tr>
+    <tr><td><b>Fatia 2</b> — CEO em 3 personas (Questionador / Planejador / Executor)</td>
+      <td>3 moldes <code>ceo-*</code> + backfill · resolvedor por-persona · <code>composePrompt</code>
+      por-persona · workspace de conversa compartilhado · scanner col-0 + roteador + poster com corte na
+      reincidência</td>
+      <td>PR #8 · <b>ADR-0031</b></td></tr>
+    <tr><td><b>Fatia G5</b> — ID sequencial de Issue (<code>#N</code> por company)</td>
+      <td>Coluna + backfill retroativo + <code>uq_issue_company_seq</code>; alocação sob lock da company (o
+      lock <b>é</b> o serializador do MAX+1, unique = backstop). <code>#N</code> em toda superfície</td>
+      <td>PR #5 · <b>ADR-0033</b></td></tr>
+    <tr><td><b>Caso B</b> — melhoria de task entregue</td>
+      <td>Bloco <code>correcao</code> do Questionador → corrente #N→time→arquiteto determinística → corretiva
+      <code>corrige_issue_id</code> com verbatim do dono copiado do banco → <b>1ª Decision origem-AGENTE</b></td>
+      <td>PR #10 · <b>ADR-0034</b></td></tr>
+    <tr><td><b>Absorção de issues do board</b></td>
+      <td>Issue do dono dispara turno ao Planejador → bloco <code>absorcao</code> aponta o TIME → sistema
+      resolve time→arquiteto e seta assignee. O gate ganhou <code>CREATE_TEAM</code> (time+arquiteto atômico)
+      e <code>CREATE_ISSUE</code> passou a nascer com dono</td>
+      <td>PR #14 · <b>ADR-0037</b></td></tr>
+    <tr><td><b>Caso C direto</b> — contratação pedida ao balcão + anti-silêncio</td>
+      <td>Trilho do caso C no bloco do Questionador (dossiê + handoff no MESMO turno) · cinto de emissor ·
+      <code>ProposalDescarteNotice</code> (aviso visível sem Run)</td>
+      <td>PR #13 · <b>ADR-0036</b></td></tr>
+    <tr><td><b>Aprovação em lote</b></td><td>Decisão do dono sobre N approvals de uma vez</td><td>PR #12 · <b>ADR-0035</b></td></tr>
+    <tr><td><b>Redesenho motor-nativo (F-N1–F-N6)</b></td>
+      <td>Continuidade de sessão · saída estruturada · interrupção mid-run · contabilidade off-book · <b>hook
+      PreToolUse</b> (script node ÚNICO materializado nos 2 motores)</td>
+      <td>PRs #16–#20 · <b>ADRs 0038–0042</b></td></tr>
+    <tr><td><b>Auto-kickback entre personas (R9-B)</b></td>
+      <td>5º bloco tipado <code>retrabalho</code> · devolução do bastão entre back-office sem re-grelhar o
+      dono · régua compartilhada entre os dois canais de kickback</td>
+      <td>PR #21 · ADR-0031 emendada</td></tr>
+    <tr><td><b>Propose-then-commit de molde + drift-badge</b></td>
+      <td>5ª ação <code>CREATE_ROLE_TEMPLATE</code> · re-pin COMPLETO que substitui · drift derivado na tela</td>
+      <td>PR #22 · ADR-0017 emendada</td></tr>
+    <tr><td><b>F-AT1</b> — pedido de skill do EXECUTOR via Approval</td>
+      <td>O executor pede skill fora do set pelo canal de saída; teto (cap 5 distintos/run + dedup); 6ª ação
+      <code>SKILL_INSTALL_REQUEST</code></td>
+      <td>PR #23 · ADR-0003/0006 emendadas</td></tr>
+    <tr><td><b>F-AT2</b> — KnowAll body inline via MCP-stdio LOCAL</td>
+      <td>Servidor MCP-stdio (2 tools read-only, callback loopback com token efêmero por-run) · <b>cap 3
+      corpos distintos/run</b> + dedup + recusa não-fatal · o executor busca mid-run e <b>termina no MESMO
+      run</b></td>
+      <td>PR #24 · ADR-0003 emendada</td></tr>
+    <tr><td><b>Lote × Decision (R18-A)</b></td>
+      <td>Bug de produção VIVO: um ato do dono com N alvos virava <b>N Decisões clonadas</b> + nudge falsa.
+      Agora <b>1 Decisão por ÁREA</b>, com a linhagem dos N na evidência</td>
+      <td>PR #29 · ADRs 0035/0019 emendadas</td></tr>
+    <tr><td><b>Circuit-breaker de erro repetido (R18-B)</b></td>
+      <td>O <b>3º teto</b> que a ADR-0018 prometia e nunca existiu. Breaker <b>derivado do histórico</b> (zero
+      estado persistido); para só o par agente×issue; <b>root fura = o destravamento</b></td>
+      <td>PR #30 · ADR-0018 emendada</td></tr>
+    <tr><td><b>Feedback do review → executor (R19-A)</b></td>
+      <td>O motivo do REJECT já era Decisão, mas o executor nunca o recebia no re-run. Faltava <b>entrega</b>,
+      não endpoint. <b>PUSH, não pull</b> — feedback de reject não é opcional</td>
+      <td>PR #31 · ADR-0011 emendada</td></tr>
+    <tr><td><b>Fix do loop kickback↔continuação</b></td>
+      <td>Achado da prova final: as 2 travas contavam só o próprio tipo consecutivo, e a <b>alternância</b>
+      zerava as duas — a conversa girava sem o dono</td>
+      <td>PR #33 · ADR-0030 emendada</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Como o v1 fechou</h2>
+
+<p>A <b>prova final (R21-A, 2026-07-16)</b> rodou as pernas (a)–(f) com motor real. Achou o <b>bug #1</b>
+(DONE fantasma — o run de issue não tinha compositor) mais 4 achados. O dono decidiu: <b>o v1 fecha</b>; o que
+sobrou vira o <a href="R4-roadmap-de-ajustes.html">roadmap de ajustes</a>.</p>
+
+<div class="caixa risco">
+  <span class="rotulo">A lição mais cara desta frente</span>
+  <p>O piso <b>738 verde não viu nenhum</b> dos 5 achados da prova final. Quatro horas de prova ao vivo
+  acharam o que a suíte inteira não via — e é por isso que a fase seguinte (<a href="../descoberta-de-bugs.md">descoberta
+  de bugs</a>) testa <b>ao vivo</b> em vez de escrever mais teste unitário.</p>
+</div>
+
+<h3>Desfecho das 5 decisões da lista H (R17-B)</h3>
+<ul>
+  <li><b>(1)</b> feedback→executor — <b>feito</b> (R19-A / PR #31)</li>
+  <li><b>(2)</b> veto de redação: os 6 textos <b>MANTIDOS</b> como shippados (decisão do dono); a única correção
+  foi a acentuação de 7 strings do <code>RacionalPolicy</code>, de carona no #29</li>
+  <li><b>(3c)</b> circuit-breaker — <b>feito</b> (R18-B / PR #30)</li>
+  <li><b>(4)</b> pino <code>2.1.201</code> <b>MANTIDO</b> por decisão do dono; gatilho de bump registrado na
+  ADR-0014</li>
+  <li><b>(5)</b> lote×Decision — <b>feito</b> (R18-A / PR #29)</li>
+</ul>
+
+<h2>O que esta frente NÃO cobre</h2>
+<ul>
+  <li><b>Tudo que veio depois do fecho</b> — PRs #34–#61 (conserto do bug #1, Frente E, organograma, esteira do
+  lock órfão) está no <a href="ledger.html">ledger</a>, não aqui.</li>
+  <li><b>"Fechado" é do escopo, não da qualidade.</b> O v1 fechou com defeitos conhecidos; eles viraram o
+  <a href="R4-roadmap-de-ajustes.html">R4</a>.</li>
+</ul>
+
+<p class="medido">Fecho declarado pelo dono em 2026-07-16, registrado em
+<code>docs/handoffs/HANDOFF-prova-final-v1.md</code> §1. Estado desta página conferido contra o roadmap
+original em 2026-07-27.</p>
+
+</main>

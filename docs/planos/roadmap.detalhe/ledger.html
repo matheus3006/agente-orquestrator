@@ -1,0 +1,138 @@
+<meta charset="utf-8">
+<title>Ledger — roadmap interno</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › Ledger</div>
+
+<h1>Ledger do roadmap</h1>
+<p class="subtitulo">Estado atual no topo (sobrescrito). Histórico abaixo (acrescido, nunca editado).</p>
+
+<h2>Estado atual</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Dimensão</th><th>Valor vigente</th><th>Medido em</th></tr></thead>
+  <tbody>
+    <tr><td><code>main</code></td><td><code>39dce6a</code></td><td>2026-07-27</td></tr>
+    <tr><td>Último PR mergeado</td><td><b>#61</b> (2026-07-22 11:35:48 -03)</td><td>2026-07-27</td></tr>
+    <tr><td>PRs abertos</td><td>nenhum</td><td>2026-07-27</td></tr>
+    <tr><td>Maior migration</td><td><code>V38__review_parecer_do_gestor.sql</code> ⇒ <b>V39 livre</b></td><td>2026-07-27</td></tr>
+    <tr><td>Maior ADR</td><td><code>0050</code> ⇒ <b>ADR-0051 livre</b></td><td>2026-07-27</td></tr>
+    <tr><td>Piso declarado</td><td>965 back / 323 front — <b>não re-medido nesta sessão</b></td><td>2026-07-22</td></tr>
+    <tr><td>Fase</td><td><b>Conserto</b> (a descoberta produziu o roadmap; desde 07-19 executa-se o ajuste)</td><td>2026-07-27</td></tr>
+    <tr><td>Roadmap de ajustes</td><td><b>21 itens · 1 fechado</b> (item 1). Todo o resto A GRELHAR</td><td>2026-07-27</td></tr>
+    <tr><td>Última auditoria doc×código</td><td><code>fd3be27</code> (2026-07-15) — <b>27 PRs de atraso</b></td><td>2026-07-27</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Histórico</h2>
+
+<h3>2026-07-27 — migração para a convenção de plano; roadmap reconciliado</h3>
+<ul>
+  <li>O arquivo <code>docs/roadmap-interno.md</code> (553 linhas, <b>tracked</b>, referenciado por 9 docs
+  incluindo a ADR-0019) foi migrado para índice + páginas de detalhe. O caminho antigo virou <b>ponteiro</b>
+  para não quebrar as referências.</li>
+  <li>🔴 <b>Reconciliação de conteúdo:</b> o roadmap de ajustes parava no <b>item 10</b> e não era tocado desde
+  <b>2026-07-17 10:41</b>. Os itens <b>#11–#21 tinham sido numerados</b> pelas faixas de descoberta e
+  <b>nunca escritos</b>. Recuperados dos achados N1–N15 e dos vereditos das Baterias 1 e 1b —
+  ver <a href="R4-roadmap-de-ajustes.html">R4</a>.</li>
+  <li>🔴 <b>Os PRs #34–#61 não estavam registrados em lugar nenhum do roadmap.</b> Transcritos abaixo.</li>
+  <li>Carimbado que a auditoria doc×código está congelada em <code>fd3be27</code> — <b>uma varredura nova está
+  devida</b> (a Frente E sozinha tocou 101 arquivos).</li>
+</ul>
+
+<h3>2026-07-18 a 2026-07-22 — a esteira da posse do run e do lock órfão</h3>
+<div class="rolagem"><table>
+  <thead><tr><th>PR</th><th>O que entregou</th></tr></thead>
+  <tbody>
+    <tr><td><b>#52</b></td><td>Hardening de segurança do parecer — ADR-0049 torna <code>DONE</code> reabrível</td></tr>
+    <tr><td><b>#53</b></td><td>Fecho do parecer — 23 itens numa fatia única (código + doc), zero emenda órfã</td></tr>
+    <tr><td><b>#54</b></td><td>Motor thread-única + prazo de subprocesso (ADR-0050). <b>O prazo cerca o DRAIN, não o <code>waitFor</code></b></td></tr>
+    <tr><td><b>#55</b></td><td>Parecer rodada 2 — lost update fechado por <code>updatable=false</code> no mapeamento</td></tr>
+    <tr><td><b>#56</b></td><td>Endurecimento do executor — escalação no interrupt · <code>Throwable</code> · órfão do produtor</td></tr>
+    <tr><td><b>#57</b></td><td>A1 escalação de morte — troca a ORDEM (matar antes de repor a flag)</td></tr>
+    <tr><td><b>#58</b></td><td>Fecho dos resíduos do #57 — a alegação viajava em 3 superfícies</td></tr>
+    <tr><td><b>#59</b></td><td><b>Fatia I</b> — o lock órfão fecha na FONTE e na REDE</td></tr>
+    <tr><td><b>#60</b></td><td><b>Fatia I-bis</b> — o ponto cego da rede. <code>exists()</code> que CONDENA é fail-CLOSED na ausência ⇒ inverter</td></tr>
+    <tr><td><b>#61</b></td><td><b>Fatia I-ter</b> — o lock ganha PROCEDÊNCIA; a regressão do <code>/checkout</code> sai de main</td></tr>
+  </tbody>
+</table></div>
+
+<h3>2026-07-18 a 2026-07-20 — organograma e review delegado</h3>
+<div class="rolagem"><table>
+  <thead><tr><th>PR</th><th>O que entregou</th></tr></thead>
+  <tbody>
+    <tr><td><b>#43</b></td><td><b>F-ORG-A</b> árvore-organograma (V35 / ADR-0045) — a chefia virou ESPELHO derivado</td></tr>
+    <tr><td><b>#45</b></td><td>R31 housekeeping</td></tr>
+    <tr><td><b>#46</b></td><td>front 500 em not-found offline — <code>[companySlug]/layout.tsx</code> sem try/catch no fetch</td></tr>
+    <tr><td><b>#47</b></td><td><b>F-ORG-B</b> gestor estágio→promoção (V36) — reseta em troca de titular</td></tr>
+    <tr><td><b>#48</b></td><td>Dirigir issue sem gate (ADR-0047) — 1ª Approval born-APPROVED viva</td></tr>
+    <tr><td><b>#49</b></td><td>Hardening do dirigir-sem-gate — gates de fim-de-run disparavam side-effect sem checar posse</td></tr>
+    <tr><td><b>#50</b></td><td><b>F-ORG-C</b> review delegado com parecer (V38 / ADR-0048) — APPROVE do promovido é IRREVERSÍVEL</td></tr>
+  </tbody>
+</table></div>
+
+<h3>2026-07-17 a 2026-07-18 — conserto do bug #1, Frente E e descoberta</h3>
+<div class="rolagem"><table>
+  <thead><tr><th>PR</th><th>O que entregou</th></tr></thead>
+  <tbody>
+    <tr><td><b>#34</b></td><td><b>R22-A — conserto do bug #1</b> (item 1 do <a href="R4-roadmap-de-ajustes.html">R4</a>):
+      <code>IssuePromptComposer</code> + trava no-op→BLOCKED + <code>runtime_command</code> só para
+      <code>process</code> + V30. ADRs 0037/0011/0004 emendadas</td></tr>
+    <tr><td><b>#35</b></td><td>R23-A integração da Frente E — <b>lição:</b> worktree não protege a BRANCH; duplicata Flyway invisível à suíte H2</td></tr>
+    <tr><td><b>#36</b></td><td>Incidente <code>8cbac4b</code>: untracked-de-contrato versionados e pushed — desfeito</td></tr>
+    <tr><td><b>#37</b></td><td>R28-A Uso B fatia B-i — checks no molde + briefing</td></tr>
+    <tr><td><b>#38 · #39</b></td><td>R28-B Uso B fatia B-ii — validador qwen. <b>Uso B completo</b></td></tr>
+    <tr><td><b>#40</b></td><td>R30-A correções documentais da B-ii</td></tr>
+    <tr><td><b>#41</b></td><td>R29-A research-preview — pesquisa <code>.md</code> com tipo (V34) renderizada docs-style</td></tr>
+    <tr><td><b>#42</b></td><td>R30-B resíduos documentais</td></tr>
+  </tbody>
+</table></div>
+
+<p><b>As duas baterias da descoberta rodaram nesta janela</b> (R25-A em 07-17; R26-A + R27-A em 07-17/18) e
+produziram os itens 19–21 do <a href="R4-roadmap-de-ajustes.html">R4</a>. Detalhe em
+<a href="../descoberta-de-bugs.md">plano de caça</a>.</p>
+
+<h3>2026-07-16 — v1 declarado FECHADO pelo dono</h3>
+<ul>
+  <li>Prova final (R21-A) rodou as pernas (a)–(f) com motor real; achou o <b>bug #1</b> + 4 achados.</li>
+  <li>Decisão: <b>o v1 fecha</b>; o que sobrou vira o roadmap de ajustes. Abre a fase de descoberta de bugs.</li>
+  <li>PRs #1–#33 MERGED, <code>main 83c5fe9</code>, piso 738 / 294.</li>
+  <li>Mesmo dia: análise Spring AI + <b>ADR-0043 aceita</b> (baseline moderno).</li>
+</ul>
+
+<h3>2026-07-07 a 2026-07-15 — a construção do v1</h3>
+<div class="rolagem"><table>
+  <thead><tr><th>Data</th><th>Evento</th><th>Resultado</th></tr></thead>
+  <tbody>
+    <tr><td>07-07</td><td><b>Auditoria de implementação</b> (o inventário)</td>
+      <td>29 ADRs + 40 handoffs contra o código; <b>48 candidatas → 25 divergências</b> (1 alta / 5 média / 19 baixa)</td></tr>
+    <tr><td>07-08</td><td>Fix reply do codex (última <code>agent_message</code>)</td><td>PR #2; piso 428</td></tr>
+    <tr><td>07-09</td><td>Grill insatisfações do dono (G1–G6) + hotfix do prompt</td><td>PR #3; <b>31→9 eventos, ~1min→8,5s</b></td></tr>
+    <tr><td>07-10</td><td>Fatia AGENTS.md (G3) — grill, execução e VENDO live</td><td>PR #4; <b>divergência ALTA "codex pelado" FECHADA</b>; 5/5 provas</td></tr>
+    <tr><td>07-10</td><td>Reconciliação doc-only das 5 médias</td><td>notas datadas nas ADRs 0001/0004/0005/0019</td></tr>
+    <tr><td>07-10</td><td><b>Renovação de lease</b> — laudo read-only → decisão do dono → execução</td>
+      <td><code>LeaseRenewer</code> + CAS + <code>RUN_LEASE_LOST</code>; <b>2ª ALTA FECHADA</b></td></tr>
+    <tr><td>07-10</td><td>Caso B (ADR-0034) — grill e execução</td><td>PR #10; <b>1ª Decision origem-AGENTE do produto</b></td></tr>
+    <tr><td>07-11</td><td>Absorção de issues do board (ADR-0037)</td><td>PR #14; gate ganha <code>CREATE_TEAM</code></td></tr>
+    <tr><td>07-12</td><td>F-N6 hooks PreToolUse (ADR-0042) · auto-kickback (R9-B) · propose-then-commit (R10-A)</td><td>PRs #20 · #21 · #22</td></tr>
+    <tr><td>07-13</td><td>F-AT1 pedido de skill · F-AT2 KnowAll body inline via MCP</td><td>PRs #23 · #24</td></tr>
+    <tr><td>07-14</td><td><b>Frente C completa</b> (F-C1 · F-C2 · F-C3) + fecho documental</td><td>PRs #25 · #26 · #28</td></tr>
+    <tr><td>07-15</td><td>Lista H: lote×Decision · circuit-breaker · feedback→executor</td><td>PRs #29 · #30 · #31; <b>zero veto pendente</b></td></tr>
+  </tbody>
+</table></div>
+
+<h2>Como escrever neste ledger</h2>
+<ol>
+  <li><b>Sobrescreva</b> "Estado atual". Nunca acrescente uma segunda tabela de estado.</li>
+  <li><b>Acrescente</b> no topo do histórico, com data.</li>
+  <li>Cada entrada diz <b>o que mudou</b>, não repete o estado inteiro.</li>
+  <li><b>Toda medição carrega a data.</b> Número sem data é número sem valor.</li>
+</ol>
+
+<p class="medido">Migrado de <code>docs/roadmap-interno.md</code> §Histórico em 2026-07-27. Os PRs #34–#61 foram
+reconstruídos da memória do projeto e conferidos contra <code>git log</code>.</p>
+
+</main>

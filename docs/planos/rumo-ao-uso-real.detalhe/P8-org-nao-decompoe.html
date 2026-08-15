@@ -1,0 +1,103 @@
+<meta charset="utf-8">
+<title>P8 — N4: a organização não se decompõe</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › P8</div>
+
+<h1>P8 — A org trabalha, mas não se organiza</h1>
+<p class="subtitulo">É o buraco entre "um agente muito bom com um board em volta" e o produto que o norte descreve.</p>
+
+<div class="fichas">
+  <span class="ficha">Tipo <b>Grill + fatias</b></span>
+  <span class="ficha">Origem <b>N4, R26-A</b></span>
+  <span class="ficha">Estado <b>provado ao vivo</b></span>
+  <span class="ficha">Posição <b>último — e é decisão</b></span>
+</div>
+
+<h2>O que foi medido</h2>
+
+<p><b>R26-A / B1b.4, ao vivo:</b> o Arquiteto rodou uma issue de research (run <code>93cae6da</code>, 93 s, web
+real com <code>WebFetch</code>×4, entregável sourced e honesto) e criou <b>ZERO sub-issue</b>. Ele <b>absorve</b>
+a task em vez de decompô-la.</p>
+
+<p>E não é só ele não dividir — é a org inteira afunilar:</p>
+
+<div class="caixa risco">
+  <span class="rotulo">O meta-achado</span>
+  <p><b>O Auditor de Fontes perdeu a corrida de checkout para o arquiteto 3× e nunca executou.</b> Em 5 de 6
+  tentativas de rotear a issue para outro executor, o arquiteto ganhou. A organização <b>centraliza toda issue
+  no arquiteto</b>, independentemente de quem foi contratado para fazê-la.</p>
+</div>
+
+<p>Note o contraste, que é o que torna o achado preciso: <b>a execução entrega de verdade.</b> Issues #3, #4 e o
+Analista de Sensibilidade (#6, modelagem de elasticidade) produziram trabalho real e honesto. O CEO conversa,
+grelha, propõe <code>CREATE_TEAM</code>, o dono aprova, o time é criado e <b>entrega</b>. O ciclo funciona.</p>
+
+<p><b>O que não funciona é a auto-organização.</b> Ninguém quebra trabalho grande em pedaços, ninguém delega
+lateralmente, e o gargalo é sempre o mesmo agente.</p>
+
+<h2>Por que isto é o último ponto do plano</h2>
+
+<p>Não porque seja o menos importante — <b>é provavelmente o mais importante para o produto</b>. É o último por
+três razões, e vale discordar de qualquer uma delas:</p>
+
+<ol>
+  <li><b>Não bloqueia o seu uso.</b> Você escreve as issues; o agente executa. Uma org que não decompõe ainda
+  entrega, desde que quem decompõe seja você. Para "testar o desenvolvimento usando ele", isso basta.</li>
+  <li><b>É desenho, não conserto.</b> Os outros pontos têm defeito nomeado e âncora de código. Este tem uma
+  <b>ausência</b> — nada está quebrado, uma capacidade não existe. Ausência se resolve em grill.</li>
+  <li><b>O P6 muda o problema.</b> Decompor trabalho sobre um repositório real (sub-issue = sub-branch? PR
+  empilhado? worktree por sub-issue?) é um desenho <b>diferente</b> de decompor trabalho sobre documentos.
+  Fechar N4 antes do P6 é desenhar para o mundo errado.</li>
+</ol>
+
+<div class="caixa aviso">
+  <span class="rotulo">Quando esta ordem está errada</span>
+  <p>Se o seu objetivo mudar de <i>"eu escrevo as issues e ele executa"</i> para <i>"eu descrevo o objetivo e ele
+  se organiza"</i>, este ponto <b>sobe para primeiro</b> e todo o resto do plano vira pré-requisito dele. É a
+  única inversão de ordem que muda o plano inteiro — por isso está registrada aqui e não escondida.</p>
+</div>
+
+<h2>O que o grill terá de responder</h2>
+
+<ol>
+  <li><b>Quem decompõe?</b> O arquiteto (que hoje absorve), o gestor (que já valida e dirige), ou uma persona
+  nova? A árvore de times já existe como organograma (V35/ADR-0045).</li>
+  <li><b>Decompor é ato de gate ou ato livre?</b> Criar sub-issue muda o board — passa pela sua aprovação, ou o
+  arquiteto cria direto? A issue dirigida sem gate (ADR-0047) já abriu precedente para "born-APPROVED".</li>
+  <li><b>Como se quebra a corrida de checkout?</b> O afunilamento é <b>mecânico</b>: quem chega primeiro pega.
+  Uma org que decompõe mas mantém a corrida vai só afunilar mais rápido. Isso pode ser o conserto mais
+  importante e é o menos óbvio.</li>
+  <li><b>Qual o critério de parada?</b> Sub-issue que gera sub-issue precisa de fundo, senão a org gasta
+  orçamento se organizando em vez de trabalhar. O teto (b) da ADR-0018 (contador de riscos-do-plano) é o item
+  11 do backlog e encosta aqui.</li>
+  <li><b>Sobre repositório</b> (pós-P6): sub-issue trabalha na mesma branch, em branch filha, ou em PR
+  empilhado?</li>
+</ol>
+
+<h2>O que já existe e ajuda</h2>
+
+<ul>
+  <li><b>Árvore de times = organograma</b> (F-ORG-A, V35/ADR-0045) — a estrutura para saber quem pode delegar
+  para quem já está no banco.</li>
+  <li><b>Gestor com estágio→promoção</b> (F-ORG-B, V36) e <b>review delegado com parecer</b> (F-ORG-C, V38) — a
+  cadeia de comando já tem autoridade modelada.</li>
+  <li><b>Issue dirigida sem gate</b> (ADR-0047) — já existe o caminho de uma issue nascer atribuída sem passar
+  pela sua mão.</li>
+</ul>
+
+<p>Ou seja: <b>as peças da delegação existem</b>. O que falta é o ato de <b>quebrar trabalho</b> e a quebra do
+gargalo de checkout.</p>
+
+<h2>Ligações</h2>
+<ul>
+  <li><a href="P6-fatias-do-repositorio.html">P6</a> — muda o problema; por isso este vem depois.</li>
+  <li><a href="P7-lote-falha-silenciosa.html">P7</a> — uma org que decompõe e falha em silêncio é pior que uma
+  que não decompõe.</li>
+</ul>
+
+<p class="medido">Origem: R26-A (2026-07-17), B1b.4, provado ao vivo com motor real. Meta-achado do afunilamento
+medido na mesma faixa (5 de 6 tentativas de roteamento perdidas para o arquiteto). Sem kickoff, sem desenho.</p>
+
+</main>

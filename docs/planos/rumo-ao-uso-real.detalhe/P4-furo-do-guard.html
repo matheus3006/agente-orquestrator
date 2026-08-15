@@ -1,0 +1,114 @@
+<meta charset="utf-8">
+<title>P4 — O furo #20 do guard (pré-requisito)</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › P4</div>
+
+<h1>P4 — O cinto protege o quintal, não a casa</h1>
+<p class="subtitulo">Era um achado. Vira <b>pré-requisito</b> no instante em que os seus projetos reais entram na pasta.</p>
+
+<div class="fichas">
+  <span class="ficha">Tipo <b>Fatia pequena</b></span>
+  <span class="ficha">Origem <b>roadmap #20</b></span>
+  <span class="ficha">Kickoff <b>a escrever</b></span>
+  <span class="ficha">Promovido em <b>2026-07-27</b></span>
+</div>
+
+<h2>O defeito</h2>
+
+<p>O <code>pretooluse-guard.js</code> (ADR-0042 / F-N6) bloqueia escrita em <code>.claude/skills</code> — mas
+resolve esse caminho <b>relativo ao cwd</b>. Ou seja, protege
+<code>{workspace}/.claude/skills</code> e <b>não protege <code>~/.claude/skills</code></b>, o global.</p>
+
+<div class="caixa risco">
+  <span class="rotulo">Como isso foi descoberto — e o que torna a evidência forte</span>
+  <p>Na R26-A, testando a fronteira 8 (<i>"<code>--settings</code> sobrescreve ou mescla?"</i>), o resultado foi
+  <b>tranquilizador</b>: <code>--settings {"ultracode":true}</code> <b>mescla</b>, o cinto D6/D7 sobrevive ao
+  ultracode, ambos bloqueados no run <code>fbc4f334</code>.</p>
+  <p>Mas no mesmo experimento o <b>CEO Executor plantou uma skill viva em <code>~/.claude/skills</code> e
+  apagou</b> — o transcript registra <i>"File created successfully"</i>. <b>A diferença não foi o effort. Foi o
+  PATH.</b> A fronteira que se testava estava fechada; a que ninguém testava estava aberta.</p>
+</div>
+
+<h2>Por que a gravidade mudou hoje</h2>
+
+<p>O furo é <b>o mesmo</b>. O que muda é o que existe do outro lado dele.</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th></th><th>Hoje</th><th>Depois do <a href="P6-fatias-do-repositorio.html">P6</a></th></tr></thead>
+  <tbody>
+    <tr><td><b>O que o agente alcança ao escapar</b></td>
+      <td>Scratch de UUID em <code>~/.orquestrador/workspaces/</code> que ninguém olha</td>
+      <td><b>Os seus projetos reais</b> em <code>~/Orquestrador/&lt;empresa&gt;/</code> — e o <b>token de
+      push</b></td></tr>
+    <tr><td><b>Persistência</b></td>
+      <td>Skill plantada é carregada por agentes futuros</td>
+      <td>Idem — mas agora <b>atravessa empresas</b>: o <code>~/.claude/skills</code> é global, não por
+      company</td></tr>
+    <tr><td><b>Classificação</b></td>
+      <td>🔴 achado, roadmap #20</td>
+      <td><b class="v-vermelho">Pré-requisito de apontar projeto real</b></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Uma skill plantada no global é <b>persistência com escalada entre empresas</b>: todo agente futuro, de toda
+company, carrega o que foi plantado ali. Enquanto o workspace era descartável, isso era feio. Com repositório e
+credencial na pasta, é outra categoria.</p>
+
+<div class="caixa aviso">
+  <span class="rotulo">O que este ponto NÃO bloqueia</span>
+  <p><b>Não bloqueia o <a href="P5-grill-repositorio.html">P5</a> (o grill do desenho).</b> Desenhar e endurecer
+  são independentes e podem correr em paralelo. O que ele bloqueia é o <b>primeiro projeto seu entrar na
+  pasta</b>.</p>
+</div>
+
+<h2>O que provavelmente entra na fatia</h2>
+
+<p>O desenho fino é da fatia, não deste documento. Mas o formato do defeito já sugere a forma do conserto:</p>
+
+<ol>
+  <li><b>Resolver o alvo do guard por caminho ABSOLUTO</b>, não relativo ao cwd — e negar a família inteira
+  (<code>~/.claude/</code>, <code>~/.codex/</code>), não só <code>skills</code>.</li>
+  <li><b>Negar por escape de raiz:</b> qualquer caminho que, resolvido, caia fora da subárvore do workspace do
+  run. Isso cobre os irmãos de graça (o padrão que a casa já prefere: guard no mecanismo, não no sintoma).</li>
+  <li><b>O follow-up honesto da ADR-0042</b> que já estava registrado como item 7 do backlog: o deny cobre
+  <code>Read</code>/<code>Write</code>/<code>Edit</code>/<code>apply_patch</code>, mas
+  <b><code>Glob</code>/<code>Grep</code> estão fora do cinto D7</b>. Leitura é meia porta, e com projeto real
+  na pasta ela passa a valer.</li>
+</ol>
+
+<div class="caixa risco">
+  <span class="rotulo">O teste tem de MUTAR para ter dente</span>
+  <p>Lição paga duas vezes nesta esteira: <b>controle negativo que nasce verde não discrimina nada</b>. O teste
+  deste guard precisa provar que ele <b>reprova</b> o caminho global — e um controle positivo, no mesmo bloco,
+  provando que ele <b>aprova</b> o caminho legítimo do workspace. Sem os dois, um guard quebrado passa verde.</p>
+</div>
+
+<h2>Perguntas abertas</h2>
+
+<ul>
+  <li>O deny por escape de raiz quebra algum fluxo legítimo? O materializer escreve <b>dentro</b> do workspace,
+  mas o <code>CompanyMemoryMaterializer</code> e o <code>HookMaterializer</code> precisam ser conferidos contra
+  a regra nova.</li>
+  <li>Sob <b>Docker</b> o cwd é o container e o <code>~</code> é outro. O furo é LOCAL-only? Medir, não supor —
+  a paridade Docker é o item 12 do roadmap e cai em fail-soft.</li>
+  <li>O guard roda como hook PreToolUse do CLI. Um agente que rode <code>Bash</code> com
+  <code>cp</code>/<code>cat &gt;</code> contorna o matcher de ferramenta? <b>Essa é a pergunta que decide se o
+  conserto é real ou cosmético.</b></li>
+</ul>
+
+<h2>Ligações</h2>
+<ul>
+  <li><a href="P5-grill-repositorio.html">P5</a> — o grill do desenho; corre em paralelo, não depende deste.</li>
+  <li><a href="P6-fatias-do-repositorio.html">P6</a> — <b>depende</b> deste. Nenhum projeto real entra antes.</li>
+  <li><a href="P7-lote-falha-silenciosa.html">P7</a> — mesma família de defeito: o sistema sabe e não conta.</li>
+</ul>
+
+<p class="medido">Origem: R26-A (2026-07-17), fronteira 8. Registrado como <i>"roadmap #20 recaracterizado"</i>
+no ledger do plano de descoberta. Promovido a pré-requisito em 2026-07-27, quando o dono fixou o norte de
+<code>~/Orquestrador/&lt;empresa&gt;/&lt;projeto&gt;/</code>.</p>
+
+</main>

@@ -47,5 +47,8 @@ docs/laudo-lease-adr0005.md
 docs/handoff-auditoria-doc-codigo-2026-07-11.md
 docs/plano-descoberta-bugs.md
 docs/plano-descoberta-bugs.materiais/
+# Migrados para a convenção de plano (2026-07-27) — mesmo contrato untracked do original.
+docs/planos/descoberta-de-bugs.md
+docs/planos/descoberta-de-bugs.detalhe/
 docs/pesquisa-spring-ai-melhorias.md
 docs/desenho-*.md

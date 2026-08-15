@@ -1,0 +1,93 @@
+<meta charset="utf-8">
+<title>R5 — Backlog: candidatas v1.1 e adiados</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › R5</div>
+
+<h1>R5 — Backlog: candidatas v1.1</h1>
+<p class="subtitulo">Lacunas <b>conhecidas</b> e adiadas por decisão. Não são "bugs a descobrir" — são coisas que sabemos que faltam.</p>
+
+<div class="fichas">
+  <span class="ficha">Itens <b>15</b></span>
+  <span class="ficha">Movidos p/ ajustes <b>2</b></span>
+  <span class="ficha">Promovidos <b>1</b></span>
+</div>
+
+<div class="caixa aviso">
+  <span class="rotulo">A distinção que importa</span>
+  <p>Estas são <b>hipóteses PRÉ-EXISTENTES de lacuna conhecida</b>. A fase de descoberta não gasta bateria
+  re-descobrindo-as — mas as baterias <b>podem colher evidência que promova ou mate cada uma</b>. Foi o que
+  aconteceu com a #12 (paridade Docker), promovida pelo achado N6.</p>
+</div>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>#</th><th>Candidata</th><th>Origem · nota</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><b>(ii)-docker do KnowAll body inline + isolamento do home-volume (D7)</b> — sequenciadas
+      JUNTAS (o canal MCP-no-container é a mesma obra)</td>
+      <td>grill agente-como-tool D3 · grill motor-nativo D7 — <b>bloqueante p/ tenant externo</b></td></tr>
+    <tr><td>2</td><td><b>(iii) agente-durável-como-tool</b> — épico próprio com grill próprio</td>
+      <td>grill agente-como-tool D1</td></tr>
+    <tr><td>3</td><td><b>persona-self-request/fetch</b> — personas pedirem skill/corpo como o executor</td>
+      <td>grill agente-como-tool D6 — só com demanda real</td></tr>
+    <tr><td>4</td><td><b><code>disallowed-tools</code> do claude</b> (default vazio) — teto de PRODUTO no
+      eixo-subagente, sobre o cap nativo de profundidade</td>
+      <td>seam já fiado na ADR-0038 D6</td></tr>
+    <tr><td>5</td><td><b>CEO propõe EDIÇÃO de molde existente</b> — puxa visibilidade dos moldes no contexto do
+      CEO</td><td>D8 da R10-A · ADR-0017 forward-ref</td></tr>
+    <tr><td>6</td><td><b>Steering / processo-vivo</b> (correção mid-turn sem kill)</td>
+      <td>grill motor-nativo D4 — <b>gate explícito:</b> codex <code>app-server</code> sair de experimental</td></tr>
+    <tr><td>7</td><td><b>Enforcement amplo dos hooks</b> — <code>Glob</code>/<code>Grep</code> fora do cinto D7
+      (hoje o deny cobre Read/Write/Edit/apply_patch)</td>
+      <td>follow-up honesto da ADR-0042. <b>⚠️ Encosta no item 20 do <a href="R4-roadmap-de-ajustes.html">R4</a></b></td></tr>
+    <tr><td>8</td><td><b>ID sequencial de CONVERSA</b> (fluxo verbatim do dono)</td><td>grill motor-nativo §5</td></tr>
+    <tr><td>9</td><td><b>Promoção por "N usos"</b> na graduação de princípios — exige contar cada fetch JIT,
+      máquina nova</td><td>grill Frente C, C5</td></tr>
+    <tr><td>10</td><td><b><code>memory_fetch</code> sobre o log CRU</b> — vazaria racional board-only para
+      contexto de agente</td><td>grill Frente C, C10.b — grill próprio</td></tr>
+    <tr><td>11</td><td><b>Teto (b) da ADR-0018 — contador de riscos-do-plano</b> (o CEO te chama quando o plano
+      acumula riscos). Falta o artefato para o agente <b>declarar</b> os riscos que viu: o
+      <code>TurnOutputSchema</code> só conhece <code>handoff</code>/<code>absorcao</code>/<code>proposta</code>
+      ⇒ bloco novo por-persona + parser + limiar + escalação</td>
+      <td>lista H item 3 · ADR-0018 emenda R18-B. <b>⚠️ Corrige a frase refutada:</b> NÃO é <i>"só o teto de
+      gasto existe"</i> — o <code>orchestrationLimitCents</code> é teto de <b>atos</b> da ADR-0016/T.4, outro
+      mecanismo</td></tr>
+    <tr><td><b>12</b></td><td><b>Paridade Docker</b> — transporte de arquivo + visibilidade de volume: o
+      schema-arquivo da F-N3 e o side-channel da F-N5 caem em fail-soft/loud sob DOCKER</td>
+      <td class="v-ambar"><b>PROMOVIDA</b> pelo achado N6 → item 15 do <a href="R4-roadmap-de-ajustes.html">R4</a></td></tr>
+    <tr><td>13</td><td><b>Grill do ARQUITETO</b> — invariante de nascimento na porta manual ·
+      <code>setArquiteto(null)</code> · multi-arquiteto · divisão em 2 personas · clone por ociosidade &gt;30min</td>
+      <td>decisão explicitamente do DONO (toca o norte <i>"arquiteto como mente de cada grupo"</i>).
+      <b>⚠️ Encosta em N4 / item 13 do R4</b></td></tr>
+    <tr><td>14</td><td><s>Fraseado do <code>oQueMudou</code> da review</s></td>
+      <td class="v-verde"><b>MOVIDA</b> → item 9 do <a href="R4-roadmap-de-ajustes.html">R4</a> (2026-07-16)</td></tr>
+    <tr><td>15</td><td><s>Rename mecânico <code>KnowAllMcpBridge</code> → <code>McpBridge</code></s></td>
+      <td class="v-verde"><b>MOVIDA</b> → item 10 do <a href="R4-roadmap-de-ajustes.html">R4</a> (2026-07-16)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Três candidatas que a fase de descoberta reforçou</h2>
+
+<ul>
+  <li><b>#12 (paridade Docker)</b> — promovida. O N6 provou que <b>não existe produtor real</b> para
+  <code>executionTarget=DOCKER</code> em lugar nenhum do v1: 5 pontos medidos, incluindo
+  <code>git grep '"DOCKER"' -- backend/src/main</code> = <b>zero hits</b>.</li>
+  <li><b>#7 (enforcement amplo dos hooks)</b> — o item 20 do R4 mostrou que o guard nem cobre o caminho
+  <b>absoluto</b> da home, quanto mais Glob/Grep. As duas coisas provavelmente são a mesma fatia.</li>
+  <li><b>#13 (grill do arquiteto)</b> — o N4 e a B1b.4 provaram ao vivo que <b>o arquiteto absorve e não
+  decompõe</b>, e que a org afunila toda issue nele. O grill ganhou massa real.</li>
+</ul>
+
+<h2>O que este ponto NÃO fecha</h2>
+<ul>
+  <li>Nada aqui tem fatia, kickoff ou data. São candidatas — a promoção exige evidência ou decisão do dono.</li>
+  <li>A ordem entre elas <b>não está decidida</b>.</li>
+</ul>
+
+<p class="medido">Lista acumulada até 2026-07-14 (fecho documental parcial). Movimentações de 2026-07-16 (#14,
+#15) e a promoção da #12 (achado N6, 2026-07-17) carimbadas aqui em 2026-07-27.</p>
+
+</main>

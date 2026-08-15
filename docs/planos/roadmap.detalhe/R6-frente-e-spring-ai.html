@@ -1,0 +1,90 @@
+<meta charset="utf-8">
+<title>R6 — Frente E: baseline e inteligência de contexto</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › R6</div>
+
+<h1>R6 — Frente E: baseline moderno e Spring AI</h1>
+<p class="subtitulo">A migração de plataforma <b>fechou</b>. A camada de IA local nasceu <b>desligada</b> e continua assim, por desenho.</p>
+
+<div class="fichas">
+  <span class="ficha">F-PLAT0 <b>EXECUTADA</b></span>
+  <span class="ficha">F-SAI0/1 <b>OFF/SHADOW</b></span>
+  <span class="ficha">F-SAI2-4 <b>não iniciadas</b></span>
+  <span class="ficha">ADR <b>0043 / 0044</b></span>
+</div>
+
+<h2>O racional (verbatim do dono)</h2>
+
+<div class="caixa ok">
+  <span class="rotulo">Por que Spring AI é camada AUXILIAR</span>
+  <p>O modelo local <b>soma ao contexto</b>, nunca substitui a IA forte. A progressão é
+  <b><code>OFF</code> → <code>SHADOW</code> → <code>ACTIVE</code></b>, e <code>ACTIVE</code> exige métricas e
+  <b>decisão humana</b> — não é consequência automática do shadow dar certo.</p>
+</div>
+
+<h2>Estado</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Item</th><th>Estágio</th></tr></thead>
+  <tbody>
+    <tr><td><b>Migração do baseline backend</b> — Java 25 + Boot 4.1 + Jackson 3 + Spring AI 2.0</td>
+      <td class="v-verde">✅ <b>EXECUTADA (F-PLAT0)</b>: Java 25.0.3, Wrapper 3.9.16, Boot 4.1.0, Jackson 3 sem
+      ponte residual, BOM Spring AI 2.0.0. <b>757/757</b> H2, PostgreSQL/Flyway V31 e Docker Temurin 25.0.3
+      verdes</td></tr>
+    <tr><td><b>Spring AI — controle de contexto</b> (Pacote + Manifesto → lint SHADOW → handoff flexível →
+      KnowAll híbrido)</td>
+      <td class="v-ambar">🟡 <b>F-SAI0/F-SAI1 em OFF/SHADOW</b>: Pacote e Manifesto determinísticos, lint Ollama
+      isolado, fallback vivo sem interferência. <b><code>ACTIVE</code>, F-SAI2, F-SAI3 e F-SAI4 não
+      iniciados</b> — dependem de métricas + decisão humana</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Prova viva do OFF/SHADOW</h3>
+<p>Hash <code>8d558ff…</code> <b>idêntico</b> em OFF LOCAL, OFF DOCKER e SHADOW — o manifesto é
+byte-determinístico. Com o provider fora: <code>FALLBACK</code>/<code>TIMEOUT</code> e o Run segue
+<code>SUCCEEDED</code>. Claude e Codex reais passaram em LOCAL e DOCKER.</p>
+
+<h2>Os dois usos, e o que a medição disse</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Uso</th><th>O que faz</th><th>Estado</th></tr></thead>
+  <tbody>
+    <tr><td><b>Uso A</b></td><td>Confere a busca (inspetor de contexto)</td>
+      <td>lint em SHADOW, <code>qwen3:0.6b</code></td></tr>
+    <tr><td><b>Uso B</b></td><td>Valida planos em sombra (checks no molde + briefing; validador)</td>
+      <td>PRs #37–#39; nasce <b>desligado</b> (<code>mode: "off"</code>), <code>qwen3:1.7b</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">A lição que essa frente pagou — e que vale para todo modelo local</span>
+  <p>O <code>qwen3:0.6b</code> do inspetor de contexto é um <b>preditor CONSTANTE</b> e <b>não serve</b> para
+  validar plano. Ele pontuava igual e passava por "funcionando".</p>
+  <p><b>Regra que saiu daí: medir o modelo local CONTRA A TAXA-BASE antes de construir sobre ele.</b> Um
+  preditor que sempre responde a mesma coisa acerta na proporção da classe majoritária — e isso se parece com
+  competência em qualquer métrica agregada.</p>
+  <p>A config que de fato mediu <b>26/27 com 0 falso-positivo</b> é <code>qwen3:1.7b</code> + <code>think:
+  true</code> + redação do seed. <code>num_predict</code> curto faz a resposta vir <b>VAZIA</b> (o raciocínio
+  come o orçamento).</p>
+</div>
+
+<h2>O que esta frente NÃO cobre</h2>
+<ul>
+  <li><b><code>ACTIVE</code> não está autorizado.</b> O dono aceitou a ADR-0043 e o baseline; <b>não</b>
+  autorizou ligar a camada de IA no caminho de decisão.</li>
+  <li><b>MCP × Spring AI</b> — o grill fechou dizendo que <b>MCP vem POR ÚLTIMO</b>; a dor real é o executor
+  Docker cego (OP-1).</li>
+  <li>A frente tocou <b>101 arquivos</b>, então âncoras de linha anteriores a ela carregam drift.</li>
+</ul>
+
+<p class="medido">ADR-0043 aceita 2026-07-16; F-PLAT0 executada 2026-07-17. F-SAI0/F-SAI1 em 2026-07-17. Uso B
+(B-i, B-ii) em 2026-07-18, PRs #37–#39. Medição do validador em
+<code>docs/medicao-validador-qwen.md</code>. Pesquisa em <code>docs/pesquisa-spring-ai-melhorias.md</code>.</p>
+
+</main>
