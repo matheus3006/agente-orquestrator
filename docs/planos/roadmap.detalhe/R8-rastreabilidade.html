@@ -1,0 +1,113 @@
+<meta charset="utf-8">
+<title>R8 — Rastreabilidade de handoffs e vetos</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › R8</div>
+
+<h1>R8 — Rastreabilidade e vetos</h1>
+<p class="subtitulo">Todo handoff mapeado a um estágio verificado, e o estado das decisões que só o dono toma.</p>
+
+<div class="fichas">
+  <span class="ficha">Handoffs mapeados <b>40</b></span>
+  <span class="ficha">Vetos pendentes <b>0</b></span>
+  <span class="ficha">Congelado em <b>2026-07-15</b></span>
+</div>
+
+<h2>Vetos pendentes — ZERO</h2>
+
+<div class="caixa ok">
+  <span class="rotulo">Status, fecho residual de 2026-07-15</span>
+  <p><b>Nenhuma decisão aguarda o Matheus para o fecho de CÓDIGO do v1.</b> Todas as decisões desta seção estão
+  resolvidas, incluindo a última H de auditoria (feedback-do-revisor→Issue / ADR-0011, fechada pela R17-B →
+  R19-A / PR #31). As 5 decisões da <b>lista H</b> foram colhidas e landaram (PRs #29/#30/#31).</p>
+</div>
+
+<h3>Resolvidos — Fatia 2 (3 personas)</h3>
+<ul>
+  <li><s>Formato dos blocos tipados</s> — <b>confirmado pelo dono</b>: JSON em fence coluna 0, pinado em
+  <code>PersonaHandoffScannerTest</code></li>
+  <li><s>Blocos do <code>writing-doc-plans</code></s> — <b>11 vetos decididos um a um</b> na R3-A</li>
+  <li><s><code>N</code> da trava anti-loop de kickback</s> — <b>N=5 confirmado</b>; régua depois compartilhada
+  com o retrabalho</li>
+  <li><s>Governança off-book do <code>delegation</code></s> — aceito no v1; a <b>contabilidade</b> do gasto veio
+  na F-N5 / ADR-0041</li>
+  <li><s>Sourcing das skills externas</s> — balcão único <code>docs/skills-ceo/sourcing.md</code>; 5 skills
+  registradas no DB, corpo==draft por md5</li>
+</ul>
+
+<h3>Resolvidos — auditoria de 2026-07-07</h3>
+<ul>
+  <li><s>Divergência ALTA do lease: implementar renovação ou reconciliar o ADR?</s> — <b>implementar</b>
+  (decisão do dono, após laudo read-only)</li>
+  <li><s>Médias doc×código: atualizar os ADRs ou puxar fatias?</s> — <b>reconciliação em doc</b> para 3;
+  <b>fatia</b> para os 2 seams mortos da 0019, resolvidos pelo PR #25</li>
+  <li><s>26 fichas MÉDIA da auditoria de 2026-07-11</s> — <b>aplicadas</b> no fecho documental de 2026-07-14</li>
+</ul>
+
+<h2>Rastreabilidade dos 40 handoffs</h2>
+
+<p>Todos <b>VENDO/FECHADO</b> salvo nota. A evidência-âncora está na
+<a href="R1-frente-a-fundacao.html">Frente A</a> correspondente; aqui só o estado.</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Handoff</th><th>Estado · âncora</th></tr></thead>
+  <tbody>
+    <tr><td><code>limpeza-codigo-raso-linecursor</code></td><td>✅ <code>LineCursor.java:17-48</code></td></tr>
+    <tr><td><code>passada-consistencia</code></td><td>✅ <b>SUPERSEDED</b> no próprio doc</td></tr>
+    <tr><td><code>grilling-skills-knowall</code></td><td>✅ <code>CompanyLibraryInstaller.java:30-38</code></td></tr>
+    <tr><td><code>f9e-skill-em-uso</code></td><td>✅ <code>SkillMaterializer.java:34,59</code></td></tr>
+    <tr><td><code>grilling-motores</code> / <code>-fechado</code></td><td>✅ mapeia 1:1 (V12/V13, Claude/Codex adapters)</td></tr>
+    <tr><td><code>f7-motores-continuacao</code></td><td>✅ <code>Agent.java:159</code></td></tr>
+    <tr><td><code>f7-motores-fatias-D-G</code></td><td>✅ <code>CodexAdapter.java:32-62</code></td></tr>
+    <tr><td><code>fatia7</code> (skills anexo por-Issue)</td><td>✅ V10 + <code>resolveForRun</code> (anexo-vence)</td></tr>
+    <tr><td><code>f8-isolamento</code></td><td>✅ <code>EngineContainerTest</code> (interseção de volumes vazia)</td></tr>
+    <tr><td><code>grilling-approval</code> / <code>-fechado</code></td><td>✅ <code>V11__review.sql:4</code></td></tr>
+    <tr><td><code>grilling-teams</code> / <code>-fechado</code></td><td>✅ 4 ADRs (0017–0020)</td></tr>
+    <tr><td><code>teams-t1</code> · <code>t2</code> · <code>t3a</code> · <code>t3fe</code> · <code>t4</code></td>
+      <td>✅ <code>RoleTemplateService</code> · <code>TeamService</code> (arquiteto obrigatório) ·
+      <code>conversation/</code> · <code>ceo-conversa.tsx</code> · <code>SpawnLineageGuard</code></td></tr>
+    <tr><td><code>teams-estado-e-reconciliacao</code></td><td>✅ <code>AgentController.java:47</code></td></tr>
+    <tr><td><code>t1-fe-canvas</code></td><td>✅ <code>moldes/page.tsx</code></td></tr>
+    <tr><td><code>grilling-memoria-ceo-segundo-cerebro</code></td><td>✅ <b>IMPLEMENTADA</b> — <a href="R3-frente-c-memoria.html">Frente C completa</a></td></tr>
+    <tr><td><code>f9-preview</code> · <code>grilling-preview-fechado</code></td><td>✅ <code>PreviewArtifactCapturer:189-198</code> · ADR-0021</td></tr>
+    <tr><td><code>f9e-escritor-workspace</code></td><td>✅ <code>DockerExecutionTarget.java:81-117</code></td></tr>
+    <tr><td><code>f10-execucao-parcial</code> · <code>grilling-processo-porta-fechado</code></td><td>✅ <code>PreviewServerSupervisor</code> · ADR-0023</td></tr>
+    <tr><td><code>grilling-thumbnail-preview</code></td><td>✅ <code>PreviewThumbnailCapturer:50-60</code></td></tr>
+    <tr><td><code>grilling-plano-codex-fechado</code> · <code>f11-correcao-adapter-codex</code></td><td>✅ ADR-0024 · <code>CodexArgv.java:45</code></td></tr>
+    <tr><td><code>grilling-gc-retencao-workspaces</code></td><td>✅ <code>WorkspaceReaper.java:74-171</code></td></tr>
+    <tr><td><code>grilling-cap-graduacao-rows-fechado</code></td><td>✅ <code>RowRetentionReaper.java:140-183</code></td></tr>
+    <tr><td><code>grilling-retencao-rows-conversa-fechado</code></td><td>✅ <code>HeartbeatRunRepository:41-48</code></td></tr>
+    <tr><td><code>frontend-f2-f6</code> · <code>frontend-f5-f6</code> · <code>grilling-frontend-fechado</code></td>
+      <td>✅ <code>sidebar.tsx:39-45</code> · <code>reviews/page.tsx</code> · <code>MissionControlController</code></td></tr>
+    <tr><td><code>grilling-loop-handoff-contexto-fechado</code></td><td>✅ <b>IMPLEMENTADA</b> — PR #1 / ADR-0030</td></tr>
+    <tr><td><code>grilling-3-ceos-personas-fechado</code></td><td>✅ <b>IMPLEMENTADA</b> — PR #8 / ADR-0031</td></tr>
+    <tr><td><code>proposta-3-ceos-personas</code></td><td>⚫ <b>SUPERSEDIDA</b> — o grill fechado divergiu</td></tr>
+    <tr><td><code>grilling-7c</code> / <code>-fechado</code></td><td>✅ <code>SkillSetService.java:88,96-97</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Reconciliação memória × código</h2>
+<ul>
+  <li><b>Fatia 1 e Fatia 2 = IMPLEMENTADAS</b>. A leitura <i>"PLANEJADO / ausência-limpa"</i> era o snapshot de
+  2026-07-07 — ambas landaram.</li>
+  <li><b>Frente C = COMPLETA</b>. A leitura <i>"PARCIAL"</i> era do mesmo snapshot.</li>
+  <li><b>F.14</b> — a memória marcava um finding como <i>pendente de aval</i>; o handoff já tinha shippado o fix
+  e a divergência do Activity Log foi <b>refutada</b>. Memória levemente desatualizada nesse ponto.</li>
+</ul>
+
+<h2>O que esta seção NÃO cobre</h2>
+<ul>
+  <li><b>Os handoffs posteriores a 2026-07-15 não estão mapeados aqui</b> — a esteira da Frente E, do
+  organograma (F-ORG-A/B/C), do parecer e do lock órfão (fatias I, I-bis, I-ter) somam dezenas de arquivos
+  <code>HANDOFF-*.md</code> na raiz, todos <b>gitignored</b>. O registro deles vive no <a href="ledger.html">ledger</a>.</li>
+  <li><b>"Zero veto pendente" é do fecho do v1.</b> Decisões novas do dono (norte do repositório, convenção de
+  plano) estão nos planos próprios.</li>
+</ul>
+
+<p class="medido">Rastreabilidade e vetos congelados em 2026-07-15 (fecho residual R20-A). Carimbado e migrado
+em 2026-07-27.</p>
+
+</main>

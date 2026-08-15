@@ -1,0 +1,140 @@
+<meta charset="utf-8">
+<title>P7 — Lote da falha silenciosa</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › P7</div>
+
+<h1>P7 — O sistema sabe e não te conta</h1>
+<p class="subtitulo">Quatro defeitos com a mesma assinatura. Juntos, são o que impede você de deixar o orquestrador rodando e ir fazer outra coisa.</p>
+
+<div class="fichas">
+  <span class="ficha">Tipo <b>Fatia (lote)</b></span>
+  <span class="ficha">Origem <b>Baterias 1 e 1b</b></span>
+  <span class="ficha">Estado <b>provado ao vivo</b></span>
+  <span class="ficha">Kickoff <b>a escrever</b></span>
+</div>
+
+<h2>Por que é um lote e não quatro itens</h2>
+
+<p>Os quatro têm a <b>mesma forma</b>: o sistema detecta uma condição anômala, toma a decisão correta
+internamente, e <b>não emite sinal para quem precisa agir</b>. Agrupar não é economia de esforço — é que o
+critério de aceite é o mesmo para os quatro: <i>"depois do conserto, existe um sinal observável pelo dono, e o
+teste prova o sinal, não a condição"</i>.</p>
+
+<div class="caixa risco">
+  <span class="rotulo">O custo real disto para o seu uso</span>
+  <p>Você aponta o orquestrador para um projeto e sai. Volta em duas horas. <b>Nada aconteceu e nada te
+  avisou.</b> A issue está OPEN, o time está morto, e não há alerta em lugar nenhum. Esse é o cenário que estes
+  quatro defeitos produzem juntos — e é a diferença entre uma ferramenta e uma demo.</p>
+</div>
+
+<h2>Os quatro</h2>
+
+<h3>1. 🔴 O circuit breaker está armado e mudo</h3>
+
+<p><b>Provado ao vivo na R27-A</b> (B1b.5): o agente <code>99f27d66</code> com adapter <code>"claude"</code>
+(inválido) recebeu 3 wakeups na issue #5 → <b>3 runs FAILED</b> com <i>"Adapter nao registrado: claude"</i>.
+Resultado observado no banco:</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>O que se esperava</th><th>O que aconteceu</th></tr></thead>
+  <tbody>
+    <tr><td>Issue vai a <code>BLOCKED</code></td><td class="v-vermelho">Issue segue <b>OPEN</b>, intocada</td></tr>
+    <tr><td>≥1 evento <code>ISSUE_BLOCKED</code></td><td class="v-vermelho"><b>0 eventos</b></td></tr>
+    <tr><td>Alerta ao dono</td><td class="v-vermelho"><b>0 alertas</b></td></tr>
+    <tr><td>Breaker para o par agente×issue</td><td>Armado, mas <b>mudo</b></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><b>Duas causas distintas, medidas:</b> wakeup manual de raiz fura o <code>WakeupService:87</code>; e para
+issue <b>sem conversa</b> a notice fail-softa para <code>log.warn</code> em
+<code>RepeatedFailureNotice:59-63</code>. A pré-checagem que mata o run está em
+<code>AdapterRunExecutor:145</code>/<code>AdapterRegistry:23</code>, e <code>execute():117</code> não tem
+<code>try/catch</code>.</p>
+
+<h3>2. 🔴 <code>adapterType</code> inválido cria time natimorto em silêncio</h3>
+
+<p><b>Achado criando um time COM o CEO</b> (R26-A). O CEO propôs <code>"adapterType":"claude"</code> — inválido;
+os válidos são <code>claude-code</code>/<code>codex</code>/<code>process</code> em
+<code>AdapterRegistry:20-23</code>. O gate (<code>ApprovalService:347/404</code>) <b>não valida
+<code>adapterType</code></b> — só <code>tipoFuncao</code> e UUID.</p>
+
+<p>Resultado: 3 agentes criados, aprovados, e <b>mortos no primeiro run</b> (0.0s). <b>Cria organização morta em
+silêncio.</b> O workaround foi <code>PATCH</code> manual para <code>claude-code</code> — e aí o time entregou um
+digest competitivo excelente. <b>O mecanismo funciona; o portão não confere o que passa.</b></p>
+
+<h3>3. 🔴 O materializer sobrescreve o <code>CLAUDE.md</code> que o agente escreveu</h3>
+
+<p><b>Sobrescrita capturada no disco</b> (R27-A / B1b.6, polling ~1s): 41B com sentinel presente → 514B com
+sentinel <b>ausente</b> (a dieta sobrescreveu no compile) → 555B (o agente re-appendou). O run 2 reportou
+<code>GREP_INICIAL=0</code>.</p>
+
+<p>Âncora: <code>CompanyMemoryMaterializer:60-68</code> faz truncate-write; o compile
+(<code>AdapterRunExecutor:218</code>) roda <b>depois</b> do checkout (<code>:176</code>). Move
+<code>0022-A12</code> de 🎯 para <b>🔴</b>.</p>
+
+<p>Com projeto real na jogada isto piora: o <code>CLAUDE.md</code> do workspace passa a ser instrução sobre
+<b>o seu repositório</b>.</p>
+
+<h3>4. ⚪ Diagnóstico errado no checkout (N11)</h3>
+
+<p>A mensagem <i>"checkout da issue falhou (já em execução por outro run)"</i> aparece <b>também</b> quando a
+causa é outra (issue fechada, assignee-mismatch). Âncora conferida:
+<code>AdapterRunExecutor:178</code> — <b>não <code>:213</code></b>, que foi erro de citação da R26-A corrigido
+pela R27-A. Custo baixo, mas é diagnóstico que manda o operador para o lugar errado.</p>
+
+<h2>O item 4 do P2 é primo deste lote</h2>
+
+<div class="caixa aviso">
+  <span class="rotulo">Fronteira, para não fazer duas vezes</span>
+  <p>O <a href="P2-f2-produtor-coletor.html">P2</a> item 4 (<code>RunOutcome.failure(MOTIVO)</code> nunca lido; o
+  front apontando para um run fantasma) é <b>exatamente</b> desta família. Ele já está <b>dentro do escopo do
+  P2</b> — este lote <b>não</b> deve tocá-lo. Se o P2 devolver o item 4, ele cai aqui.</p>
+</div>
+
+<h2>Critério de aceite do lote</h2>
+
+<ol>
+  <li>Para cada um dos quatro: <b>um sinal observável pelo dono</b> — evento no <code>activity_log</code>, estado
+  de Issue, ou item no feed. <code>log.warn</code> <b>não conta como sinal</b>; foi exatamente o fail-soft que
+  produziu o defeito 1.</li>
+  <li><b>O teste prova o sinal, não a condição.</b> Um teste que verifica "o run falhou" já passava antes do
+  conserto. Tem de verificar que <b>o aviso existe</b>.</li>
+  <li><b>Controle positivo no mesmo bloco</b> — condição normal não gera o alarme.</li>
+  <li>Para o defeito 2, a validação tem de ser <b>no gate</b>, não no run. Falhar na criação, não na execução.</li>
+</ol>
+
+<h2>Por que este lote vem depois do P6, e não antes</h2>
+
+<p>É a única escolha de ordem discutível do plano. O argumento para deixá-lo depois:</p>
+
+<ul>
+  <li>Nenhum dos quatro <b>destrói</b> trabalho — eles <b>escondem</b> falha. O P2 e o P3 destroem
+  (Issue viva em <code>BLOCKED</code>; entrega descartada), e por isso vêm antes.</li>
+  <li>O P6 vai <b>criar</b> superfície nova de falha silenciosa (push que falha, PR que não abre, worktree que
+  não coleta). Consertar audibilidade antes do P6 e de novo depois é pagar duas vezes.</li>
+</ul>
+
+<div class="caixa aviso">
+  <span class="rotulo">O contra-argumento, registrado honestamente</span>
+  <p>Se você pretende deixar o orquestrador rodando <b>sozinho</b> antes do P6 ficar pronto, este lote sobe para
+  antes do P5. A ordem aqui pressupõe que até lá você acompanha as execuções. <b>Se essa premissa mudar, a
+  ordem muda.</b></p>
+</div>
+
+<h2>Ligações</h2>
+<ul>
+  <li><a href="P2-f2-produtor-coletor.html">P2</a> — dono do item 4 (run fantasma no front).</li>
+  <li><a href="P4-furo-do-guard.html">P4</a> — mesma família: o sistema sabe e não conta.</li>
+  <li><a href="P6-fatias-do-repositorio.html">P6</a> — cria superfície nova desta mesma classe.</li>
+</ul>
+
+<p class="medido">Origem: R26-A (2026-07-17) e R27-A (2026-07-18), todos provados <b>ao vivo</b> com motor real e
+produtor real. Vereditos nos fragmentos <code>[B1b.x]</code> de
+<code>docs/plano-descoberta-bugs.materiais/</code>. Âncoras de linha carregam o drift residual das Frentes
+posteriores — <b>reconferir antes de citar</b>.</p>
+
+</main>

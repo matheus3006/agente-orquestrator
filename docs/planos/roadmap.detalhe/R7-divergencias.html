@@ -1,0 +1,131 @@
+<meta charset="utf-8">
+<title>R7 — Divergências doc × código</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › R7</div>
+
+<h1>R7 — Divergências doc × código</h1>
+<p class="subtitulo">O descompasso entre o que os documentos afirmam e o que o código faz. <b>48 candidatas → 25 confirmadas</b> — a refutação adversarial matou 23 falsos-positivos.</p>
+
+<div class="fichas">
+  <span class="ficha">🔴 Alta <b>0 abertas</b></span>
+  <span class="ficha">🟠 Média <b>6 · 0 abertas</b></span>
+  <span class="ficha">🟡 Baixa <b>19 · sem ação</b></span>
+  <span class="ficha">Auditado <b>2026-07-07</b></span>
+</div>
+
+<div class="caixa ok">
+  <span class="rotulo">Por que a contagem 48→25 importa mais que o 25</span>
+  <p>Metade das divergências candidatas eram <b>falso-positivo de busca incompleta</b> — o auditor não achou o
+  código e concluiu que não existia. Só a <b>refutação adversarial de cada uma</b> separou as reais. É o mesmo
+  padrão que a fase de descoberta depois formalizou: <i>laudo de subagente sobre premissa própria não é
+  evidência</i>.</p>
+</div>
+
+<h2>🔴 ALTA — ambas FECHADAS em 2026-07-10</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Divergência</th><th>Desfecho</th></tr></thead>
+  <tbody>
+    <tr><td><b>Agente codex rodava "pelado"</b> — carta e skills só em <code>.claude/</code>. O "motor duplo"
+      executava mas <b>não lembrava nem sabia</b> (Atlas, run B: <i>"A skill <code>distillation</code> não está
+      disponível"</i>). Achada <b>AO VIVO</b>, não pela varredura</td>
+      <td class="v-verde"><b>FECHADA</b> — fatia G3 / ADR-0032: o adapter declara a
+      <code>WorkspaceConvention</code>, o codex recebe <code>AGENTS.md</code> + <code>.codex/skills/</code>, e a
+      faxina apaga o espelho que ele nunca leu</td></tr>
+    <tr><td><b>ADR-0005 · lease sem renovação.</b> O ADR afirmava <i>"o worker renova o lease enquanto o Run
+      vive"</i>; <code>grep renew/extendLease</code> = <b>vazio</b>. Lease fixo de 2 min, execução síncrona de
+      agente real que rotineiramente excede 2 min, e o reaper a cada 5 s re-enfileirando o RUNNING vencido</td>
+      <td class="v-verde"><b>FECHADA</b> — laudo read-only primeiro (0 reexecuções na história; o buraco
+      worker-vivo existia por construção) → <b>decisão do dono: implementar</b> → <code>LeaseRenewer</code> +
+      CAS <code>renewLease</code> + <code>RUN_LEASE_LOST</code> anti-silêncio</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa aviso">
+  <span class="rotulo">O método que essa segunda ALTA estabeleceu</span>
+  <p>O ADR afirmava e o código não confirmava — mas o <b>efeito real</b> não era óbvio (o índice
+  <code>uq_run_active_agent</code> barrava 2 Runs ativos por agente). Em vez de consertar direto, rodou-se um
+  <b>laudo read-only</b> para medir o dano. A predição se confirmou e a decisão veio do dono. <b>Medir antes de
+  consertar</b> virou padrão da casa.</p>
+</div>
+
+<h2>🟠 MÉDIA — 6, todas resolvidas</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Divergência</th><th>Desfecho</th></tr></thead>
+  <tbody>
+    <tr><td><b>ADR-0001 · jOOQ nunca adotado.</b> A stack pinada (e o ARQUITETURA.md ×5) citava <i>"jOOQ nas
+      queries de corrida"</i>; zero <code>import org.jooq</code>. As queries existem em <b>Spring Data</b> — o
+      invariante de concorrência <b>é honrado</b>, por outro mecanismo</td>
+      <td>✅ reconciliada em doc (2026-07-10): nota na ADR-0001 + as 5 menções do ARQUITETURA corrigidas</td></tr>
+    <tr><td><b>ADR-0005 · sem <code>SKIP LOCKED</code> no claim.</b> Metade CAS presente, metade
+      <code>SKIP LOCKED</code> ausente</td>
+      <td>✅ reconciliada em doc — <b>só o trecho do claim</b>; o de renovação foi tratado pela fatia própria</td></tr>
+    <tr><td><b>ADR-0004 · <code>RunResult.producedArtifacts</code> inexistente.</b> O preview é capturado
+      <b>fora</b> do Result, por captura lateral no executor</td>
+      <td>✅ reconciliada em doc — contrato atualizado para a captura lateral</td></tr>
+    <tr><td><b>ADR-0019 · D5:</b> a passagem pela review NÃO emitia Decision.
+      <code>anchoredToReview</code> e a coluna <code>review_id</code> <b>sem caller</b></td>
+      <td class="v-verde">✅ <b>RESOLVIDA pela F-C1 / PR #25</b> — writers ACESOS</td></tr>
+    <tr><td><b>ADR-0019 · D11:</b> <code>supersedes</code> sem caminho de escrita. O consolidador <b>lia</b> e
+      filtrava, nenhum writer setava</td>
+      <td class="v-verde">✅ <b>RESOLVIDA pela F-C1 / PR #25</b> — escrito pelas 2 portas do gate</td></tr>
+    <tr><td><b>Adapter codex · <code>ceo_reply</code> pegava o STDOUT cru</b> em vez da mensagem final. O único
+      desta lista <b>visível ao dono</b></td>
+      <td class="v-verde">✅ <b>CORRIGIDA 2026-07-08</b> — ver abaixo</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">O defeito de runtime, e por que o conserto NÃO foi onde o roadmap supôs</span>
+  <p>O roadmap apontava o <code>RunFinalOutput</code>. <b>O defeito morava no PARSER.</b> Reasoning
+  <b>também</b> carrega <code>text</code>, então só o parser (que ainda tem o <code>item.type</code>) distingue
+  a mensagem do agente do raciocínio. O <code>RunFinalOutput</code> só vê <code>(type, detail)</code> achatado —
+  <b>ficou intocado</b>.</p>
+  <p>E a semântica é <b>deliberadamente diferente entre os motores</b>: os <code>ASSISTANT</code> do claude são
+  <b>chunks</b> de uma resposta (juntam); cada <code>agent_message</code> do codex é uma mensagem
+  <b>completa</b> e só a última importa. Daí <code>RESULT</code> com <b>last-wins</b>, não
+  <code>ASSISTANT</code> — que despejaria a narração de progresso no reply.</p>
+  <p><b>Decidido AO VIVO pelo dono:</b> a 1ª volta juntava os 8 passos de narração; vendo aquilo empilhado, ele
+  escolheu <b>última-vence</b>.</p>
+</div>
+
+<h2>🟡 BAIXA — 19, em blocos, sem ação</h2>
+
+<ul>
+  <li><b>Envelhecimento de handoff consumido / ADR pré-refactor (12):</b> contagens de teste e refs de linha
+  históricas; shapes stale por refactor posterior (ADR-0004 bloco ilustrado · ADR-0006 corpo não reflete
+  drena-até-checkpoint · ADR-0013 "5 superfícies" → cresceu · ADR-0024 caveat de parser ainda no
+  <code>.java</code>).</li>
+  <li><b>Residual consciente, decidido-futuro (3):</b> CEO cria molde · propose-then-commit + drift-badge ·
+  cap-de-linha/graduação/índice-JIT. <i>(Os dois últimos landaram depois — R10-A e Frente C.)</i></li>
+  <li><b>Design supersedido, documentado (1):</b> "1 agente trocando de chapéu" → o grill virou <b>3 agentes
+  duráveis</b>.</li>
+  <li><b>Fundação-only, não-estrutural (1):</b> o deny-by-default da ADR-0001 é <code>assertMember()</code>
+  manual por-rota + interceptor que <b>só loga</b> — não um wrapper que negue por construção. <b>"Esquecer" vaza
+  e vira log.</b> <i>(As rotas atuais cumprem.)</i></li>
+  <li><b>Código sem ADR, esperado (1):</b> a fase de UI/UX inteira (P0–P2C). Registrado — não é gap
+  silencioso.</li>
+</ul>
+
+<h2>O que esta seção NÃO cobre</h2>
+<ul>
+  <li><b>Está congelada em <code>fd3be27</code> (2026-07-15).</b> Nenhuma varredura doc×código rodou sobre os
+  PRs <b>#34–#61</b> — e a Frente E sozinha tocou 101 arquivos. <b>Uma auditoria nova está devida.</b></li>
+  <li>As divergências que a fase de <b>descoberta</b> achou não estão aqui — estão no
+  <a href="R4-roadmap-de-ajustes.html">R4</a>, itens 11–21.</li>
+  <li>A divergência 🟡 mais consequente hoje (<b>ADR-0009 camelCase</b>) foi confirmada ao vivo pela B1.5 e
+  virou o item 17 do R4.</li>
+</ul>
+
+<p class="medido">Auditoria de 2026-07-07 (18 auditores + refutação adversarial). Passada suplementar até
+<code>fd3be27</code> em 2026-07-15: <b>zero divergência nova</b> naquele recorte. <b>Sem varredura desde
+então</b> — carimbado em 2026-07-27.</p>
+
+</main>

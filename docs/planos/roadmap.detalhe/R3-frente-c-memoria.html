@@ -1,0 +1,92 @@
+<meta charset="utf-8">
+<title>R3 — Frente C: memória do CEO (2º cérebro)</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../roadmap.md">Roadmap interno</a> › R3</div>
+
+<h1>R3 — Frente C: o método de memória do CEO</h1>
+<p class="subtitulo"><b>COMPLETA</b> — as 3 fatias sequenciais landaram. O átomo, a assinatura anti-inchaço e o índice JIT estão no código.</p>
+
+<div class="fichas">
+  <span class="ficha">Estágio <b>COMPLETA</b></span>
+  <span class="ficha">PRs <b>#25 · #26 · #28</b></span>
+  <span class="ficha">Fatias <b>F-C1 → F-C2 → F-C3</b></span>
+</div>
+
+<h2>Por que as três são sequenciais e não paralelas</h2>
+
+<p>O paralelismo foi procurado e <b>não existe</b>: cada fatia fabrica a razão de existir da próxima —
+<b>endereço <code>#N</code> → permite → linhagem + cap → torna necessário → JIT</b>. É a decisão C16 do grill.</p>
+
+<h2>As três fatias</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Fatia</th><th>O que entregou</th><th>PR</th></tr></thead>
+  <tbody>
+    <tr><td><b>F-C1</b> — "o átomo completo"</td>
+      <td>Endereço <code>#N</code> + <code>grau</code> (V29) · fábrica ÚNICA <code>GateDecisionFactory</code> ·
+      <b>writers D5/D11 ACESOS</b>: a review pós-hoc passa a <b>fabricar Decisão</b> (com a área do artefato) e
+      o <code>supersedesSeq</code> entra pelas 2 portas do gate ⇒ <b>a carta se auto-cura</b> ·
+      triviabilidade (silêncio-após-perguntado)</td>
+      <td>#25</td></tr>
+    <tr><td><b>F-C2</b> — "a assinatura: graduação + cap"</td>
+      <td><code>MemoryKind.PLAYBOOK</code> (tier durável único) · <b><code>GRADUATE_PRINCIPLE</code> = 7ª ação
+      do gate</b> (o CEO propõe a FRASE, o dono sela com frase editável — writer-of-record) ·
+      <code>GraduationDetector</code> determinístico (N=3/área desde o último princípio) · <b>caps 12/12 por
+      projeção</b>, hard · nudges determinísticas citando os <code>#N</code></td>
+      <td>#26</td></tr>
+    <tr><td><b>F-C3</b> — "índice + navegação JIT"</td>
+      <td><b>Split do sempre-on:</b> CEO = carta+princípios · <b>EXECUTOR = princípios SÓ</b> (até aqui o
+      executor <b>não recebia memória nenhuma</b>) · <code>memory_search</code> (casa por TERMOS) +
+      <code>memory_fetch</code> (<code>#N</code> → racional/evidência/linhagem) no <b>MESMO bridge MCP da
+      F-AT2</b> · teto próprio: cap 3 corpos/run + dedup + recusa não-fatal</td>
+      <td>#28</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa ok">
+  <span class="rotulo">A fronteira C10.b — deliberada, e ainda de pé</span>
+  <p><b>Só o durável selado é alcançável.</b> O log cru <code>OPERACIONAL</code>/<code>TECNICA</code> segue
+  <b>board-only, inalcançável nem com o <code>#N</code> em mãos</b>. Provado no <code>/verify</code>: o
+  <code>#N</code> do log cru foi <b>recusado</b> e o racional sigiloso não vazou para o workspace.</p>
+  <p>A entrega de feedback de review ao executor (R19-A) convive com isso <b>por construção</b>: ela é caminho
+  NOVO e DIRECIONADO (push), não alargamento do trilho JIT (pull).</p>
+</div>
+
+<h2>Duas divergências que esta frente FECHOU</h2>
+
+<p>As médias <b>D5</b> e <b>D11</b> da auditoria de 2026-07-07 eram <b>seams mortos</b>:</p>
+
+<ul>
+  <li><b>D5:</b> <code>Decision.anchoredToReview</code> e a coluna <code>review_id</code> existiam <b>sem
+  caller</b> — a passagem pela review não emitia Decision.</li>
+  <li><b>D11:</b> o consolidador <b>lia</b> e filtrava <code>superseded</code>, mas <b>nenhum writer</b> setava
+  <code>supersedesId</code>. Existia a fundação, não a revisão-como-nova-Decisão.</li>
+</ul>
+
+<p>A F-C1 <b>acendeu os dois</b>. É o padrão que vale registrar: <i>coluna + read-filter sem writer</i> passa em
+qualquer suíte e não faz nada — só uma auditoria doc×código pega.</p>
+
+<h2>Prova viva</h2>
+
+<p><code>/verify</code> PASS nos <b>2 motores reais</b> (claude e codex, LOCAL): o executor busca mid-run → usa →
+<b>termina no MESMO run</b>. 3 corpos servidos e o 4º/5º <b>recusados com motivo</b> (o run segue).
+<code>#N</code> repetido = 1 slot. O turno do CEO <b>cita a evidência literal</b> do princípio — uma string que
+só existe no corpo.</p>
+
+<h2>O que esta frente NÃO cobre</h2>
+<ul>
+  <li><b>Promoção por "N usos"</b> na graduação — exige contar cada fetch JIT, máquina nova. É a candidata #9 do
+  <a href="R5-backlog-v11.html">backlog</a>.</li>
+  <li><b><code>memory_fetch</code> sobre o log CRU</b> — vazaria racional board-only para contexto de agente.
+  Candidata #10, grill próprio.</li>
+  <li><b>Nada aqui foi re-provado pela fase de descoberta.</b> O <code>/verify</code> é de 2026-07-14.</li>
+</ul>
+
+<p class="medido">Grill da frente em <code>docs/handoff-grilling-frente-c-memoria.md</code> (C1–C16). Fatias
+executadas em 2026-07-14. Estado desta página conferido contra o roadmap original em 2026-07-27.</p>
+
+</main>

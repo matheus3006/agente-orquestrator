@@ -1,0 +1,175 @@
+<meta charset="utf-8">
+<title>P1 — Grill do schema (Flyway × H2)</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › P1</div>
+
+<h1>P1 — A suíte nunca rodou o schema que a aplicação embarca</h1>
+<p class="subtitulo">Conserta a <b>régua</b>. Enquanto ela estiver torta, todo conserto depois é medido errado.</p>
+
+<div class="fichas">
+  <span class="ficha">Tipo <b>Grill</b></span>
+  <span class="ficha">Slot <b>não ocupa</b></span>
+  <span class="ficha">Código <b>zero</b></span>
+  <span class="ficha">Kickoff <b>já escrito</b></span>
+  <span class="ficha">Estado <b>pronto p/ disparar</b></span>
+</div>
+
+<h2>O que é</h2>
+
+<p>O arquivo <code>backend/src/test/resources/application-test.yml</code> desliga o Flyway e manda o
+Hibernate gerar o schema a partir das entidades:</p>
+
+<pre><code>spring:
+  jpa:    { hibernate: { ddl-auto: create-drop } }
+  flyway: { enabled: false }</code></pre>
+
+<p>Ou seja: a suíte roda contra um schema que <b>ninguém em produção usa</b>. Tudo que só existe em SQL
+é invisível para ela.</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th></th><th>Flyway (produção)</th><th>H2 (suíte)</th></tr></thead>
+  <tbody>
+    <tr><td>tabelas</td><td>36</td><td>36</td></tr>
+    <tr><td><b>FOREIGN KEY</b></td><td><b>84</b></td><td><b class="v-vermelho">0</b></td></tr>
+    <tr><td>CHECK</td><td>1</td><td class="v-vermelho">0</td></tr>
+    <tr><td>índice único PARCIAL</td><td>5</td><td class="v-vermelho">0</td></tr>
+    <tr><td>TRIGGER</td><td>1</td><td class="v-vermelho">0</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>A causa mecânica dos zero FKs: <b>não existe um único <code>@ManyToOne</code>/<code>@OneToMany</code>/
+<code>@JoinColumn</code> em todo o <code>src/main</code></b> — toda coluna de chave estrangeira é
+<code>UUID</code> cru. O Hibernate não tem como gerar a constraint que ninguém declarou.</p>
+
+<h2>Evidência medida</h2>
+
+<p>A suíte foi rodada contra <b>Postgres real</b> (container descartável, Flyway ON,
+<code>ddl-auto=none</code>, zero arquivo do repo tocado). As 38 migrations aplicaram limpo. Das 34
+classes / 147 testes que completaram antes de travar, <b class="v-vermelho">51 (~35%) falharam</b> —
+120 violações de <code>team_company_id_fkey</code>, 24 de <code>decision_review_id_fkey</code>, e mais.</p>
+
+<div class="caixa aviso">
+  <span class="rotulo">Ressalva honesta — trate como hipótese, não como fato</span>
+  <p>O Postgres do experimento <b>não era recriado por contexto</b> (o H2 é). Então <b>parte</b> dos 51
+  pode ser poluição entre testes, não defeito real. <b>Isolar esse número é a primeira tarefa do
+  grill</b> — ele é a base de todo o dimensionamento de custo.</p>
+</div>
+
+<p>Dois espécimes, porém, comprovadamente <b>não</b> são poluição:</p>
+
+<div class="caixa risco">
+  <span class="rotulo">Um teste verde que afirma o oposto da produção</span>
+  <p><code>TeamServiceTest:62</code> —
+  <code>assertThatCode(() -&gt; service.create(UUID.randomUUID(), "Dev", "frontend", null)).doesNotThrowAnyException()</code></p>
+  <p>Ele afirma que criar um time para uma company <b>inexistente</b> não lança nada. Em produção isso é
+  violação de <code>team_company_id_fkey</code>. O teste não está incompleto — ele está
+  <b>afirmando o contrário do que a produção faz</b>. Mesmo padrão em <code>ChainOfCommandTest:48</code>.</p>
+</div>
+
+<p>E o <code>CeoPersonaSeedTest</code>, cuja premissa inteira (<i>"banco sem moldes de CEO"</i>) é um estado
+em que a produção <b>não pode estar</b>: a migration V25 os semeia sempre.</p>
+
+<h3>Não é só schema</h3>
+
+<p><code>PgTrgmSkillSearch</code> é <code>@Profile("!test")</code> e <code>SubstringSkillSearch</code> é
+<code>@Profile("test")</code>. <b>A busca do KnowAll que roda em produção está excluída da suíte inteira
+por perfil</b> — cobertura zero. É o único par de beans trocado por perfil no <code>src/main</code>, e a
+memória da casa já registra esse mecanismo mordendo duas vezes.</p>
+
+<h3>A divergência que inverte a intuição</h3>
+
+<p><code>@Enumerated(STRING)</code> vira <code>enum</code> nativo no H2 (domínio fechado) contra
+<code>text</code> <b>sem check</b> no Postgres. Ou seja: em alguns pontos <b>a suíte é MAIS estrita que a
+produção</b>. Um teste que "prova" que status inválido é impossível está provando o schema do H2, não o
+da produção.</p>
+
+<h2>Por que este ponto vem primeiro</h2>
+
+<p>Três motivos, em ordem de força:</p>
+
+<ol>
+  <li><b>Contamina toda medição posterior.</b> Os pontos P2, P3, P4 e P6 vão todos declarar
+  "piso verde, 2× nas duas pontas" como critério de aceite. Piso verde medido com esta régua
+  <b>não prova que a produção aceita</b>.</li>
+  <li><b>O P6 vai criar tabela nova com FK.</b> A entidade <code>project</code> e o
+  <code>Issue.project_id</code> nascem exatamente na classe de constraint que a suíte não enxerga.
+  Construir isso antes de decidir a régua é escolher não medir o que se está criando.</li>
+  <li><b>Não ocupa slot e não escreve código.</b> Custa uma sessão de decisão, não uma fatia. Correr em
+  paralelo com P2/P3 é de graça.</li>
+</ol>
+
+<h2>O que o grill tem de fechar</h2>
+
+<ol>
+  <li><b>Contra o que a suíte roda?</b> Uma resposta só, ou camadas (unitário rápido em H2 + integração
+  em Postgres real)?</li>
+  <li><b>Os 51 são reais ou poluição?</b> Isolar com contexto recriado por classe, ou banco limpo por
+  teste. <b>Medir antes de dimensionar.</b></li>
+  <li><b>Testes com premissa impossível em produção</b> — apagar, reescrever ou marcar? Qual a
+  <b>regra geral</b> que evita decidir 51 vezes?</li>
+  <li><b><code>company_membership</code></b> é o único unique <b>total</b> não espelhado na entidade, e é
+  expressável em JPA. Sai na frente do resto ou faz parte da decisão?</li>
+  <li><b>O par de beans por perfil</b> — mesmo assunto ou outro?</li>
+  <li><b>Qual o limite que a decisão NÃO vai fechar</b>, nomeado no alcançável e não no confortável.</li>
+</ol>
+
+<h3>As quatro saídas defensáveis (nenhuma é obviamente certa)</h3>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Saída</th><th>Ganha</th><th>Custa</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>Testcontainers</b> (Postgres real na suíte)</td>
+      <td>Fidelidade máxima</td>
+      <td>Suíte mais lenta <b>para sempre</b>; triagem dos ~51 vira dezenas de microdecisões</td>
+    </tr>
+    <tr>
+      <td><b>Flyway ligado sobre o H2</b></td>
+      <td>Barato</td>
+      <td>H2 não expressa índice parcial nem trigger ⇒ fecha parte e <b>cria a ilusão</b> de ter fechado tudo</td>
+    </tr>
+    <tr>
+      <td><b>Espelhar constraints nas entidades</b></td>
+      <td>Suíte segue rápida</td>
+      <td>Disciplina eterna; não cobre índice parcial nem trigger; o <code>company_membership</code> já prova que a disciplina falha sozinha</td>
+    </tr>
+    <tr>
+      <td><b>Teste de schema-diff</b></td>
+      <td>Torna o invisível visível</td>
+      <td>Não conserta nada; nasce vermelho com 84 divergências ⇒ tem de ser relatório, não gate</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>Combinações são legítimas — por exemplo schema-diff como relatório <b>agora</b> + Testcontainers só na
+camada de repositório.</p>
+
+<h2>O que este ponto NÃO fecha</h2>
+
+<ul>
+  <li>Não escreve código. O produto é <b>decisão com racional</b>, numerada <code>D-SCHEMA-1..N</code>.</li>
+  <li>Não emite o kickoff da implementação — quem emite é a sessão de controle.</li>
+  <li>Não consome reserva: <b>V39 e ADR-0051 ficam livres</b> (conferido 2026-07-27: maior migration =
+  <code>V38__review_parecer_do_gestor.sql</code>, maior ADR = <code>0050</code>).</li>
+  <li>Não resolve a paridade Docker (item 12 do roadmap), que é outro eixo.</li>
+</ul>
+
+<h2>Ligações</h2>
+<ul>
+  <li><a href="P2-f2-produtor-coletor.html">P2</a> e <a href="P3-fatia2-posse-do-run.html">P3</a> — os dois
+  kickoffs em voo já carregam o aviso de que teste verde não prova produção; são donos de arquivos
+  disjuntos deste grill.</li>
+  <li><a href="P6-fatias-do-repositorio.html">P6</a> — é quem cria a tabela <code>project</code> com FK,
+  a razão mais concreta para a régua vir antes.</li>
+</ul>
+
+<p class="medido">Kickoff: <code>HANDOFF-grill-schema-flyway-h2-KICKOFF.md</code> (raiz), emitido pela sessão
+de controle #9 em 2026-07-22. Âncoras reconferidas contra <code>main = 39dce6a</code> em 2026-07-27.</p>
+
+</main>

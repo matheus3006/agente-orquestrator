@@ -1,0 +1,142 @@
+<meta charset="utf-8">
+<title>P6 — Fatias de implementação do repositório</title>
+<link rel="stylesheet" href="../_estilo.css">
+<main>
+
+<div class="trilha"><a href="../rumo-ao-uso-real.md">Plano: rumo ao uso real</a> › P6</div>
+
+<h1>P6 — Construir o repositório no modelo</h1>
+<p class="subtitulo">O ponto em que o orquestrador passa a mexer nos seus projetos. Só começa depois do <a href="P5-grill-repositorio.html">P5</a> fechar o desenho.</p>
+
+<div class="fichas">
+  <span class="ficha">Tipo <b>Fatias (várias)</b></span>
+  <span class="ficha">Depende de <b>P5 · P4</b></span>
+  <span class="ficha">Estado <b>não desenhado</b></span>
+  <span class="ficha">Reservas <b>V39+ · ADR-0051+</b></span>
+</div>
+
+<div class="caixa aviso">
+  <span class="rotulo">Estado honesto deste ponto</span>
+  <p>Este é o <b>único ponto do plano cujo conteúdo ainda não existe</b>. O que está abaixo é a <b>forma
+  esperada</b>, derivada das três decisões do dono — não um desenho fechado. O desenho é produto do
+  <a href="P5-grill-repositorio.html">P5</a>. <b>Nada aqui deve ser tratado como decidido.</b></p>
+</div>
+
+<h2>O que a forma decidida implica</h2>
+
+<h3>Entidades novas</h3>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Peça</th><th>Provável forma</th><th>Por quê</th></tr></thead>
+  <tbody>
+    <tr><td><code>project</code></td>
+      <td><code>{id, company_id, slug, repo_url, default_branch, created_at}</code></td>
+      <td>Decisão 3 do dono: várias por empresa. <code>slug</code> vira segmento de caminho, então herda a
+      exigência de imutabilidade que o <code>Company.slug</code> já tem</td></tr>
+    <tr><td><code>Issue.project_id</code></td>
+      <td>FK para <code>project</code></td>
+      <td>A issue precisa saber em qual repo trabalha. Hoje <code>Issue</code> não tem nada disso</td></tr>
+    <tr><td>credencial</td>
+      <td><b>indefinido — é a pergunta 1 do P5</b></td>
+      <td>Escopo (projeto/empresa/global) muda o modelo de dados <b>e</b> o modelo de ameaça</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">Esta é a razão concreta de o P1 vir antes</span>
+  <p><code>project</code> nasce com FK e <code>Issue.project_id</code> nasce com FK. <b>São 2 constraints novas
+  na exata classe que a suíte não impõe</b> (84 declaradas, 0 impostas). Construir isso com a régua torta é
+  escolher não medir justamente o que se está criando.</p>
+</div>
+
+<h3>Ciclo de vida da issue, depois</h3>
+
+<pre><code>issue criada  → aponta para um project
+checkout      → cria worktree em &lt;projeto&gt;/.wt/#N a partir de default_branch
+run           → agente trabalha DENTRO do worktree; commits na branch da issue
+saída         → push + abre PR
+review        → o card mostra o DIFF (não texto)
+APPROVE       → merge (ou não — pergunta 2 do P5)
+settle        → worktree coletado com `git worktree remove`</code></pre>
+
+<h3>O que muda em código já existente</h3>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Arquivo</th><th>Mudança esperada</th></tr></thead>
+  <tbody>
+    <tr><td><code>WorkspaceResolver</code></td>
+      <td>Raiz e convenção de nome; a chave perde o segmento de agente (ver colisão 3 do
+      <a href="P5-grill-repositorio.html">P5</a>)</td></tr>
+    <tr><td><code>WorkspaceReaper</code></td>
+      <td>Derivação nova <b>e</b> mecanismo de remoção novo (<code>git worktree remove</code>, não filesystem)</td></tr>
+    <tr><td><code>DockerExecutionTarget</code></td>
+      <td>Nome de volume perde o segmento de agente; bind-mount do worktree é o item 12 do roadmap</td></tr>
+    <tr><td><code>IssuePromptComposer</code></td>
+      <td>O briefing precisa dizer ao agente <b>onde ele está</b> e <b>qual branch é dele</b></td></tr>
+    <tr><td>Review / <code>ReviewServerEmbed</code></td>
+      <td>Review de diff; liga no achado B1b.3 (o card já não renderiza o que tem na mão)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Fatiamento provável</h2>
+
+<p>Sugestão de corte — <b>a decidir no P5</b>, registrada aqui só para dimensionar:</p>
+
+<ol>
+  <li><b>Projeto no modelo</b> — entidade, migration, CRUD, a Issue apontando. Sem git ainda. Prova: criar
+  projeto pela UI e ver a issue nascer ligada.</li>
+  <li><b>Clone base + worktree por issue</b> — o checkout passa a materializar worktree; o settle passa a
+  coletar. Sem push, sem PR. Prova: dois agentes em issues distintas do mesmo projeto, worktrees isolados,
+  ambos coletados.</li>
+  <li><b>Branch + commit + push + PR</b> — a credencial entra aqui. Prova: PR aberto num repo real.</li>
+  <li><b>Review de diff</b> — o card mostra a mudança; APPROVE decide o merge.</li>
+</ol>
+
+<p>O corte 1→2 é onde mora a maior parte do risco de regressão (mexe em reaper e em Docker); o 3 é onde mora o
+risco de <b>segurança</b>.</p>
+
+<h2>Pré-condições que este ponto não pode ignorar</h2>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th></th><th>Pré-condição</th><th>Por quê</th></tr></thead>
+  <tbody>
+    <tr><td class="v-vermelho">🔴</td><td><a href="P4-furo-do-guard.html">P4</a> fechado</td>
+      <td>Sem isso, um agente que escapa alcança seus projetos e seus tokens</td></tr>
+    <tr><td class="v-vermelho">🔴</td><td><a href="P5-grill-repositorio.html">P5</a> fechado</td>
+      <td>Credencial, merge e fronteira do reaper são decisões, não detalhes de implementação</td></tr>
+    <tr><td class="v-ambar">🟠</td><td><a href="P1-grill-do-schema.html">P1</a> decidido</td>
+      <td>Duas FKs novas na classe que a suíte não vê</td></tr>
+    <tr><td class="v-ambar">🟠</td><td><a href="P2-f2-produtor-coletor.html">P2</a> e
+      <a href="P3-fatia2-posse-do-run.html">P3</a> mergeados</td>
+      <td>O worktree amarra no lock de issue; queremos posse correta debaixo</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>O primeiro projeto de verdade</h2>
+
+<div class="caixa aviso">
+  <span class="rotulo">Recomendação</span>
+  <p>Quando chegar a hora, <b>não aponte para um projeto que te importa</b> na primeira vez. Aponte para um repo
+  de teste seu, com histórico real mas descartável, e deixe o ciclo completo rodar — inclusive o REJECT, o
+  reopen e a coleta do worktree. A lição da casa é que <b>o caminho que o fixture nunca pisa é onde o bug
+  vive</b>, e este ponto inteiro é caminho novo.</p>
+</div>
+
+<h2>Ligações</h2>
+<ul>
+  <li><a href="P5-grill-repositorio.html">P5</a> — o desenho de que este ponto depende inteiramente.</li>
+  <li><a href="P4-furo-do-guard.html">P4</a> — pré-requisito de segurança.</li>
+  <li><a href="P8-org-nao-decompoe.html">P8</a> — depois disto, N4 passa a valer muito mais: uma org que
+  decompõe sobre um repo real é o produto inteiro.</li>
+</ul>
+
+<p class="medido">Ponto criado em 2026-07-27 a partir do norte fixado pelo dono. <b>Sem kickoff, sem desenho
+fechado, sem estimativa.</b> Estimar antes do P5 seria inventar número.</p>
+
+</main>
