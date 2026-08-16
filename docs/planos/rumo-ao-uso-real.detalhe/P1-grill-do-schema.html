@@ -12,8 +12,32 @@
   <span class="ficha">Tipo <b>Grill</b></span>
   <span class="ficha">Slot <b>não ocupa</b></span>
   <span class="ficha">Código <b>zero</b></span>
-  <span class="ficha">Kickoff <b>já escrito</b></span>
-  <span class="ficha">Estado <b>pronto p/ disparar</b></span>
+  <span class="ficha">Estado <b>FECHADO 2026-08-16</b></span>
+  <span class="ficha">Produto <b>D-SCHEMA-1..9</b></span>
+</div>
+
+<div class="caixa ok">
+  <span class="rotulo">Desfecho — fechado com o dono em 2026-08-16</span>
+  <p>Decisão completa, com racional por item, em <code>HANDOFF-grill-schema-flyway-h2.md</code> (raiz).
+  <b>A suíte passa a rodar contra Postgres real</b>, em uma camada só, e o H2 sai de cena. Nove decisões
+  <code>D-SCHEMA-1..9</code>; em todas o dono escolheu a opção recomendada.</p>
+  <p><b>O custo, medido:</b> a suíte inteira vai de <b>47s</b> (H2) para <b>2min14</b> (Postgres), e
+  <b>191 testes</b> precisam de conserto — não os 51 do kickoff, que eram amostra truncada de corrida
+  contaminada. Sai em <b>duas fatias sem commit vermelho</b>: a A cria as linhas-pai ainda sob H2, a B vira
+  a régua e recalibra o seed.</p>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">🔴 Três números desta página estavam errados — corrigidos em 2026-08-16</span>
+  <p><b>São 93 FOREIGN KEYs, não 84.</b> Medido no catálogo vivo por duas aplicações independentes das 38
+  migrations, que concordam exatamente. O 84 <b>não é reproduzível</b>: a série acumulada por migration
+  pula de 79 (V27–V30) para 85 (V31) — <b>84 nunca existiu em nenhum prefixo</b>. CHECK=1, parciais=5,
+  trigger=1 e tabelas=36 <b>confirmados</b>.</p>
+  <p><b>"Flyway ligado sobre o H2" não é barato — é impossível.</b> O H2 rejeita <code>timestamptz</code> na
+  <b>V1</b>, e 21 das 38 migrations usam. <b>0 de 38 aplicam.</b> Ver a tabela das quatro saídas abaixo.</p>
+  <p><b>A ressalva sobre "o H2 é recriado por contexto" não sustenta a conclusão que tirava.</b> São
+  <b>28 contextos para 153 classes</b>, todas no mesmo <code>jdbc:h2:mem:fase0</code>: o banco é zerado 28
+  vezes na corrida, não 153.</p>
 </div>
 
 <h2>O que é</h2>
@@ -30,16 +54,21 @@ Hibernate gerar o schema a partir das entidades:</p>
 
 <div class="rolagem">
 <table>
-  <thead><tr><th></th><th>Flyway (produção)</th><th>H2 (suíte)</th></tr></thead>
+  <thead><tr><th></th><th>Flyway (produção) — <b>re-medido 2026-08-16</b></th><th>H2 (suíte)</th></tr></thead>
   <tbody>
     <tr><td>tabelas</td><td>36</td><td>36</td></tr>
-    <tr><td><b>FOREIGN KEY</b></td><td><b>84</b></td><td><b class="v-vermelho">0</b></td></tr>
-    <tr><td>CHECK</td><td>1</td><td class="v-vermelho">0</td></tr>
+    <tr><td><b>FOREIGN KEY</b></td><td><b>93</b> <span class="v-ambar">(era 84 nesta página — errado)</span></td><td><b class="v-vermelho">0</b></td></tr>
+    <tr><td>CHECK</td><td>1 — <code>ck_preview_artifact_content_type</code></td><td class="v-vermelho">0</td></tr>
     <tr><td>índice único PARCIAL</td><td>5</td><td class="v-vermelho">0</td></tr>
-    <tr><td>TRIGGER</td><td>1</td><td class="v-vermelho">0</td></tr>
+    <tr><td>TRIGGER</td><td>1 — <code>trg_activity_log_immutable</code></td><td class="v-vermelho">0</td></tr>
   </tbody>
 </table>
 </div>
+
+<p class="medido">Critério usado, e ele tem a <b>forma</b> do defeito: contagem de <b>estado do catálogo</b>
+(<code>pg_constraint.contype</code>, <code>indisunique AND indpred IS NOT NULL</code>), não ocorrência de
+texto nas migrations. É por isso que o 5 se confirma enquanto o <code>grep</code> da sessão de controle #10
+achava 2 — índice parcial tem mais de uma forma sintática, e migration é histórico, não estado.</p>
 
 <p>A causa mecânica dos zero FKs: <b>não existe um único <code>@ManyToOne</code>/<code>@OneToMany</code>/
 <code>@JoinColumn</code> em todo o <code>src/main</code></b> — toda coluna de chave estrangeira é
@@ -52,12 +81,57 @@ Hibernate gerar o schema a partir das entidades:</p>
 classes / 147 testes que completaram antes de travar, <b class="v-vermelho">51 (~35%) falharam</b> —
 120 violações de <code>team_company_id_fkey</code>, 24 de <code>decision_review_id_fkey</code>, e mais.</p>
 
-<div class="caixa aviso">
-  <span class="rotulo">Ressalva honesta — trate como hipótese, não como fato</span>
-  <p>O Postgres do experimento <b>não era recriado por contexto</b> (o H2 é). Então <b>parte</b> dos 51
-  pode ser poluição entre testes, não defeito real. <b>Isolar esse número é a primeira tarefa do
-  grill</b> — ele é a base de todo o dimensionamento de custo.</p>
+<div class="caixa ok">
+  <span class="rotulo">O número foi isolado em 2026-08-16 — cinco corridas</span>
+  <p>O <b>51 de 147</b> era <b>amostra truncada de uma corrida contaminada</b>: a suíte tem 965 testes, e a
+  medição original parou aos 147 porque <b>travou</b> — por exaustão de conexão, não por mistério.</p>
 </div>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Corrida</th><th>Condição</th><th>Falhando</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>H2, régua atual</td><td><b class="v-verde">0</b> de 965 · <b>47s</b> · 28 contextos</td></tr>
+    <tr><td>A</td><td>Postgres, um banco para a suíte, pool default</td><td>241 · 2min14 · <b class="v-vermelho">só 10 dos 28 contextos</b></td></tr>
+    <tr><td>E</td><td>igual à A, com pool do Hikari <b>limitado a 2</b></td><td><b>214</b> · 2min26 · 28/28 contextos · zero exaustão</td></tr>
+    <tr><td><b>B</b></td><td>as 74 classes que falharam, <b>cada uma sozinha em banco limpo</b></td><td><b>191</b> de 362</td></tr>
+    <tr><td><b>C</b></td><td>as outras 79 classes <code>@SpringBootTest</code>, também isoladas</td><td><b class="v-verde">0</b> de 262</td></tr>
+    <tr><td>D</td><td>as 74 isoladas, <b>e sem o dado semeado pelas migrations</b></td><td>134 de 362</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><b>A corrida C é o que fecha o método.</b> Sem ela, "191 reais" seria alegação sobre as classes que a
+sessão escolheu olhar. A C pergunta o oposto — <i>alguma classe que passa no banco sujo falha no banco
+limpo?</i> — e a resposta medida é <b>nenhuma</b>.</p>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Camada</th><th>Testes</th><th>O que é</th></tr></thead>
+  <tbody>
+    <tr><td>schema</td><td><b>134</b></td><td>constraint de produção que a suíte nunca impôs</td></tr>
+    <tr><td>seed</td><td><b>57</b></td><td>o teste assume um banco sem o dado que as migrations semeiam</td></tr>
+    <tr><td><b>defeito real</b></td><td><b>191</b></td><td></td></tr>
+    <tr><td>interferência</td><td>23</td><td>passam sozinhos, falham na corrida compartilhada — cascata ou ordem</td></tr>
+    <tr><td>exaustão</td><td>27</td><td><b>artefato de configuração</b>, não defeito de teste</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa risco">
+  <span class="rotulo">🔴 O que travou a medição original — e trava a fatia se ninguém tratar</span>
+  <p>Não há <b>uma linha</b> de configuração de Hikari no repositório. Default = 10 conexões por pool, um
+  pool por contexto, <b>28 contextos cacheados</b>, nenhum fechado antes do fim da JVM. Contra
+  <code>max_connections=100</code>: <b>10 × 10 = 100</b>, e do 11º contexto em diante nada sobe —
+  <b>406 ocorrências de <code>FATAL: sorry, too many clients already</code></b> na corrida A.</p>
+  <p>Com <code>maximum-pool-size=2</code>, os 28 contextos sobem e a exaustão zera. <b>Consequência forçada,
+  não decisão:</b> <code>application-test.yml</code> tem de limitar o pool.</p>
+</div>
+
+<p>E o mecanismo por trás dos 191: <b>a suíte não se isola limpando o banco, e sim inventando IDs</b> —
+<b>zero <code>deleteAll()</code></b> em toda ela, só 2 classes <code>@Transactional</code>, e
+<b>1367 <code>UUID.randomUUID()</code> em 171 classes</b>. O pai aleatório é exatamente o que não tem linha
+em <code>company</code>.</p>
 
 <p>Dois espécimes, porém, comprovadamente <b>não</b> são poluição:</p>
 
@@ -68,6 +142,11 @@ classes / 147 testes que completaram antes de travar, <b class="v-vermelho">51 (
   <p>Ele afirma que criar um time para uma company <b>inexistente</b> não lança nada. Em produção isso é
   violação de <code>team_company_id_fkey</code>. O teste não está incompleto — ele está
   <b>afirmando o contrário do que a produção faz</b>. Mesmo padrão em <code>ChainOfCommandTest:48</code>.</p>
+  <p><b>Reclassificado em 2026-08-16:</b> ele afirma o oposto <b>por acidente de setup, não por desenho</b>.
+  O comentário na linha de cima diz <i>"e a mesma dupla vale em OUTRA company"</i> — a <b>intenção</b> é
+  legítima e sobrevive intacta ao se criar uma segunda company de verdade. É essa constatação que virou a
+  regra <b>D-SCHEMA-3</b> e derrubou o medo de "dezenas de microdecisões": os 118 casos de FK têm um único
+  conserto mecânico.</p>
 </div>
 
 <p>E o <code>CeoPersonaSeedTest</code>, cuja premissa inteira (<i>"banco sem moldes de CEO"</i>) é um estado
@@ -102,62 +181,114 @@ da produção.</p>
   paralelo com P2/P3 é de graça.</li>
 </ol>
 
-<h2>O que o grill tem de fechar</h2>
+<h2>O que o grill fechou</h2>
 
-<ol>
-  <li><b>Contra o que a suíte roda?</b> Uma resposta só, ou camadas (unitário rápido em H2 + integração
-  em Postgres real)?</li>
-  <li><b>Os 51 são reais ou poluição?</b> Isolar com contexto recriado por classe, ou banco limpo por
-  teste. <b>Medir antes de dimensionar.</b></li>
-  <li><b>Testes com premissa impossível em produção</b> — apagar, reescrever ou marcar? Qual a
-  <b>regra geral</b> que evita decidir 51 vezes?</li>
-  <li><b><code>company_membership</code></b> é o único unique <b>total</b> não espelhado na entidade, e é
-  expressável em JPA. Sai na frente do resto ou faz parte da decisão?</li>
-  <li><b>O par de beans por perfil</b> — mesmo assunto ou outro?</li>
-  <li><b>Qual o limite que a decisão NÃO vai fechar</b>, nomeado no alcançável e não no confortável.</li>
-</ol>
-
-<h3>As quatro saídas defensáveis (nenhuma é obviamente certa)</h3>
+<p>As seis perguntas foram respondidas com o dono em 2026-08-16, uma a uma. <b>Em todas as nove decisões o
+dono escolheu a opção recomendada</b> — não houve divergência a registrar nesta rodada. O racional de cada
+uma está em <code>HANDOFF-grill-schema-flyway-h2.md</code>; é ele que impede a próxima sessão de reabrir.</p>
 
 <div class="rolagem">
 <table>
-  <thead><tr><th>Saída</th><th>Ganha</th><th>Custa</th></tr></thead>
+  <thead><tr><th>#</th><th>Decisão</th><th>O racional em uma linha</th></tr></thead>
+  <tbody>
+    <tr><td>D-SCHEMA-1</td><td><b>Impor</b>, não só tornar visível</td><td>"piso verde" é critério de aceite de P2/P3/P6 e com a régua torta não prova nada</td></tr>
+    <tr><td>D-SCHEMA-2</td><td><b>Postgres real</b> (Testcontainers)</td><td>a triagem é preço de <i>impor</i>, idêntica em qualquer motor — o que muda é só o que mais você pega</td></tr>
+    <tr><td>D-SCHEMA-3</td><td><b>Criar o pai de verdade</b></td><td>defeito de setup, não de intenção ⇒ um helper resolve 118 sem julgar 118 vezes</td></tr>
+    <tr><td>D-SCHEMA-4</td><td>O banco de teste <b>carrega o seed</b></td><td>limpar o seed reintroduziria "estado impossível em produção" por outra porta</td></tr>
+    <tr><td>D-SCHEMA-5</td><td><b>Uma camada</b> — H2 sai</td><td>duas camadas exigiriam decidir 153 vezes de que lado cada classe fica</td></tr>
+    <tr><td>D-SCHEMA-6</td><td><b>Duas fatias</b>, verde em todo ponto</td><td>criar o pai passa nos dois motores ⇒ dá para pré-encenar sob H2</td></tr>
+    <tr><td>D-SCHEMA-7</td><td><code>company_membership</code> <b>dissolvido</b></td><td>com o banco impondo, espelhar na entidade não muda comportamento nenhum</td></tr>
+    <tr><td>D-SCHEMA-8</td><td>Beans por perfil ⇒ <b>fatia C</b></td><td>mesma raiz, mas troca a implementação sob teste de ~16 classes</td></tr>
+    <tr><td>D-SCHEMA-9</td><td>Fatia B: <b>verde ou resíduo ≤ 23</b></td><td>não dá para saber antes de consertar se os 23 são cascata ou interferência</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>As duas fatias, e o tamanho medido</h3>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Fatia</th><th>O que faz</th><th>Tamanho medido</th></tr></thead>
+  <tbody>
+    <tr><td><b>A</b> — ainda sob H2</td><td>cria as linhas-pai de verdade; a suíte segue <b>965 verde no H2</b> o tempo todo</td><td><b>36 classes</b> · 134 testes · o vermelho contra Postgres cai de 191 p/ ~57</td></tr>
+    <tr><td><b>B</b> — vira a régua</td><td><code>application-test.yml</code> + pool do Hikari + Testcontainers no <code>pom.xml</code> + recalibra o seed</td><td><b>15 classes</b> · 57 testes (49 puras + 8 dentro de 3 classes da A)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="caixa aviso">
+  <span class="rotulo">Colisão com as faixas enfileiradas — dita, não silenciada</span>
+  <p>Nenhuma das duas começou, mas <b>13 classes de teste desta lista caem no território delas</b>: 10 na
+  <a href="P2-f2-produtor-coletor.html">F2</a> (<code>IssueCheckoutSemanticsTest</code>,
+  <code>IssueCorretivaTest</code>, <code>ProcedenciaDoRunHttpTest</code>, <code>IssueSkillAttachment*</code>
+  e outras) e 3 na <a href="P3-fatia2-posse-do-run.html">Fatia II</a>
+  (<code>DispatchArchitectGateTest</code>, <code>ApprovalGateTest</code>,
+  <code>GateDecisionFactoryTest</code>). <b>Nada aqui toca código de produção dessas faixas</b> — só teste e
+  configuração. Mas quem for segundo come merge nessas 13.</p>
+</div>
+
+<h3>As quatro saídas, depois de medidas</h3>
+
+<div class="rolagem">
+<table>
+  <thead><tr><th>Saída</th><th>Veredito 2026-08-16</th><th>Por quê</th></tr></thead>
   <tbody>
     <tr>
-      <td><b>Testcontainers</b> (Postgres real na suíte)</td>
-      <td>Fidelidade máxima</td>
-      <td>Suíte mais lenta <b>para sempre</b>; triagem dos ~51 vira dezenas de microdecisões</td>
+      <td><b>Testcontainers</b> (Postgres real)</td>
+      <td><b class="v-verde">ESCOLHIDA</b> (D-SCHEMA-2)</td>
+      <td>O custo que se temia <i>("mais lenta para sempre")</i> está medido: <b>+1min27</b>. E a triagem
+      que se atribuía a ela é preço de <b>impor</b>, não desta saída.</td>
     </tr>
     <tr>
       <td><b>Flyway ligado sobre o H2</b></td>
-      <td>Barato</td>
-      <td>H2 não expressa índice parcial nem trigger ⇒ fecha parte e <b>cria a ilusão</b> de ter fechado tudo</td>
+      <td><b class="v-vermelho">MORTA</b></td>
+      <td>Não "fecha parte do buraco": <b>não sobe</b>. O H2 rejeita <code>timestamptz</code> na <b>V1</b>
+      e 21 das 38 migrations usam. Existir exigiria <b>reescrever migrations já aplicadas em produção</b>.</td>
     </tr>
     <tr>
       <td><b>Espelhar constraints nas entidades</b></td>
-      <td>Suíte segue rápida</td>
-      <td>Disciplina eterna; não cobre índice parcial nem trigger; o <code>company_membership</code> já prova que a disciplina falha sozinha</td>
+      <td><b class="v-vermelho">RECUSADA</b></td>
+      <td>A tabela original a vendia como a que <i>"mantém a suíte rápida"</i>, sugerindo que evita a
+      triagem. <b>Não evita</b> — <code>@ManyToOne</code> gera FK no H2 também e quebra os mesmos testes.
+      E cobre <b>só FK</b>.</td>
     </tr>
     <tr>
       <td><b>Teste de schema-diff</b></td>
-      <td>Torna o invisível visível</td>
-      <td>Não conserta nada; nasce vermelho com 84 divergências ⇒ tem de ser relatório, não gate</td>
+      <td><b class="v-ambar">NÃO ESCOLHIDA</b></td>
+      <td>Relatório não impede <code>TeamServiceTest:62</code> de seguir verde afirmando o oposto da
+      produção; só documenta que afirma.</td>
     </tr>
   </tbody>
 </table>
 </div>
 
-<p>Combinações são legítimas — por exemplo schema-diff como relatório <b>agora</b> + Testcontainers só na
-camada de repositório.</p>
-
 <h2>O que este ponto NÃO fecha</h2>
 
+<p>Nomeado no alcançável, não no confortável — e o primeiro item é o que mais custa se ficar implícito:</p>
+
 <ul>
-  <li>Não escreve código. O produto é <b>decisão com racional</b>, numerada <code>D-SCHEMA-1..N</code>.</li>
+  <li>🔴 <b>Ser imposto não é ser coberto.</b> Dos 7 objetos invisíveis, <b>só o
+  <code>uq_run_active_agent</code> é exercitado por algum teste</b> (aparece 32× nas falhas isoladas). Os
+  outros seis — <code>uq_role_template_global</code>, <code>uq_approval_dirigir_por_run</code>,
+  <code>uq_approval_pending</code>, <code>uq_review_pending</code>, o CHECK
+  <code>ck_preview_artifact_content_type</code> e o trigger <code>trg_activity_log_immutable</code> —
+  passam a ser <b>impostos sem que teste nenhum os exercite</b>. Criar essa cobertura <b>não está</b>
+  nesta decisão.</li>
+  <li><b>Os 23 do D-SCHEMA-9.</b> A fatia B pode fechar com até 23 vermelhos nomeados.</li>
+  <li><b>A fatia C</b> (remover o <code>@Profile</code> do par de busca). A cobertura da busca de produção
+  <b>continua zero</b> até ela.</li>
+  <li><b>A divergência <code>enum</code>/<code>text</code>.</b> Com o H2 fora, some a situação em que a
+  suíte é <i>mais</i> estrita que a produção — mas <b>nenhum teste novo prova</b> que a produção aceita um
+  status inválido. O ponto cego inverte de sinal; não é medido.</li>
+  <li><b>Nada foi provado ao vivo no motor real.</b> Este grill mediu a <b>suíte</b>. A regra da casa
+  ("pronto" = comportamento observado no motor real) segue valendo para as fatias A e B.</li>
+  <li>Não escreveu código, e <b>nenhum arquivo do repo foi tocado para medir</b> — container descartável
+  em <code>:15434</code> e override por <code>-DargLine</code>.</li>
   <li>Não emite o kickoff da implementação — quem emite é a sessão de controle.</li>
-  <li>Não consome reserva: <b>V39 e ADR-0051 ficam livres</b> (conferido 2026-07-27: maior migration =
-  <code>V38__review_parecer_do_gestor.sql</code>, maior ADR = <code>0050</code>).</li>
-  <li>Não resolve a paridade Docker (item 12 do roadmap), que é outro eixo.</li>
+  <li>Não consumiu reserva: <b>V39 e ADR-0051 seguem livres</b>. Recomendação (não consumo): registrar por
+  <b>emenda</b> a ADR existente, que é o default da casa.</li>
+  <li>Não resolve a paridade Docker (item 12 do roadmap) — e a D-SCHEMA-2 <b>aumenta</b> a dependência de
+  Docker, então o item fica mais caro, não menos.</li>
 </ul>
 
 <h2>Ligações</h2>
@@ -170,6 +301,9 @@ camada de repositório.</p>
 </ul>
 
 <p class="medido">Kickoff: <code>HANDOFF-grill-schema-flyway-h2-KICKOFF.md</code> (raiz), emitido pela sessão
-de controle #9 em 2026-07-22. Âncoras reconferidas contra <code>main = 39dce6a</code> em 2026-07-27.</p>
+de controle #9 em 2026-07-22. Âncoras reconferidas contra <code>main = 39dce6a</code> em 2026-07-27.
+<b>Grill executado e fechado em 2026-08-16</b>, contra <code>main = 39dce6a</code>: decisão completa em
+<code>HANDOFF-grill-schema-flyway-h2.md</code> (raiz). <b>Todo número desta página marcado como re-medido é
+de 2026-08-16</b>; os demais são do kickoff de 2026-07-22.</p>
 
 </main>

@@ -29,14 +29,18 @@ precisar do que mudou, lê o histórico abaixo.</p>
 <table>
   <thead><tr><th>Dimensão</th><th>Valor vigente</th><th>Medido em</th></tr></thead>
   <tbody>
-    <tr><td><code>main</code></td><td><code>39dce6a</code> (merge do PR #61)</td><td>2026-07-27</td></tr>
+    <tr><td><code>main</code></td><td><code>39dce6a</code> (merge do PR #61)</td><td>2026-08-16</td></tr>
     <tr><td>Último PR mergeado</td><td><b>#61</b>, em 2026-07-22 11:35:48 -03</td><td>2026-07-27</td></tr>
-    <tr><td>PRs abertos</td><td><b>nenhum</b></td><td>2026-07-27</td></tr>
-    <tr><td>Worktrees</td><td>1 (<code>wt-fatia1ter-procedencia</code>, da fatia já mergeada)</td><td>2026-07-27</td></tr>
-    <tr><td>Piso declarado</td><td>965 backend / 323 front — <b>não re-medido nesta sessão</b></td><td>2026-07-22</td></tr>
-    <tr><td>Reservas livres</td><td><b>V39</b> · <b>ADR-0051</b></td><td>2026-07-27</td></tr>
+    <tr><td>PRs abertos</td><td><b>#62</b> (docs-only: convenção de plano e ledger)</td><td>2026-08-16</td></tr>
+    <tr><td>Worktrees</td><td>1 (<code>wt-fatia1ter-procedencia</code>, da fatia já mergeada) — <b>não re-medido</b></td><td>2026-07-27</td></tr>
+    <tr><td><b>Piso backend</b></td><td><b>965/965 verdes em 47s</b> — <b>re-medido</b>, régua H2 atual</td><td><b>2026-08-16</b></td></tr>
+    <tr><td>Piso front</td><td>323 — <b>não re-medido</b></td><td>2026-07-22</td></tr>
+    <tr><td><b>Piso backend contra o schema REAL</b></td><td><b class="v-vermelho">191 de 965 falham</b> (134 schema + 57 seed), isolados em banco limpo</td><td><b>2026-08-16</b></td></tr>
+    <tr><td>Catálogo de produção</td><td>36 tabelas · <b>93 FK</b> · 1 CHECK · 5 índices únicos parciais · 1 trigger</td><td><b>2026-08-16</b></td></tr>
+    <tr><td>Reservas livres</td><td><b>V39</b> · <b>ADR-0051</b> — <b>não consumidas pelo P1</b></td><td>2026-08-16</td></tr>
     <tr><td>Backend <code>:8080</code></td><td><b class="v-vermelho">fora do ar</b></td><td>2026-07-27</td></tr>
-    <tr><td>Pontos do plano concluídos</td><td><b>0 de 8</b></td><td>2026-07-27</td></tr>
+    <tr><td>Pontos do plano concluídos</td><td><b>1 de 8</b> — P1 fechado</td><td><b>2026-08-16</b></td></tr>
+    <tr><td>Fila liberada pelo P1</td><td>fatia <b>A</b> (36 classes, sob H2) → fatia <b>B</b> (vira a régua) → fatia <b>C</b> (beans por perfil)</td><td><b>2026-08-16</b></td></tr>
   </tbody>
 </table>
 </div>
@@ -64,6 +68,33 @@ que a segue.</p>
 </div>
 
 <h2>Histórico</h2>
+
+<h3>2026-08-16 — <a href="P1-grill-do-schema.html">P1</a> executado e FECHADO (grill do schema)</h3>
+<ul>
+  <li><b>Decisão fechada com o dono</b>, 9 itens <code>D-SCHEMA-1..9</code> com racional, em
+  <code>HANDOFF-grill-schema-flyway-h2.md</code> (raiz). <b>A suíte passa a rodar contra Postgres real</b>,
+  em uma camada só; o H2 sai de cena. Em todas as nove o dono escolheu a opção recomendada.</li>
+  <li><b>O "51 de 147" foi isolado em cinco corridas</b> e não sobreviveu: era amostra truncada de uma
+  corrida contaminada. Números novos — <b>191 defeitos reais</b> (134 de schema + 57 de dado semeado),
+  <b>23</b> de interferência na corrida compartilhada e <b>27</b> de <b>exaustão de conexão</b>. A corrida
+  de controle (as 79 classes que passavam, rodadas isoladas) deu <b>0</b>, que é o que fecha o método.</li>
+  <li>🔴 <b>Correção de número:</b> são <b>93 FOREIGN KEYs</b>, não 84. O 84 <b>não é reproduzível</b> — a
+  série acumulada por migration pula de 79 para 85, então nunca existiu em prefixo nenhum. CHECK=1,
+  parciais=5, trigger=1 e tabelas=36 <b>confirmados</b> no catálogo vivo.</li>
+  <li>🔴 <b>Uma das quatro saídas do kickoff está MORTA:</b> "Flyway ligado sobre o H2" não fecha parte do
+  buraco — <b>não sobe</b>. O H2 rejeita <code>timestamptz</code> na V1 e 21 das 38 migrations usam.</li>
+  <li>🔴 <b>Achado que explica o travamento da medição original:</b> não há uma linha de configuração de
+  Hikari no repositório; 28 contextos × 10 conexões contra <code>max_connections=100</code> ⇒ 406
+  <code>too many clients</code>. Com o pool em 2, os 28 contextos sobem. <b>É consequência forçada para a
+  fatia B</b>, não escolha.</li>
+  <li><b>Limite nomeado:</b> ser imposto não é ser coberto — <b>6 dos 7 objetos invisíveis</b> (incluindo o
+  trigger e o CHECK) passarão a ser impostos <b>sem que teste nenhum os exercite</b>.</li>
+  <li><b>Colisão dita:</b> 13 classes de teste da lista de trabalho caem no território da
+  <a href="P2-f2-produtor-coletor.html">F2</a> (10) e da <a href="P3-fatia2-posse-do-run.html">Fatia II</a>
+  (3). Nenhum código de produção delas é tocado, mas quem for segundo come merge.</li>
+  <li><b>Zero código, zero reserva consumida.</b> Tudo medido em container descartável
+  (<code>:15434</code>, já removido) e override por <code>-DargLine</code>.</li>
+</ul>
 
 <h3>2026-07-27 — plano criado; convenção de plano e ledger estabelecida</h3>
 <ul>

@@ -5,13 +5,13 @@
 > [`docs/convencao-plano-e-ledger.md`](../convencao-plano-e-ledger.md). Conformidade:
 > `scripts/checar-plano.sh`.
 
-**Estado:** [ledger](rumo-ao-uso-real.detalhe/ledger.html) — `main` `39dce6a` · 0 de 8 pontos concluídos.
+**Estado:** [ledger](rumo-ao-uso-real.detalhe/ledger.html) — `main` `39dce6a` · 1 de 8 pontos concluídos.
 
 ## Pontos
 
 | # | Ponto | Tipo | Estado | O que decide | Detalhe |
 |---|-------|------|--------|--------------|---------|
-| P1 | A suíte nunca rodou o schema que a aplicação embarca | grill | kickoff pronto | Conserta a **régua**: 84 FKs em produção, 0 impostas no teste | [detalhe](rumo-ao-uso-real.detalhe/P1-grill-do-schema.html) |
+| P1 | A suíte nunca rodou o schema que a aplicação embarca | grill | ✅ fechado | Régua vai para **Postgres real** (D-SCHEMA-1..9); 191 testes a triar em 2 fatias | [detalhe](rumo-ao-uso-real.detalhe/P1-grill-do-schema.html) |
 | P2 | Uma chamada derruba uma Issue viva | fatia | kickoff pronto | Produtor e coletor do lock discordam do invariante | [detalhe](rumo-ao-uso-real.detalhe/P2-f2-produtor-coletor.html) |
 | P3 | Você aperta "parar" e o sistema age mesmo assim | fatia | kickoff pronto | Os 4 gates disparam em nome de run sem autoridade | [detalhe](rumo-ao-uso-real.detalhe/P3-fatia2-posse-do-run.html) |
 | P4 | O cinto protege o quintal, não a casa | fatia | a escrever | Pré-requisito: com projeto real na pasta, o furo muda de categoria | [detalhe](rumo-ao-uso-real.detalhe/P4-furo-do-guard.html) |
@@ -22,7 +22,9 @@
 
 ## Ordem e paralelismo
 
-- **Agora:** P1 (não ocupa slot) + P2 e P3 (os 2 slots da regra de faixas em voo).
+- **Agora:** P2 e P3 (os 2 slots da regra de faixas em voo). **P1 fechou em 2026-08-16** e produziu 3 fatias
+  de implementação (A → B → C) descritas em `HANDOFF-grill-schema-flyway-h2.md`; quem as agenda e emite o
+  kickoff é a sessão de controle. **13 classes de teste dessas fatias colidem com P2/P3** — ver o detalhe.
 - **Em paralelo, quando houver sessão:** P4 e P5 — independentes entre si e dos três acima.
 - **Depois:** P6 (exige P4 e P5 fechados) → P7 → P8.
 
