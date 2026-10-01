@@ -2,7 +2,7 @@
 
 Control-plane de orquestração de agentes de IA (Java + Next.js), derivado da análise do Paperclip.
 
-- `backend/` — Java 21 + Spring Boot 3.5.x
+- `backend/` — Java 25 + Spring Boot 4.1
 - `frontend/` — Next.js 16 + React 19
 - `docs/` — arquitetura e ADRs
 
